@@ -52,9 +52,10 @@ API がテーマ指定と一致することと、実 XP の見た目が一致す
 同じ DPI・ウィンドウサイズ・状態で比較してから、寸法や書体を確定する。
 
 初回の日本語 XP / 96 DPI 測定では本文・メニュー・アイコンのフォントは
-MS UI Gothic -12、caption は -13 bold、taskbar Button は -13 bold だった。
+MS UI Gothic -12、caption は -13 bold、Shell_TrayWnd 子 Button は -13 bold だった。
+後者は Start の可能性があり、アプリケーションのタスク字体とは断定しない。
 close button のテーマ画像は21×21・8状態。
-Wine でのテーマ適用結果と日本語 XP の実表示には書体・本文サイズの差があり、調整中。
+初回比較の書体差は0026の明示 profile で改善した。配置の比較も継続する。
 
 実 XP では `OpenThemeData(..., L"Start::Button")` は失敗した。
 自作 Button に `SetWindowTheme(button, L"Start", NULL)` を設定してから
@@ -72,3 +73,13 @@ NULL / 実 DC の両方で MS UI Gothic -16・bold・italic が返った。
 抽出して Wine に配置した Luna の SHA256 は一致した。
 XP ではプロセスのテーマ初期化前の GetCurrentThemeName が失敗したため、
 この測定は自作ウィンドウのテーマを開いた後で行う。
+
+
+`--button-pixels` は自作ウィンドウの公開 DC に対し、公開テーマ描画の最適位置を
+探索し、矩形と不一致画素数だけを記録する。`--fixed`、`--close-only`、`--maximize`
+で標準ウィンドウの style / 表示状態を変えて比較できる。`--exit-after-measure` は
+測定後に自作ウィンドウを破棄して終了する。指定しない場合は従来どおり表示を維持する。
+画像・テーマ資源はファイルへ出力しない。
+
+タスクバーの公開子矩形・ReBar・境界色・単色自作アイコンとタイトル文字の測定は
+[shell-layout の手順](../tests/shell-layout.md)を参照。同じ lock 設定で比較する。

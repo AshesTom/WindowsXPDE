@@ -19,7 +19,7 @@
 #endif
 
 static FILE *output;
-static BOOL property_origin;
+static BOOL property_origin,button_pixels;
 static void origin(const char *label, HTHEME theme, int part, int state, int property)
 {
     PROPERTYORIGIN value=PO_NOTFOUND;
@@ -187,6 +187,49 @@ static void documentation(void)
         if(SUCCEEDED(hr))text_value(labels[i],value);
     }
 }
+/* Match public DrawThemeBackground output against our own visible caption.
+ * No theme resources are enumerated or exported; only coordinates/counts leave
+ * the process. Ignore transparent corners by starting from the sampled pixels. */
+static void measure_button_pixels(HWND hwnd,HTHEME theme)
+{
+    int parts[]={WP_MINBUTTON,WP_MAXBUTTON,WP_CLOSEBUTTON};
+    RECT wr,r;HDC screen=GetWindowDC(hwnd),sample=CreateCompatibleDC(screen),draw=CreateCompatibleDC(screen);
+    HBITMAP a,b,old_a,old_b;BITMAPINFO info={0};DWORD *pixels,*expected;
+    int width,height,x,y,i,k,best_x,best_y,best;SIZE size;
+    if(IsZoomed(hwnd))parts[1]=WP_RESTOREBUTTON;
+    GetWindowRect(hwnd,&wr);width=wr.right-wr.left;height=min(40,wr.bottom-wr.top);
+    info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=width;info.bmiHeader.biHeight=-height;
+    info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
+    a=CreateDIBSection(screen,&info,DIB_RGB_COLORS,(void**)&pixels,NULL,0);
+    b=CreateDIBSection(screen,&info,DIB_RGB_COLORS,(void**)&expected,NULL,0);
+    if(!screen||!sample||!draw||!a||!b){fprintf(output,"button-pixels allocation failed\n");goto done;}
+    old_a=SelectObject(sample,a);old_b=SelectObject(draw,b);
+    BitBlt(sample,0,0,width,height,screen,0,0,SRCCOPY);GdiFlush();
+    for(i=0;i<3;i++)
+    {
+        if(FAILED(GetThemePartSize(theme,NULL,parts[i],CBS_NORMAL,NULL,TS_TRUE,&size)))continue;
+        best=0x7fffffff;best_x=best_y=-1;
+        for(y=0;y+size.cy<=height;y++)for(x=max(0,width-100);x+size.cx<=width;x++)
+        {
+            int different=0;
+            memcpy(expected,pixels,width*height*4);SetRect(&r,x,y,x+size.cx,y+size.cy);
+            if(FAILED(DrawThemeBackground(theme,draw,parts[i],CBS_NORMAL,&r,NULL)))continue;
+            GdiFlush();
+            for(k=0;k<size.cx*size.cy;k++)
+            {int offset=(y+k/size.cx)*width+x+k%size.cx;if((pixels[offset]&0xffffff)!=(expected[offset]&0xffffff))different++;}
+            if(different<best){best=different;best_x=x;best_y=y;}
+        }
+        fprintf(output,"button-pixels part=%d rect=%d,%d..%ld,%ld mismatches=%d\n",parts[i],best_x,best_y,best_x+size.cx,best_y+size.cy,best);
+    }
+    SelectObject(sample,old_a);SelectObject(draw,old_b);
+done:
+    if(a)DeleteObject(a);
+    if(b)DeleteObject(b);
+    if(sample)DeleteDC(sample);
+    if(draw)DeleteDC(draw);
+    if(screen)ReleaseDC(hwnd,screen);
+}
+
 static void measure(HWND hwnd)
 {
     NONCLIENTMETRICSW n={0};
@@ -277,6 +320,7 @@ static void measure(HWND hwnd)
         GetRgnBox(region,&box);fprintf(output,"region=%d box=%ld,%ld..%ld,%ld corner=%d\n",kind,box.left,box.top,box.right,box.bottom,PtInRegion(region,0,0));DeleteObject(region);
     }
     EnumChildWindows(FindWindowW(L"Shell_TrayWnd",NULL),child,0);
+    if(button_pixels&&window)measure_button_pixels(hwnd,window);
     if(window)CloseThemeData(window);
     ReleaseDC(NULL,dc);fflush(output);
 }
@@ -288,7 +332,8 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp)
 int wmain(int argc,WCHAR **argv)
 {
     WNDCLASSW cls={0};HWND a,b;MSG msg;int i;
-    BOOL display=FALSE,spi_font=FALSE,hash_theme=FALSE,thread_english=FALSE;
+    BOOL display=FALSE,spi_font=FALSE,hash_theme=FALSE,thread_english=FALSE,maximize=FALSE,exit_after=FALSE;
+    DWORD window_style=WS_OVERLAPPEDWINDOW;
     for(i=2;i<argc;i++)
     {
         if(!lstrcmpW(argv[i],L"--display-1024x768"))display=TRUE;
@@ -296,6 +341,11 @@ int wmain(int argc,WCHAR **argv)
         else if(!lstrcmpW(argv[i],L"--property-origin"))property_origin=TRUE;
         else if(!lstrcmpW(argv[i],L"--probe-spi-font"))spi_font=TRUE;
         else if(!lstrcmpW(argv[i],L"--theme-hash"))hash_theme=TRUE;
+        else if(!lstrcmpW(argv[i],L"--button-pixels"))button_pixels=TRUE;
+        else if(!lstrcmpW(argv[i],L"--fixed"))window_style&=~WS_THICKFRAME;
+        else if(!lstrcmpW(argv[i],L"--close-only"))window_style&=~(WS_MINIMIZEBOX|WS_MAXIMIZEBOX);
+        else if(!lstrcmpW(argv[i],L"--maximize"))maximize=TRUE;
+        else if(!lstrcmpW(argv[i],L"--exit-after-measure"))exit_after=TRUE;
         else return 2;
     }
     if (argc>1 && !lstrcmpiW(argv[1],L"COM1"))
@@ -340,14 +390,15 @@ int wmain(int argc,WCHAR **argv)
     cls.lpfnWndProc=procedure;cls.hInstance=GetModuleHandleW(NULL);cls.lpszClassName=L"Win4WineReference";
     cls.hbrBackground=GetSysColorBrush(COLOR_WINDOW);cls.hIcon=LoadIconW(NULL,IDI_APPLICATION);cls.hCursor=LoadCursorW(NULL,IDC_ARROW);
     if(!RegisterClassW(&cls))return 2;
-    a=CreateWindowW(cls.lpszClassName,L"Win4Wine Reference",WS_OVERLAPPEDWINDOW,20,40,500,320,NULL,NULL,cls.hInstance,NULL);
+    a=CreateWindowW(cls.lpszClassName,L"Win4Wine Reference",window_style,20,40,500,320,NULL,NULL,cls.hInstance,NULL);
     b=CreateWindowW(cls.lpszClassName,L"Inactive Reference",WS_OVERLAPPEDWINDOW,max(40,GetSystemMetrics(SM_CXSCREEN)-520),max(80,GetSystemMetrics(SM_CYSCREEN)-360),500,320,NULL,NULL,cls.hInstance,NULL);
     if(!a||!b)return 2;
-    ShowWindow(b,SW_SHOWNOACTIVATE);ShowWindow(a,SW_SHOW);SetForegroundWindow(a);UpdateWindow(a);UpdateWindow(b);
+    ShowWindow(b,SW_SHOWNOACTIVATE);ShowWindow(a,maximize?SW_MAXIMIZE:SW_SHOW);SetForegroundWindow(a);UpdateWindow(a);UpdateWindow(b);
     measure(a);
     if(hash_theme)theme_hash();
     if(spi_font)probe_spi_font();
     fclose(output);
+    if(exit_after){DestroyWindow(a);DestroyWindow(b);return 0;}
     while(GetMessageW(&msg,NULL,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     return 0;
 }

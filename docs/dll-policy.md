@@ -479,3 +479,16 @@ Luna 往復後も維持した（`.local/fresh-japanese-classic-public-test.log`�
 この実画素検査と全 frame gesture 試験は Luna / classic の両方で成功した
 （`.local/native-icons-taskbar-0025-pixels.log` / `native-icons-taskbar-0025-classic.log`）。
 classic の taskbar 外枠は root の外へはみ出すため、画面に見える範囲へ clip して取得する。
+
+
+## 29. 実 XP の公開キャプション入力・描画位置
+
+自作ウィンドウの公開 `WM_NCHITTEST` と `GetWindowDC`、公開 `DrawThemeBackground` の
+出力だけを比較した。Microsoft のテーマ内部や実装は調べていない。
+実 XP の画像は Wine より1px左・1px下で、クリック領域は画像より上下に広く、
+最大化と閉じるのクリック領域は接していた。固定サイズ枠でも同じ余白関係だった。
+**判断: 0027 は外部シェルの標準テーマ枠に限り、描画画像と入力余白を独立に扱う。**
+画像寸法・状態画像は引き続き利用者のテーマを公開 API で読む。
+子・tool window・Classic・非opt-in は従来の経路を維持する。
+96 DPI は実 XP の独立fixtureと一致し、144/192は選んだ拡大規則で回帰検査した。
+高 DPI の実 XP 一致や文字のラスタライズの完全一致とはしない。

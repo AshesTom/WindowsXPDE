@@ -24,7 +24,7 @@ compile "$root/.local/bridge/class-probe.exe" -municode "$root/prefix/class-prob
 
 compile "$root/.local/bridge/display-test.exe" -s "$root/tests/display.c" -luxtheme -lgdi32
 
-for name in start-button theme-font theme-metrics classic-fonts font-profile taskbar-background clock-theme scrollbar-theme rebar-theme reference-metrics; do
+for name in start-button theme-font theme-metrics classic-fonts font-profile taskbar-background clock-theme scrollbar-theme rebar-theme reference-metrics shell-layout; do
     compile "$root/.local/bridge/$name-test.exe" -municode "$root/tests/$name.c" -luxtheme -lgdi32
 done
 

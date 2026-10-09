@@ -1,4 +1,4 @@
-/* Public hit regions must match the theme's actual caption button assets. */
+/* XP's hit padding and the theme's visual assets have separate bounds. */
 #include <windows.h>
 #include <uxtheme.h>
 #include <vssym32.h>
@@ -103,7 +103,7 @@ static int check_button_pixels(HWND hwnd, HTHEME theme, const RECT *window,
     HDC screen = GetDC(NULL), actual = CreateCompatibleDC(screen), expected = CreateCompatibleDC(screen);
     HBITMAP a = CreateCompatibleBitmap(screen,400,200), e = CreateCompatibleBitmap(screen,400,200);
     HGDIOBJ old_a = SelectObject(actual,a), old_e = SelectObject(expected,e);
-    RECT caption = {0,0,window->right-window->left,bottom+MulDiv(3,GetDpiForWindow(hwnd),96)};
+    RECT caption = {0,0,window->right-window->left,GetSystemMetrics(SM_CYFRAME)+GetSystemMetrics(SM_CYCAPTION)-1};
     int parts[3] = {WP_MINBUTTON,WP_MAXBUTTON,WP_CLOSEBUTTON}, i,x,y,failed=0,count;
     draw=(void *)GetProcAddress(GetModuleHandleW(L"uxtheme.dll"),"Win4WineDrawNonClient");
     *hash=2166136261u;
@@ -113,7 +113,12 @@ static int check_button_pixels(HWND hwnd, HTHEME theme, const RECT *window,
     DrawThemeBackground(theme,expected,WP_CAPTION,active?CS_ACTIVE:CS_INACTIVE,&caption,NULL);
     for(i=0;i<3;i++)
     {
-        RECT button={first[i],top,last[i],bottom};
+        int margin=MulDiv(1,GetDpiForWindow(hwnd),96),gap=MulDiv(2,GetDpiForWindow(hwnd),96);
+        RECT button={first[i]+(i!=1?margin:0),top+gap,
+                     last[i]-(i==1?gap-margin:i==2?gap:0),0};
+        SIZE image;
+        GetThemePartSize(theme,NULL,WP_CLOSEBUTTON,CBS_NORMAL,NULL,TS_TRUE,&image);
+        button.bottom=button.top+MulDiv(image.cy,GetDpiForWindow(hwnd),96);
         int state=disabled&(1u<<i)?CBS_DISABLED:CBS_NORMAL;
         if(!active&&SUCCEEDED(GetThemeInt(theme,parts[i],state,TMT_IMAGECOUNT,&count))&&count>=8) state+=4;
         DrawThemeBackground(theme,expected,parts[i],state,&button,NULL);
@@ -157,7 +162,7 @@ int wmain(void)
     dpi = GetDpiForWindow(hwnd);
     width = MulDiv(image.cx, dpi, 96); height = MulDiv(image.cy, dpi, 96);
     gap = MulDiv(2, dpi, 96);
-    padding = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYCAPTION);
+    padding = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYCAPTION) - 1;
     GetWindowRect(hwnd, &window);
     for (y = 0; y < padding; y++)
         for (x = 0; x < window.right - window.left; x++)
@@ -177,8 +182,20 @@ int wmain(void)
         }
     printf("dpi=%u source=%ldx%ld asset=%dx%d min=%d..%d max=%d..%d close=%d..%d y=%d..%d\n",
            dpi, image.cx, image.cy, width, height, first[0], last[0], first[1], last[1], first[2], last[2], top, bottom);
-    for (i = 0; i < 3; i++) if (last[i] - first[i] != width) return 6;
-    if (bottom - top != height || first[1] - last[0] != gap || first[2] - last[1] != gap) return 7;
+    {
+        int margin=MulDiv(1,dpi,96);
+        if(last[0]-first[0]!=width+margin || last[1]-first[1]!=width+gap-margin
+           || last[2]-first[2]!=width+gap+margin)return 6;
+        if(top!=GetSystemMetrics(SM_CYFRAME)||bottom!=padding
+           ||first[1]-last[0]!=gap||first[2]!=last[1])return 7;
+        /* Anchor the strip to the actual window edge independently of the
+         * observed hits. Otherwise moving both paint and hit boxes together
+         * could pass the relative-size checks at non-reference DPIs. */
+        if(last[2]!=(window.right-window.left)-GetSystemMetrics(SM_CXFRAME))return 15;
+        /* Independent measured XP fixture: a 400px normal window at 96 DPI. */
+        if(dpi==96&&(first[0]!=326||last[0]!=348||first[1]!=350||last[1]!=372
+                     ||first[2]!=372||last[2]!=396||top!=4||bottom!=29))return 14;
+    }
     SetCursorPos(window.left+20,window.top+100);
     SetForegroundWindow(hwnd);
     if(GetAncestor(GetForegroundWindow(),GA_ROOT)!=hwnd) return 9;
@@ -198,7 +215,7 @@ int wmain(void)
     SetWindowLongW(hwnd,GWL_STYLE,(GetWindowLongW(hwnd,GWL_STYLE)|WS_MAXIMIZEBOX)&~WS_MINIMIZEBOX);
     EnableMenuItem(GetSystemMenu(hwnd,FALSE),SC_CLOSE,MF_BYCOMMAND|MF_GRAYED);
     if(check_button_pixels(hwnd,theme,&window,first,last,top,bottom,FALSE,5,&disabled_hash))return 10;
-    if(check_region_lifecycle(hwnd,theme,&wc,bottom+MulDiv(3,dpi,96)))return 12;
+    if(check_region_lifecycle(hwnd,theme,&wc,padding))return 12;
     DestroyWindow(other);
     DestroyWindow(hwnd);
     if(cleanup_failed)return 13;
