@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Extract only from a user supplied local XP SP3 ISO or Windows directory."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+FILES = {
+    'explorer.exe': 'windows',
+    **dict.fromkeys(('shell32.dll', 'browseui.dll', 'shdocvw.dll', 'shlwapi.dll',
+                     'comctl32.dll', 'uxtheme.dll', 'shellstyle.dll', 'explorer.exe.manifest'), 'system32'),
+    **dict.fromkeys(('tahoma.ttf', 'tahomabd.ttf', 'msgothic.ttc'), 'fonts'),
+    'luna.msstyles': 'themes/Luna', 'luna.theme': 'themes',
+}
+
+def run(*args):
+    subprocess.run(args, check=True, stdout=subprocess.DEVNULL)
+
+def extract(source, output):
+    source, output = source.resolve(strict=True), output.resolve()
+    if output.exists():
+        raise SystemExit(f'Refusing existing destination: {output}')
+    with tempfile.TemporaryDirectory(prefix='xp-extract-') as temp:
+        root = Path(temp)
+        if source.is_file():
+            media = root / 'media'
+            run('7z', 'x', '-y', f'-o{media}', str(source))
+        else:
+            media = source
+        paths = sorted(p for p in media.rglob('*') if p.is_file())
+        output.mkdir(parents=True)
+        manifest = []
+        for name, group in FILES.items():
+            compressed = name[:-1] + '_'
+            matches = [p for p in paths if p.name.lower() in (name, compressed)]
+            # System32 controls v5 must not accidentally be replaced with SxS v6.
+            matches.sort(key=lambda p: (any(s.lower() in ('winsxs', 'asms') for s in p.parts), len(p.parts)))
+            if not matches:
+                continue
+            original = matches[0]
+            target = output / group / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if original.name.lower() == compressed:
+                stage = root / 'expanded'
+                if stage.exists():
+                    shutil.rmtree(stage)
+                stage.mkdir()
+                run('cabextract', '-q', '-d', str(stage), str(original))
+                expanded = list(stage.iterdir())
+                if len(expanded) != 1:
+                    raise RuntimeError(f'Expected one expanded file: {original}')
+                shutil.copyfile(expanded[0], target)
+            else:
+                shutil.copyfile(original, target)
+            manifest.append({'name': str(target.relative_to(output)),
+                             'source': str(original.relative_to(media)),
+                             'sha256': hashlib.sha256(target.read_bytes()).hexdigest()})
+        # Keep SxS material separate, including its assembly identity manifest.
+        for p in paths:
+            if p.name.lower() not in ('comctl32.dll', 'controls.man'):
+                continue
+            if not any(s.lower() in ('asms', 'winsxs') for s in p.parts):
+                continue
+            dest = output / 'sxs' / str(p.relative_to(media)).lower()
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(p, dest)
+            manifest.append({'name': str(dest.relative_to(output)), 'source': str(p.relative_to(media)),
+                             'sha256': hashlib.sha256(dest.read_bytes()).hexdigest()})
+        if not (output / 'windows/explorer.exe').exists():
+            raise SystemExit('No x86 XP explorer.exe found; destination is incomplete')
+        # Read PE header architecture; no disassembly.
+        pe = (output / 'windows/explorer.exe').read_bytes()
+        offset = int.from_bytes(pe[60:64], 'little')
+        if pe[offset:offset+6] != b'PE\0\0\x4c\x01':
+            raise SystemExit('Only x86 XP media is supported')
+        (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+        print(f'Extracted {len(manifest)} files to {output}')
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('source', type=Path)
+    parser.add_argument('output', type=Path)
+    args = parser.parse_args()
+    extract(args.source, args.output)

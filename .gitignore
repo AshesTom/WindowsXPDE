@@ -1,0 +1,7 @@
+/localres/
+/.local/
+/build/
+/runtime/
+/vendor/
+__pycache__/
+*.pyc
