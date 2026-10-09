@@ -1,0 +1,181 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] user32, uxtheme: show and track the caption's help button in the external shell
+
+Purpose: give XP dialogs such as Run their "?" caption button.
+Windows gives a DS_CONTEXTHELP dialog WS_EX_CONTEXTHELP, which shows a help
+button left of the close button when there are no minimize or maximize
+boxes; Wine set neither the style nor drew, tracked or handled the button.
+For the opted-in external shell, add the extended style, draw Luna's help
+button in the maximize button's place (its pixels equal the reference XP
+machine's, apart from the rounding of its alpha corners shared with the
+close button), report HTHELP, hot-track and press it, and on release enter
+the context help mode of SC_CONTEXTHELP: a help cursor until the next click,
+which sends WM_HELP to the control under it, or Escape. Showing the help
+text is left to the application's WinHelp call.
+
+diff --git a/dlls/user32/defwnd.c b/dlls/user32/defwnd.c
+index 840a734..d39edc9 100644
+--- a/dlls/user32/defwnd.c
++++ b/dlls/user32/defwnd.c
+@@ -112,7 +112,7 @@ static void external_shell_nonclient_mouse( HWND hwnd, UINT msg )
+     {
+         GetCursorPos(&point);
+         hit = SendMessageW(hwnd, WM_NCHITTEST, 0, MAKELPARAM(point.x, point.y));
+-        if (hit != HTCLOSE && hit != HTMINBUTTON && hit != HTMAXBUTTON) hit = 0;
++        if (hit != HTCLOSE && hit != HTMINBUTTON && hit != HTMAXBUTTON && hit != HTHELP) hit = 0;
+         NtUserTrackMouseEvent(&track);
+     }
+     if (hit != previous)
+@@ -123,6 +123,84 @@ static void external_shell_nonclient_mouse( HWND hwnd, UINT msg )
+     }
+ }
+ 
++/* The caption's help button: track the press like the other caption buttons,
++ * then enter XP's context help mode, where the next click on a control sends
++ * it WM_HELP. Wine's default window procedure has neither. */
++static void external_shell_track_help( HWND hwnd )
++{
++    BOOL pressed = TRUE, previous;
++    MSG msg = {0};
++
++    if (!GetEnvironmentVariableW( L"WIN4WINE_EXTERNAL_SHELL", NULL, 0 )) return;
++    NtUserSetCapture( hwnd );
++    external_shell_draw_nonclient( hwnd, NULL );
++    for (;;)
++    {
++        if (!GetMessageW( &msg, 0, WM_MOUSEFIRST, WM_MOUSELAST )) break;
++        if (NtUserCallMsgFilter( &msg, MSGF_MAX )) continue;
++        if (msg.message == WM_LBUTTONUP) break;
++        if (msg.message != WM_MOUSEMOVE) continue;
++        previous = pressed;
++        pressed = SendMessageW( hwnd, WM_NCHITTEST, 0, MAKELPARAM( msg.pt.x, msg.pt.y ) ) == HTHELP;
++        if (pressed != previous) external_shell_draw_nonclient( hwnd, NULL );
++    }
++    ReleaseCapture();
++    external_shell_draw_nonclient( hwnd, NULL );
++    if (pressed) SendMessageW( hwnd, WM_SYSCOMMAND, SC_CONTEXTHELP, MAKELPARAM( msg.pt.x, msg.pt.y ) );
++}
++
++static void external_shell_context_help( HWND hwnd )
++{
++    HCURSOR cursor = LoadCursorW( 0, (LPCWSTR)IDC_HELP );
++    MSG msg;
++
++    if (!GetEnvironmentVariableW( L"WIN4WINE_EXTERNAL_SHELL", NULL, 0 )) return;
++    NtUserSetCapture( hwnd );
++    NtUserSetCursor( cursor );
++    while (GetCapture() == hwnd)
++    {
++        if (!GetMessageW( &msg, 0, 0, 0 ))
++        {
++            PostQuitMessage( msg.wParam );
++            break;
++        }
++        if (msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN)
++        {
++            if (msg.wParam == VK_ESCAPE) break;
++            continue;
++        }
++        if (msg.message == WM_LBUTTONDOWN || msg.message == WM_NCLBUTTONDOWN)
++        {
++            HWND child = hwnd, next;
++            POINT point = msg.pt;
++            HELPINFO info = {sizeof(info)};
++
++            ReleaseCapture();
++            if (WindowFromPoint( msg.pt ) != hwnd && !IsChild( hwnd, WindowFromPoint( msg.pt ) )) return;
++            for (;;)
++            {
++                POINT client = point;
++                ScreenToClient( child, &client );
++                next = ChildWindowFromPointEx( child, client, CWP_SKIPINVISIBLE );
++                if (!next || next == child) break;
++                child = next;
++            }
++            info.iContextType = HELPINFO_WINDOW;
++            info.iCtrlId = GetDlgCtrlID( child );
++            info.hItemHandle = child;
++            info.dwContextId = GetWindowContextHelpId( child );
++            info.MousePos = point;
++            SendMessageW( child, WM_HELP, 0, (LPARAM)&info );
++            return;
++        }
++        if (msg.message >= WM_MOUSEFIRST && msg.message <= WM_MOUSELAST) { NtUserSetCursor( cursor ); continue; }
++        if (msg.message >= WM_NCMOUSEMOVE && msg.message <= WM_NCMBUTTONDBLCLK) { NtUserSetCursor( cursor ); continue; }
++        TranslateMessage( &msg );
++        DispatchMessageW( &msg );
++    }
++    if (GetCapture() == hwnd) ReleaseCapture();
++}
++
+ /* XP captures the Start panel through WM_PRINT before its show animation.
+  * The win32u default only prints the parent; include visible descendants in
+  * the caller's DC for the explicitly selected external shell. */
+@@ -278,6 +356,8 @@ LRESULT WINAPI DefWindowProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
+         external_shell_draw_nonclient( hwnd, (HDC)wParam );
+ 
+     if (msg == WM_NCHITTEST) result = external_shell_nonclient_hit( hwnd, lParam, result );
++    if (msg == WM_NCLBUTTONDOWN && wParam == HTHELP) external_shell_track_help( hwnd );
++    if (msg == WM_SYSCOMMAND && (wParam & 0xfff0) == SC_CONTEXTHELP) external_shell_context_help( hwnd );
+     if (msg == WM_NCMOUSEMOVE || msg == WM_NCMOUSELEAVE) external_shell_nonclient_mouse(hwnd, msg);
+ 
+     SPY_ExitMessage( SPY_RESULT_DEFWND, hwnd, msg, result, wParam, lParam );
+@@ -358,6 +438,8 @@ LRESULT WINAPI DefWindowProcW(
+         external_shell_draw_nonclient( hwnd, (HDC)wParam );
+ 
+     if (msg == WM_NCHITTEST) result = external_shell_nonclient_hit( hwnd, lParam, result );
++    if (msg == WM_NCLBUTTONDOWN && wParam == HTHELP) external_shell_track_help( hwnd );
++    if (msg == WM_SYSCOMMAND && (wParam & 0xfff0) == SC_CONTEXTHELP) external_shell_context_help( hwnd );
+     if (msg == WM_NCMOUSEMOVE || msg == WM_NCMOUSELEAVE) external_shell_nonclient_mouse(hwnd, msg);
+ 
+     SPY_ExitMessage( SPY_RESULT_DEFWND, hwnd, msg, result, wParam, lParam );
+diff --git a/dlls/user32/dialog.c b/dlls/user32/dialog.c
+index a23ef26..cfe8aa1 100644
+--- a/dlls/user32/dialog.c
++++ b/dlls/user32/dialog.c
+@@ -524,6 +524,10 @@ static HWND DIALOG_CreateIndirect( HINSTANCE hInst, LPCVOID dlgTemplate,
+         template.exStyle |= WS_EX_DLGMODALFRAME;
+     if ((template.style & DS_CONTROL) || !(template.style & WS_CHILD))
+         template.exStyle |= WS_EX_CONTROLPARENT;
++    /* Windows gives a DS_CONTEXTHELP dialog the extended style that shows the
++     * caption's help button; the opted-in external shell draws that button. */
++    if ((template.style & DS_CONTEXTHELP) && GetEnvironmentVariableW( L"WIN4WINE_EXTERNAL_SHELL", NULL, 0 ))
++        template.exStyle |= WS_EX_CONTEXTHELP;
+     AdjustWindowRectEx( &rect, template.style, (hMenu != 0), template.exStyle );
+     pos.x = rect.left;
+     pos.y = rect.top;
+diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
+index e20e9d6..0f24bac 100644
+--- a/dlls/uxtheme/window.c
++++ b/dlls/uxtheme/window.c
+@@ -334,10 +334,13 @@ LRESULT WINAPI Win4WineNcHitTest(HWND hwnd, LPARAM coordinates, LRESULT original
+     buttons[2].left -= margin;
+     buttons[0].top = buttons[1].top = buttons[2].top = border_y;
+     buttons[0].bottom = buttons[1].bottom = buttons[2].bottom = caption.bottom;
+-    left = style & (WS_MINIMIZEBOX | WS_MAXIMIZEBOX) ? buttons[2].left : buttons[0].left;
++    left = style & (WS_MINIMIZEBOX | WS_MAXIMIZEBOX) ? buttons[2].left
++        : exstyle & WS_EX_CONTEXTHELP ? buttons[1].left : buttons[0].left;
+     if (point.x < left || point.x >= window.right - window.left - border_x
+         || point.y < border_y || point.y >= border_y + GetSystemMetrics(SM_CYCAPTION)) return original;
+     if (PtInRect(&buttons[0], point)) return HTCLOSE;
++    if (!(style & (WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) && (exstyle & WS_EX_CONTEXTHELP))
++        return PtInRect(&buttons[1], point) ? HTHELP : HTCAPTION;
+     if (style & (WS_MINIMIZEBOX | WS_MAXIMIZEBOX))
+     {
+         if ((style & WS_MAXIMIZEBOX) && PtInRect(&buttons[1], point)) return HTMAXBUTTON;
+@@ -483,6 +486,15 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
+             DrawThemeBackground(theme, dc, WP_MINBUTTON, button_state, &part, NULL);
+             text.right = part.left - 2;
+         }
++        else if (exstyle & WS_EX_CONTEXTHELP)
++        {
++            /* XP puts the help button in the maximize button's place. */
++            part = buttons[1];
++            button_state = hit == HTHELP ? (GetKeyState(VK_LBUTTON) < 0 ? HBS_PUSHED : HBS_HOT) : HBS_NORMAL;
++            button_state = caption_button_state(hwnd, theme, WP_HELPBUTTON, button_state);
++            DrawThemeBackground(theme, dc, WP_HELPBUTTON, button_state, &part, NULL);
++            text.right = part.left - 2;
++        }
+     }
+     if (SUCCEEDED(GetThemeSysFont(theme, TMT_CAPTIONFONT, &lf))) font = CreateFontIndirectW(&lf);
+     if (font) SelectObject(dc, font);
