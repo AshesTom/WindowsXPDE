@@ -11,7 +11,7 @@
 | M2 | 新規 prefix で実測 | マイドキュメントから H: の Linux ホームを表示し、サブフォルダへ移動。追加修正でメニュー・ツールバー・アドレス欄を表示。新規 prefix の `.local/display-clean-folder.png`、VM の `.local/vm-test/display-fixed-folder.png` |
 | M3 | 実 XP と Linux xterm で実測 | Start メニューから起動、Alt+Tab、タスクバー右クリックの最小化・閉じる、左クリック最小化・復元を確認。ログ `.local/final-m3-native-operations.log` / `final-m3-alt-tab.log`、左クリックは `.local/vm-test/task-leftclick-test.log` |
 | M4 | 独立 Debian 13 VM で実測 | kernel 6.12.107、Xorg、LightDM の xp-shell セッションでログイン。強制終了 2 回から再起動、3 回目で独立 builtin prefix + xterm へ復旧。画像 `.local/vm-test/login.png` / `recovery.png` |
-| M5 | Luna の主要部を実測、残件あり | ローカル msstyles の Start ボタン・タスクバー・通常 Start・ウィンドウ枠を描画。96/144/192 DPI のキャプションボタン寸法・クリック領域を検証。時計背景など細部は未完成 |
+| M5 | Luna の主要部を実測、残件あり | ローカル msstyles の Start ボタン・タスクバー・通常 Start・ウィンドウ枠を描画。96/144/192 DPI のキャプションボタン寸法・クリック領域を検証。時計・ReBar・無効矢印を追加修正。端の区切りなど細部は残る |
 
 ## 自動試験
 
@@ -30,8 +30,8 @@
 
 ## 既知の制限
 
-- 通常 XP Start の黒い領域は解消。新規ユーザーの左側の利用履歴は空で、固定項目・履歴の蓄積は未検証。既定メニューは引き続き classic、`--menu xp` で通常形式を選択できる。
-- Luna の時計背景・一部の区切りやスクロールバーには classic の表示が残る。完全一致とはしない。
+- 通常 XP Start の黒い領域は解消。新規ユーザーの左側の利用履歴は空。利用者による固定・起動・再起動後の保持・解除は確認済みで、利用頻度による自動一覧の蓄積は未検証。既定メニューは引き続き classic、`--menu xp` で通常形式を選択できる。
+- Luna の時計・ReBar のグリップ・スクロールバー矢印を追加修正。Start 脇と通知領域脇の細い区切りには classic の表示が残る。完全一致とはしない。
 - 外部プロセスのシステムメニュー shim は標準メニューのコピー。アプリ独自の項目や無効化は反映しない。
 - Linux ウィンドウには Wine が描く本物の非クライアント枠を付ける。単一 X11 screen のみ検証。
 - 実 SOFTWARE/SYSTEM ハイブの変換、Ubuntu 24.04、Wayland/Xwayland は未検証。
@@ -157,3 +157,39 @@ Microsoft バイナリを変更・解析・配布する修正はない。
   `.local/frame-withdraw-ack-interaction.log` と VM の `luna-start-repeat-final.log` で
   実 Start の反復開閉を確認（VM は5往復）。フォルダの起動・Alpha への移動・Alt+Left も成功。
   native 枠の試験にも property 削除の検査を追加した。
+
+## 実 XP との比較が必要な表示差（利用者指摘）
+
+2026-10-09 の追加指摘。以下は最終的な調整対象で、テーマ API と一致したことだけでは
+実 XP の表示一致としない。利用者はローカル ISO から別の XP 検証 VM を作り比較することを許可した。
+ネットワークなし・ホストの表示環境を変更しない条件と、Microsoft 資源を Git に含めない方針を維持する。
+
+- 閉じる等のキャプションボタンが大きく見える。実 XP の外寸・余白と比較する。
+- タイトルバーの書体、およびウィンドウ内・タスクバーの文字サイズ。
+- Start ラベルの斜体。
+- ウィンドウ左上・右上の白い部分。
+- 非アクティブ時にキャプションボタンが濃いまま残る。
+- 左上のアイコンがないウィンドウの見せ方。Linux アプリのアイコン取得・適切な既定値も検討する。
+
+これらの実 XP 比較と修正は未完了。
+
+## 時計・グリップ・アイコンの追加検証
+
+- registry profile version 4 で My Computer のアイコンと公開 Pin handler を登録。
+  既存 profile の移行・再 stage の no-op、および固定・起動・再起動後の保持・解除を確認。
+- 0019 は元の時計の WM_PAINT による時刻整形・更新を保ち、実テーマ背景と白文字を補描する。
+  Wine 上の native XP Explorer で 12:37 → 12:39 の自然更新を確認。
+  `.local/clock-real-paint-before.log` / `clock-real-paint-after.log`。
+- 0020 はスクロールバーの独立した無効矢印をテーマに反映する。20種類の実表示比較が一致。
+- 0021 は native ReBar の9px header のグリップをテーマで描く。元の入力処理・戻り値を維持。
+  print DC・描画中の破棄・別プロセスからの SetWindowTheme も確認。
+- 最終21パッチの source 整合性と patch-state の6試験が成功。
+  `.local/luna-details-patch-state-tests.log`。
+- 独立 Debian VM は registry version 4 / Luna / 96 DPI / 通常 XP Start で attempt 1 起動。
+  WM_PRINT・theme font・caption bounds・taskbar background・clock・scrollbar・ReBar の公開 API 試験は
+  `.local/vm-test/luna-details-public-tests.log` で全成功。実 Start 5往復も成功
+  (`luna-details-start-repeat.log`)。枠操作と入力なしの xterm 復帰は
+  `luna-details-frame-redraw.log` で成功。
+
+ここでの native XP Explorer の確認は Wine 上の試験であり、実 XP OS との比較ではない。
+利用者指摘の6点と、タスクバー両端の細い classic 区切りは引き続き残件。

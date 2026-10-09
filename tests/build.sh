@@ -12,7 +12,7 @@ done
 "${MINGW_CC:-i686-w64-mingw32-gcc}" -std=c11 -Wall -Wextra -Werror -O2 -s \
     "$root/tests/display.c" -o "$root/.local/bridge/display-test.exe" -luxtheme -lgdi32
 
-for name in start-button theme-font theme-metrics taskbar-background; do
+for name in start-button theme-font theme-metrics taskbar-background clock-theme scrollbar-theme rebar-theme; do
     "${MINGW_CC:-i686-w64-mingw32-gcc}" -std=c11 -Wall -Wextra -Werror -O2 -municode \
         "$root/tests/$name.c" -o "$root/.local/bridge/$name-test.exe" -luxtheme -lgdi32
 done

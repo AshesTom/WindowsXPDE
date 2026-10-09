@@ -16,3 +16,6 @@
 0016-uxtheme-external-shell-taskbar-background.patch
 0017-user32-external-shell-control-clipping.patch
 0018-uxtheme-applied-system-font-size.patch
+0019-uxtheme-external-shell-clock.patch
+0020-uxtheme-disabled-scrollbar-arrows.patch
+0021-uxtheme-external-shell-rebar-grippers.patch

@@ -1,5 +1,5 @@
 """Minimal native shell COM registrations absent from Wine's generated prefix."""
-VERSION = 3
+VERSION = 4
 
 # Public class identifiers, cross-checked against the browseui assembly manifest:
 # https://lists.reactos.org/hyperkitty/list/ros-diffs%40reactos.org/thread/ENB6UBPTHQSRZOG7GFIV2V4BJLWBTKYT/
@@ -24,6 +24,14 @@ BROWSEUI_CLASSES = (
 
 
 def install(run):
+    # Native My Computer defaults to explorer.exe's first icon. Our XP Explorer
+    # has a separate name so Wine's explorer.exe can remain the desktop manager.
+    run('reg', 'add', r'HKCR\CLSID\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\DefaultIcon',
+        '/ve', '/t', 'REG_SZ', '/d', r'C:\xp\xp-explorer.exe,0', '/f')
+    # Publicly documented Pin to Start Menu handler; users choose their own pins.
+    for file_type in ('exefile', 'lnkfile'):
+        run('reg', 'add', 'HKCR\\' + file_type + '\\shellex\\ContextMenuHandlers\\StartMenuPin',
+            '/ve', '/t', 'REG_SZ', '/d', '{A2A9545D-A0C2-42B4-9708-A0B2BADD77C8}', '/f')
     # This alias contains only our source-built Wine controls, never XP code.
     run('reg', 'add', r'HKCU\Software\Wine\DllOverrides', '/v', 'win4wine-controls',
         '/d', 'builtin', '/f')

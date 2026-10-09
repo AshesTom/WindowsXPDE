@@ -1,0 +1,169 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] uxtheme: render external taskbar native ReBar grippers
+
+Native XP taskbar ReBar closes its initial generic theme on SetWindowTheme
+but paints a classic gripper afterward. Keep its native window procedure,
+input, band layout and dragging. Only under external-shell opt-in and the
+Taskbar app theme, overlay hidden-title band headers with the actual themed
+parent background and Taskbar::Rebar gripper at public RB_GETRECT and
+RB_GETBANDINFOW geometry. Use the real theme part size, preserve print DC
+state and clipping, and safely handle destruction during native paint.
+No Microsoft code or resource data is embedded.
+
+The public rebar-theme regression compares the output against direct active
+theme rendering, checks translated print DCs, native input and paint results,
+disabling the override, and destruction from the original paint procedure.
+
+diff --git a/dlls/uxtheme/Makefile.in b/dlls/uxtheme/Makefile.in
+--- a/dlls/uxtheme/Makefile.in
++++ b/dlls/uxtheme/Makefile.in
+@@ -13,6 +13,7 @@
+ 	metric.c \
+ 	msstyles.c \
+ 	property.c \
++	rebar.c \
+ 	scrollbar.c \
+ 	stylemap.c \
+ 	system.c \
+diff --git a/dlls/uxtheme/uxthemedll.h b/dlls/uxtheme/uxthemedll.h
+--- a/dlls/uxtheme/uxthemedll.h
++++ b/dlls/uxtheme/uxthemedll.h
+@@ -26,6 +26,7 @@
+ #include <uxtheme.h>
+ #include <msstyles.h>
+ 
++void UXTHEME_InstallExternalRebar(HWND hwnd, const WCHAR *app, const WCHAR *classes);
+ void UXTHEME_InstallExternalClock(HWND hwnd, const WCHAR *app, const WCHAR *classes);
+ 
+ typedef HANDLE HTHEMEFILE;
+diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
+--- a/dlls/uxtheme/system.c
++++ b/dlls/uxtheme/system.c
+@@ -723,6 +723,7 @@
+     if(SUCCEEDED(hr))
+         hr = UXTHEME_SetWindowProperty(hwnd, atSubIdList, pszSubIdList);
+     if (SUCCEEDED(hr)) UXTHEME_InstallExternalClock(hwnd, pszSubAppName, pszSubIdList);
++    if (SUCCEEDED(hr)) UXTHEME_InstallExternalRebar(hwnd, pszSubAppName, pszSubIdList);
+     if(SUCCEEDED(hr))
+         SendMessageW(hwnd, WM_THEMECHANGED, 0, 0);
+     return hr;
+diff --git a/dlls/uxtheme/rebar.c b/dlls/uxtheme/rebar.c
+new file mode 100644
+--- /dev/null
++++ b/dlls/uxtheme/rebar.c
+@@ -0,0 +1,115 @@
++/*
++ * Native external taskbar ReBar theming using its public band geometry.
++ *
++ * Copyright 2026 Win4Wine contributors
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#include <stdarg.h>
++#include "windef.h"
++#include "winbase.h"
++#include "wingdi.h"
++#include "winuser.h"
++#include "commctrl.h"
++#include "uxthemedll.h"
++#include "vssym32.h"
++
++static const WCHAR rebar_property[] = L"Win4WineThemedRebar";
++struct external_rebar { WNDPROC original; BOOL enabled; };
++
++static void rebar_paint(HWND hwnd, HDC dc)
++{
++    HTHEME theme;
++    RECT band, header, grip, client;
++    REBARBANDINFOW info;
++    SIZE size;
++    int i, count, saved, part;
++    BOOL vertical = GetWindowLongW(hwnd, GWL_STYLE) & CCS_VERT;
++
++    if (!IsThemeActive()) return;
++    theme = OpenThemeDataForDpi(NULL, L"Taskbar::Rebar", GetDpiForWindow(hwnd));
++    if (!theme) return;
++    part = vertical ? RP_GRIPPERVERT : RP_GRIPPER;
++    if (FAILED(GetThemePartSize(theme, dc, part, 0, NULL, TS_TRUE, &size)))
++    { CloseThemeData(theme); return; }
++    saved = SaveDC(dc);
++    if (!saved) { CloseThemeData(theme); return; }
++    GetClientRect(hwnd, &client);
++    IntersectClipRect(dc, client.left, client.top, client.right, client.bottom);
++    count = SendMessageW(hwnd, RB_GETBANDCOUNT, 0, 0);
++    for (i = 0; i < count; ++i)
++    {
++        memset(&info, 0, sizeof(info));
++        info.cbSize = REBARBANDINFOW_V6_SIZE;
++        info.fMask = RBBIM_STYLE | RBBIM_HEADERSIZE;
++        if (!SendMessageW(hwnd, RB_GETBANDINFOW, i, (LPARAM)&info) ||
++            (info.fStyle & (RBBS_HIDDEN | RBBS_NOGRIPPER | RBBS_FIXEDSIZE)) ||
++            !(info.fStyle & RBBS_HIDETITLE) ||
++            (!(info.fStyle & RBBS_GRIPPERALWAYS) && count < 2) || !info.cxHeader ||
++            !SendMessageW(hwnd, RB_GETRECT, i, (LPARAM)&band)) continue;
++        header = band;
++        if (vertical) header.bottom = min(header.bottom, header.top + info.cxHeader);
++        else header.right = min(header.right, header.left + info.cxHeader);
++        /* Erase only the native gripper header; child/title/chevron rendering
++         * and all native hit regions and dragging remain unchanged. */
++        DrawThemeParentBackground(hwnd, dc, &header);
++        grip.left = header.left + (header.right - header.left - size.cx) / 2;
++        grip.top = header.top + (header.bottom - header.top - size.cy) / 2;
++        grip.right = grip.left + size.cx;
++        grip.bottom = grip.top + size.cy;
++        DrawThemeBackground(theme, dc, part, 0, &grip, &header);
++    }
++    RestoreDC(dc, saved);
++    CloseThemeData(theme);
++}
++
++static LRESULT CALLBACK external_rebar_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
++{
++    struct external_rebar *rebar = (void *)GetPropW(hwnd, rebar_property);
++    WNDPROC original = rebar->original;
++    LRESULT result;
++    if (msg == WM_NCDESTROY)
++    {
++        SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)original);
++        RemovePropW(hwnd, rebar_property);
++        HeapFree(GetProcessHeap(), 0, rebar);
++        return CallWindowProcW(original, hwnd, msg, wp, lp);
++    }
++    result = CallWindowProcW(original, hwnd, msg, wp, lp);
++    if (GetPropW(hwnd, rebar_property) == (HANDLE)rebar && rebar->enabled &&
++        (msg == WM_PAINT || msg == WM_PRINTCLIENT))
++    {
++        HDC dc = msg == WM_PAINT ? GetDC(hwnd) : (HDC)wp;
++        if (dc) rebar_paint(hwnd, dc);
++        if (msg == WM_PAINT && dc) ReleaseDC(hwnd, dc);
++    }
++    return result;
++}
++
++void UXTHEME_InstallExternalRebar(HWND hwnd, const WCHAR *app, const WCHAR *classes)
++{
++    struct external_rebar *rebar;
++    WCHAR name[64];
++    DWORD process;
++    BOOL enabled = app && !lstrcmpiW(app, L"Taskbar") && !classes;
++    GetWindowThreadProcessId(hwnd, &process);
++    if (process != GetCurrentProcessId()) return;
++    if ((rebar = (void *)GetPropW(hwnd, rebar_property)))
++    { rebar->enabled = enabled; return; }
++    if (!enabled || !GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL", NULL, 0) ||
++        !GetClassNameW(hwnd, name, ARRAY_SIZE(name)) || lstrcmpiW(name, L"ReBarWindow32") ||
++        !GetClassNameW(GetParent(hwnd), name, ARRAY_SIZE(name)) || lstrcmpiW(name, L"Shell_TrayWnd")) return;
++    rebar = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*rebar));
++    if (!rebar) return;
++    rebar->enabled = TRUE;
++    rebar->original = (WNDPROC)GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
++    if (!SetPropW(hwnd, rebar_property, (HANDLE)rebar))
++    { HeapFree(GetProcessHeap(), 0, rebar); return; }
++    SetLastError(0);
++    if (!SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)external_rebar_proc) && GetLastError())
++    { RemovePropW(hwnd, rebar_property); HeapFree(GetProcessHeap(), 0, rebar); }
++}

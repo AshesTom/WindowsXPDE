@@ -1,0 +1,36 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] uxtheme: honor independent disabled scrollbar arrows
+
+EnableScrollBar can disable either arrow without disabling its window.
+Apply these flags after selecting normal/hot/pressed theme states, so a
+noninteractive arrow is always drawn disabled. Preserve window-wide disabled
+handling and the existing classic fallback. Public API pixel comparisons
+cover both non-client bars, each individual flag, both flags, and a disabled
+window against the user's unmodified local theme. No MS binaries change.
+
+diff --git a/dlls/uxtheme/scrollbar.c b/dlls/uxtheme/scrollbar.c
+index d5735c5..e752b55 100644
+--- a/dlls/uxtheme/scrollbar.c
++++ b/dlls/uxtheme/scrollbar.c
+@@ -136,6 +136,10 @@ void WINAPI UXTHEME_ScrollBarDraw(HWND hwnd, HDC dc, INT bar, enum SCROLL_HITTES
+                 }
+             }
+ 
++            /* Each arrow can be disabled independently of its window. */
++            if (enable_flags & ESB_DISABLE_UP) uparrowstate = ABS_UPDISABLED;
++            if (enable_flags & ESB_DISABLE_DOWN) downarrowstate = ABS_DOWNDISABLED;
++
+             partrect = *rect;
+             partrect.bottom = partrect.top + arrowsize;
+             DrawThemeBackground(theme, dc, SBP_ARROWBTN, uparrowstate, &partrect, NULL);
+@@ -208,6 +212,10 @@ void WINAPI UXTHEME_ScrollBarDraw(HWND hwnd, HDC dc, INT bar, enum SCROLL_HITTES
+                 }
+             }
+ 
++            /* Each arrow can be disabled independently of its window. */
++            if (enable_flags & ESB_DISABLE_LEFT) leftarrowstate = ABS_LEFTDISABLED;
++            if (enable_flags & ESB_DISABLE_RIGHT) rightarrowstate = ABS_RIGHTDISABLED;
++
+             partrect = *rect;
+             partrect.right = partrect.left + arrowsize;
+             DrawThemeBackground(theme, dc, SBP_ARROWBTN, leftarrowstate, &partrect, NULL);

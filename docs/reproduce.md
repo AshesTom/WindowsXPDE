@@ -143,8 +143,8 @@ cp .local/assets-luna/fonts/* "$WINEPREFIX/drive_c/windows/Fonts/"
 ```
 
 stage は資源 DLL と自作 Wine controls の別名モジュールを atomic 配置し、
-registry profile version の変更を Wine 更新と別に検出する。version 3 は All Programs の
-最小 COM 登録も復元する。既に version 3 かつ Wine が同じなら registry 更新を繰り返さない。
+registry profile version の変更を Wine 更新と別に検出する。version 4 は All Programs の
+最小 COM 登録、My Computer の XP Explorer アイコン参照、利用者が pin するための shortcut handler を復元する。既に version 4 かつ Wine が同じなら registry 更新を繰り返さない。
 新規 prefix は `create.py` が資源不足を開始前に拒否する。全体の override は builtin、
 XP explorer の AppDefaults だけ native。復旧 prefix には導入しない。
 

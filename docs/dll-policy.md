@@ -298,3 +298,63 @@ reverse --check すると失敗する。これはパッチ未適用の証拠に�
 未適用、11本適用、18本適用、17→18本の更新、hunk 外の独自変更を持つソースで、
 不足分の適用・再実行時の no-op・独自変更の維持を確認した。
 `.local/luna-patch-series-check.log` / `patch-state-unit-tests.log`。
+
+## 22. My Computer のアイコン参照と registry profile version 4
+
+新規 prefix の My Computer CLSID には `DefaultIcon` がなく、Wine builtin は
+自分の既定アイコンを補う。native XP の公開 `IExtractIconW::GetIconLocation` は
+`explorer.exe,0` を返したが、`Extract` は S_FALSE、大小アイコンとも NULL だった。
+XP Explorer は Wine の desktop manager を残すため `C:\xp\xp-explorer.exe` に配置している。
+同じ公開 API が返した index 0 をこの実ファイルへ明示すると、大小とも S_OK で取得できた。
+
+**判断: version 4 は My Computer の `DefaultIcon` だけを
+`C:\xp\xp-explorer.exe,0` に登録する。** Wine 生成の `InprocServer32` は変更しない。
+これは Microsoft 公開の [namespace root icon 登録](https://learn.microsoft.com/en-us/windows/win32/shell/nse-implement)
+に従う設定変更で、利用者の Explorer を変更・再配布しない。コード解析はしていない。
+公開 API の比較ログは `.local/namespace-icon-test.log` と
+`.local/namespace-icon-registered-test.log` に保存した。
+
+version 4 は Microsoft 公開の [Pin to Start Menu handler CLSID](https://learn.microsoft.com/en-us/windows/win32/shell/reg-shell-exts)
+を `exefile` と `lnkfile` の `shellex\ContextMenuHandlers\StartMenuPin` にも関連付ける。
+factory だけの登録では All Programs の shortcut menu に Pin が出なかった。
+利用者の操作で Windows Notepad を pin すると左列に実際のアイコンと名前が描かれ、
+そこから起動できた。専用 session 再起動後の pin 保持と、Unpin 後の削除も確認した。
+既定 pin や MRU を捏造する処理は追加しない。画面は
+`.local/start-fidelity-icons-open.png`、`.local/start-fidelity-pinned.png`、
+`.local/start-fidelity-pin-persisted.png`、`.local/start-fidelity-pin-removed.png`。
+version 3 から4への移行で icon/handler 登録が復元され、2回目の staging は registry の
+hash と mtime を変えなかった。My Computer factory も元の Wine 登録を保持した。
+
+## 調査 23: テーマ付きスクロールバーの片側無効化
+
+Wine 自身の `uxtheme/scrollbar.c` はウィンドウ全体の無効化だけを描画に反映し、
+公開 `EnableScrollBar` の片側無効化 flags を無視していた。
+自作 `tests/scrollbar-theme.c` は上下・左右の実際の非クライアント矢印を取得し、
+同じローカルテーマの公開 `DrawThemeBackground` の結果と比較する。
+修正前は無効な上・左矢印が各217 pixels異なり、有効な下・右は一致した。
+**判断: Wine のテーマ描画で各矢印の disable flags を反映する（0020）。**
+修正後は有効・片側無効2種類・両側無効・ウィンドウ全体無効の20比較すべて一致した。
+`.local/scrollbar-theme-after-test.log`。テーマ画像や Microsoft コードは変更していない。
+
+## 調査 24: native 時計の Luna 描画と時刻更新
+
+公開 API trace では native TrayClockWClass が通常の Clock theme を開いた後、
+TrayNotify app theme を設定して初期 handle を閉じ、以後テーマを開き直さなかった。
+親 TrayNotifyWnd の WM_PRINTCLIENT は正しい Luna 背景を返すが、時計自身が白背景と黒文字を重ねる。
+**判断: 外部シェル opt-in の当該時計だけ、Wine 側でテーマ描画を補う（0019）。**
+元の WM_PAINT は時刻の整形・更新も行うため、先に元の処理を呼び、その WM_GETTEXT を使う。
+WM_TIMER・クリック・tooltip・時刻形式は元の処理を維持する。
+親の実背景と TrayNotify::Clock の実フォント・文字色を公開テーマ API で描く。
+classic / テーマ無効時は元の処理に戻し、独自 theme handle と subclass は破棄時に回収する。
+自作 clock-theme 試験は native 相当の WM_PAINT による時刻更新、translated print、
+DC 状態・clip、timer / click の委譲、theme 切替を確認する。
+
+## 調査 25: native タスクバー ReBar のグリップ
+
+RB_GETBANDINFOW / RB_GETRECT で取得した9pxの header が classic 表示と一致した。
+native ReBar は Taskbar app theme 設定時に初期 theme を閉じ、テーマ part を描かない。
+公開 OpenThemeData の Taskbar::Rebar は正しいグリップを返す。
+**判断: 外部シェルのタスクバー直下 ReBar の非表示 title header だけを補描する（0021）。**
+元のバンド配置・入力・drag 処理を維持し、親のテーマ背景と実 part 寸法を使う。
+translated DC・native paint/input 戻り値・無効化・描画中の破棄を自作 rebar-theme 試験で確認。
+Start と通知領域の脇にある ReBar 外の細い区切りは残件で、全境界の一致とはしない。
