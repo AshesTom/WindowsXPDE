@@ -1,0 +1,23 @@
+From: win4wine maintainers
+Subject: [PATCH] win32u: use measured advances for external monochrome text
+
+Public DrawText/GetTextExtent and explicit ExtTextOut advances on XP
+show matching layout. Embedded mono glyph advances can differ from
+outline metrics in Wine; reuse the existing delta generation path for
+opted-in mono text. Keep explicit/PDY/AA/ordinary Wine behavior.
+
+--- a/dlls/win32u/font.c
++++ b/dlls/win32u/font.c
+@@ -5992,7 +5992,11 @@
+     if (char_extra && lpDx && NtGdiGetDeviceCaps( hdc, TECHNOLOGY ) == DT_RASPRINTER)
+         char_extra = 0; /* Printer drivers don't add char_extra if lpDx is supplied */
+ 
+-    if(char_extra || dc->breakExtra || breakRem || lpDx || lf.lfEscapement != 0)
++    /* Embedded monochrome bitmaps may have different advances from the
++     * outline metrics used for layout. Keep external-shell text placement
++     * consistent with GetTextExtent, while preserving explicit distances. */
++    if(char_extra || dc->breakExtra || breakRem || lpDx || lf.lfEscapement != 0 ||
++       (dc->aa_flags == GGO_BITMAP && getenv("WIN4WINE_EXTERNAL_SHELL")))
+     {
+         UINT i;
+         POINT total = {0, 0}, desired[2];

@@ -325,3 +325,40 @@ locked/unlocked、横/縦、chevron/child-edge/hidden除外、translated/clipped
 `.local/rebar-tail-test.log`、`rebar-tail-regression.log`、
 VM内 `/work/.local/rebar-tail-29.log`。実 shell の境界3行も実 XP と一致した
 （`.local/shell-layout-tail-fixed.txt`）。Start脇の親隙間と外枠は引き続き調整対象。
+
+
+## 日本語 caption の文字幅・縦位置・影と Start 理想寸法（0030–0033）
+
+- 実 XP の SPI font smoothing は TRUE だった。FALSE を初期値にする案は採用しない。
+  新規専用 prefix の未設定時だけ Wine の `AntialiasFakeBoldOrItalic=N` を設定し、
+  フォント自身の小サイズ GASP 方針を使う。既存 prefix の移行では変更しない。
+  明示切替は `display.py --font-rendering xp|wine`。省略時と独自値の保持を検証した。
+- 0030 は外部 shell の monochrome 描画で、outline metrics と異なる bitmap の
+  embedded advance をそのまま使わず、既存の明示 advance 計算経路を使う。
+  DIB/screen、明示 dx、PDY、character extra の回帰は成功。
+- 0031 は外部 shell の単一行 DT_VCENTER を、残った高さを一度だけ半分にする計算へ修正。
+  0032 は公開テーマの single shadow を描き、caption も DrawThemeText を使用する。
+  active/inactive、translated clip、DC/RECT/viewport 保持と CALCRECT/MODIFYSTRING 除外を検証。
+  通常 Wine の opt-out 出力は独立環境で従来と同一だった。
+- 独立 Debian VM の再起動後、実ウィンドウ caption の自作比較文字
+  `Agjp WIN4WINE title` は実 XP と同じ27,12..154,24・764画素になった。
+  左アイコン6,8..22,24・256画素と HTSYSMENU 4,4..23,29 も同時に一致。
+  `shell-layout --verify-xp96-caption` の独立した96 DPI実測 fixture で成功。
+  `.local/vm-test/caption-layout32.log`。全画面・全字体の完全一致を意味しない。
+- 0033 は独立 Start alias の理想寸法をテーマ文字・opaque image list・余白から算出する。
+  生背景画像99×33を下限にする処理を除き、日本語 Start の公開 BCM_GETIDEALSIZE は
+  実 XP と同じ112×26になった。入力幅4通り、明示 Courier -40、画像余白/上下配置、
+  Classic 往復と通常 Button の明示字体保持が成功。
+  `.local/vm-test/font-start-33-public.log`。通常 Start の実クリック5往復も成功
+  (`.local/vm-test/start-repeat33.log`)。
+- 33までの独立 VM で Linux 枠の移動・resize・最大化・最小化・close、単一タスク、
+  taskbar の固有アイコン更新、入力なし xterm 再描画の回帰も成功。
+  `.local/vm-test/native-frames33.log`、`xterm-redraw33.log`。
+  実フォルダのdouble-click→Alt+Left、タスク左クリックの最小化→復元も成功
+  (`.local/vm-test/folder-operations33.log`)。
+
+残件: 実 Start HWND は112×26で、親の30px高さの下4pxが空いている。
+実 XP の実 HWND は112×30だった。公開 API の理想寸法とは分けて配置経路を調査する。
+Luna を実行中に Classic 経由で再適用すると native tray の Classic 枠が残るため、
+描画確認は専用 session 再起動後に行う。再起動後は余分な左右下枠と Start脇の親灰色隙間はない。
+実 XP の高 DPI 比較は引き続き未測定。

@@ -27,3 +27,7 @@
 0027-uxtheme-xp-caption-button-margins.patch
 0028-uxtheme-xp-caption-icon-input.patch
 0029-uxtheme-external-taskbar-rebar-tail.patch
+0030-win32u-external-mono-text-advance.patch
+0031-user32-external-text-vcenter.patch
+0032-uxtheme-external-caption-shadow.patch
+0033-comctl32-external-start-ideal-size.patch

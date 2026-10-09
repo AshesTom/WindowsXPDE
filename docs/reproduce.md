@@ -27,8 +27,9 @@ export WINEPREFIX=/work/.local/prefix-clean
 新規 prefix は自作 `theme-settings.exe` で Wine の保存済み classic metrics も復元する。
 旧手順の `ThemeActive=0` だけでは Luna の caption height が残り、クラシックのボタンが縦長になる。
 既存 prefix は `WINEPREFIX=... WINE=... python3 prefix/display.py --theme classic --dpi 96` で復元し、専用 session を再起動する。
-96 DPI の新規 prefix では公開 SPI が caption width/height とも18、caption font は -11 Tahoma を返した。
-これは Wine の classic 既定値の確認であり、実機 XP の寸法を検証したものではない。
+初期実装では96 DPI の新規 prefix の caption font は -11 Tahoma だった。
+現在の日本語 XP profile（version 5）では新規 prefix の Classic 字体を MS UI Gothic -12 にする。
+既存 prefix の独自字体は移行時に上書きしない。Luna の字体は公開 API 実測に基づく別 profile を使用する。
 
 XP の実行ファイルは内容を変えず `C:\xp\xp-explorer.exe` に配置する。Wine 自身の `explorer.exe` と AppDefaults を分けるため。native DLL の override はそのファイル名に限定する。起動時には新しい desktop manager に外部 shell フラグを渡す必要があるため、単体試験の前にその専用 prefix の wineserver を終了する。
 
@@ -163,6 +164,21 @@ WINE="$WINE" WINEPREFIX="$WINEPREFIX" ./prefix/display.py --theme luna --dpi 96 
 色・font・非クライアント寸法をまとめて反映する。単に ThemeActive の registry 値を変更する手順ではない。
 helper の ordinal とシグネチャは Wine 自身の公開ソースに合わせ、native uxtheme は使用しない。
 DPI 変更の反映には専用 Wine セッションの再起動が必要。
+
+新規 prefix は Wine の `HKCU\Software\Wine\Fonts` に
+`AntialiasFakeBoldOrItalic=N` を未設定時だけ保存する。字体自身の GASP 方針を
+合成 bold/italic にも適用し、XP の小さい日本語 caption の描画へ近づける。
+SPI font smoothing と LOGFONT quality は変更しない。既存 prefix の migration は
+この設定を変更しない。既存 prefix には明示的に以下を実行する。
+
+```sh
+WINE="$WINE" WINEPREFIX="$WINEPREFIX" ./prefix/display.py --theme luna --dpi 96 --font-rendering xp
+# Wine の既定の合成字体 AA 方針へ戻す: --font-rendering wine
+```
+
+`xp` は `N`、`wine` は `Y` を保存する。オプションを省略すると既存値を保持する。
+これは専用 prefix 全体の Wine 設定なので、Explorer 以外の通常アプリにも影響する。
+変更後は専用 Wine セッションを再起動する。
 
 表示 API 試験は同じ専用 prefix、独立 X display で行う。
 

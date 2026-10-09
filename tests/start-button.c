@@ -60,8 +60,20 @@ int wmain(int argc, WCHAR **argv)
         theme = GetWindowTheme(button);
         if (!theme || FAILED(GetThemePartSize(theme, NULL, BP_PUSHBUTTON, PBS_NORMAL,
                                               NULL, TS_TRUE, &image))) return 5;
-        if (!SendMessageW(button, BCM_GETIDEALSIZE, 0, (LPARAM)&ideal)
-            || ideal.cx < image.cx || ideal.cy < image.cy) return 6;
+        {
+            HDC dc = GetDC(button);
+            RECT text, content = {0}, background;
+            if (FAILED(GetThemeTextExtent(theme, dc, BP_PUSHBUTTON, PBS_NORMAL, L"Start", -1,
+                                          DT_SINGLELINE, NULL, &text))) return 6;
+            content.right = text.right - text.left + 2 + (native_images ? 20 : 0);
+            content.bottom = max(text.bottom - text.top + 2, native_images ? 16 : 0);
+            if (FAILED(GetThemeBackgroundExtent(theme, dc, BP_PUSHBUTTON, PBS_NORMAL,
+                                                &content, &background))) return 6;
+            ReleaseDC(button, dc);
+            if (!SendMessageW(button, BCM_GETIDEALSIZE, 0, (LPARAM)&ideal)
+                || ideal.cx != background.right - background.left
+                || ideal.cy != background.bottom - background.top) return 6;
+        }
         printf("ideal=%ld,%ld image=%ld,%ld\n", ideal.cx, ideal.cy, image.cx, image.cy);
     }
     if (enabled)

@@ -502,3 +502,25 @@ Wine だけ元の灰色背景が残ることを実画面の数値で確認した
 Taskbar直下でHIDETITLEのMSTaskSwWClass childだけを扱い、hidden/chevron/child-edgeは除外。
 childの画素・header・バンド配置・native入力・lock設定は維持する。
 背景は0016の公開 DrawThemeParentBackground経路を使い、色・幅・Microsoft資源は埋め込まない。
+
+
+## 32. 公開 GDI 測定による caption と Start の寸法修正
+
+実 XP の自作ウィンドウと公開 DrawText/DrawThemeText/GetThemeTextExtent を比較した。
+SPI smoothing=TRUEのまま、Wine の小サイズ synthetic bold/italic 方針を専用 prefix の明示設定で選ぶ。
+Microsoft のフォント・テーマの内容は変更しない。新規 prefix の未設定時に限り初期化し、
+既存設定は `display.py --font-rendering` の明示指定時だけ変更する。
+
+**判断: Wine の外部 shell opt-in に monochrome advance と垂直中央揃えの修正を追加（0030/0031）。**
+公開 metrics と実 glyph の位置が異なったため、bitmap advance の代わりに既存 metrics 計算経路を使う。
+通常 Wine、明示 dx/PDY、antialias 経路を維持する。
+**判断: 0032 は公開 single shadow の属性を DrawThemeText に反映し、caption から利用する。**
+active の offset/color/type を問い合わせ、inactive の影がない状態も尊重する。
+文字と影の幾何は自作 public API fixture と実 XP で比較し、実画面の764画素も一致した。
+DrawThemeText の TEXTCOLOR 取得失敗時の一般的 fallback 色は今回の対象に含めず、
+caption は公開 system caption text color を指定する。
+
+**判断: 0033 は Start alias のテーマ文字と標準余白・画像寸法から理想寸法を計算する。**
+伸縮背景画像の元寸法を最小 window 寸法として扱わない。既存の画像 alignment/margin 処理は保持。
+実 XP の公開理想寸法112×26に一致するが、実 window 高さ30pxへの配置は別の残件。
+調査は公開 control message と Wine の自作ソースだけで行い、Microsoft 内部コードは解析しない。

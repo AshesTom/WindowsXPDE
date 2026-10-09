@@ -14,7 +14,7 @@
 #include <fcntl.h>
 
 static FILE *out;
-static BOOL verify_icon;
+static BOOL verify_icon, verify_caption;
 static int failed;
 static void rect(const char *label, const RECT *r)
 {
@@ -119,6 +119,13 @@ static void caption(void)
         {fprintf(out,"FAIL: independent measured XP96 caption icon/input fixture\n");failed=1;}
         else {failed=0;fprintf(out,"PASS: measured XP96 caption icon pixels and system-menu input\n");}
     }
+    if(verify_caption)
+    {
+        RECT expected_text={27,12,154,24};
+        if(ntext!=764 || !EqualRect(&text,&expected_text))
+        {fprintf(out,"FAIL: measured Japanese XP96 Luna caption text/continuous shadow fixture\n");failed=1;}
+        else fprintf(out,"PASS: measured Japanese XP96 Luna caption text pixels and shadow\n");
+    }
     DestroyWindow(hwnd);DestroyIcon(icon);
 done:
     if(color)DeleteObject(color);
@@ -127,7 +134,13 @@ done:
 int wmain(int argc,wchar_t **argv)
 {
     HWND tray;
-    if(argc>2){if(argc!=3||lstrcmpW(argv[2],L"--verify-xp96-icon"))return 2;verify_icon=TRUE;failed=1;}
+    if(argc>2)
+    {
+        if(argc!=3)return 2;
+        if(!lstrcmpW(argv[2],L"--verify-xp96-caption"))verify_caption=TRUE;
+        else if(lstrcmpW(argv[2],L"--verify-xp96-icon"))return 2;
+        verify_icon=TRUE;failed=1;
+    }
     if(argc>1 && !lstrcmpiW(argv[1],L"COM1"))
     {
         HANDLE port=CreateFileW(L"\\\\.\\COM1",GENERIC_WRITE,0,NULL,OPEN_EXISTING,0,NULL);

@@ -88,6 +88,10 @@ def create(assets, dest, home, wine):
     reg(r'HKCU\Software\Wine\DllOverrides', 'win4wine-controls', 'builtin')
     registry.install(run, exists)
     registry.install_classic_fonts(run, exists)
+    # Let the font's GASP policy apply to synthetic bold/italic too. This is a
+    # prefix-wide Wine setting; preserve any existing explicit preference.
+    if not exists(r'HKCU\Software\Wine\Fonts', 'AntialiasFakeBoldOrItalic'):
+        reg(r'HKCU\Software\Wine\Fonts', 'AntialiasFakeBoldOrItalic', 'N')
     reg(r'HKCU\Software\Wine\X11 Driver', 'Managed', 'Y')
     reg(r'HKCU\Software\Wine\X11 Driver', 'Decorated', 'N')
     for suffix in ('Shell Folders', 'User Shell Folders'):
