@@ -501,3 +501,20 @@ Lunaへ復元・cold restart後もStart実112×30/ideal112×26と開閉5往復�
 Classicのmin/max描画枠は実XPも接している。500px幅の視覚範囲はmin444..460、
 max460..476、close478..494で、既存Wine規則と一致するためgapを追加しない。
 `.local/xp-reference/classic-buttons.png` / `serial.log`（公開probe）。
+
+
+### Start右のgripper（0038）
+
+実XPの公開probeは、30px高のband header内でRP_GRIPPERを原点から6×30に描くと
+実画面300画素すべて一致した。従来のWine helperはTS_TRUEの6×16を中央配置していた。
+0038はheader原点と全長を使い、太さ・間隔・繰り返しはlocal themeに任せる。
+固定の点数や画像寸法を埋め込まない。横/縦、locked/fixed/headerless、clipped/translated DC、
+sentinel、native paint/input維持のVM試験が成功し、実画面の点々も改善。
+`.local/vm-test/gripper38.log` / `desktop38.png`。
+別sourceで全38patchの適用・全build/installも成功。`.local/wine-verified38-build.log`。
+
+タスクバー上端の二重に見える帯は、unlock時の4px resize帯と30px clientに対応する。
+実XPとWineのStart直後の背景34行はRGBが一致した。`.local/taskbar-top-comparison.txt`。
+この局所比較は画面幅が異なるため全配置の一致を保証しないが、帯を削除する根拠にはしない。
+実XP publicgripper結果は`.local/xp-reference/serial.log`のGRIP6、補助記録は
+`.local/taskbar-gripper-findings.md`。Microsoftコード・資源は未変更。

@@ -1,0 +1,26 @@
+From: Win4Wine contributors
+Subject: [PATCH] uxtheme: anchor external taskbar grippers to their public header
+
+Actual Japanese XP public rendering matches the theme-defined cross-axis
+thickness at the band header origin with its full long axis. Let the local
+theme margins and tiling supply the repeated grip pixels. Preserve native
+band hit/drag geometry and opt-in boundaries. No Microsoft resources or code.
+
+--- a/dlls/uxtheme/rebar.c
++++ b/dlls/uxtheme/rebar.c
+@@ -94,10 +94,11 @@
+         /* Erase only the native gripper header; child/title/chevron rendering
+          * and all native hit regions and dragging remain unchanged. */
+         DrawThemeParentBackground(hwnd, dc, &header);
+-        grip.left = header.left + (header.right - header.left - size.cx) / 2;
+-        grip.top = header.top + (header.bottom - header.top - size.cy) / 2;
+-        grip.right = grip.left + size.cx;
+-        grip.bottom = grip.top + size.cy;
++        /* Native bands anchor the gripper at the header origin. The theme
++         * supplies its cross-axis thickness, spacing and long-axis tiling. */
++        grip = header;
++        if (vertical) grip.bottom = grip.top + size.cy;
++        else grip.right = grip.left + size.cx;
+         DrawThemeBackground(theme, dc, part, 0, &grip, &header);
+     }
+ done:

@@ -45,7 +45,9 @@ int wmain(void)
     oa=SelectObject(actual,a);oe=SelectObject(expected,e);
     SetViewportOrgEx(actual,5,3,NULL);SetViewportOrgEx(expected,5,3,NULL);
     FillRect(expected,&all,GetSysColorBrush(COLOR_BTNFACE));DrawThemeParentBackground(rebar,expected,&header);
-    grip.left=(9-size.cx)/2;grip.top=(30-size.cy)/2;grip.right=grip.left+size.cx;grip.bottom=grip.top+size.cy;
+    /* Actual XP public band measurement: anchored at header origin, with
+     * theme margins/tiling spanning the complete long axis. */
+    grip.left=0;grip.top=0;grip.right=size.cx;grip.bottom=30;
     DrawThemeBackground(theme,expected,RP_GRIPPER,0,&grip,&header);
     if(SendMessageW(rebar,WM_PRINTCLIENT,(WPARAM)actual,PRF_CLIENT)!=17)failed=1;
     for(y=0;y<30;++y)for(x=0;x<200;++x)if(GetPixel(actual,x,y)!=GetPixel(expected,x,y))failed=1;
