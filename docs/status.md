@@ -443,3 +443,22 @@ VMの配置同期後、Start物理クリック5往復、xterm入力なし再描�
 最大化/復元・最小化・close・taskbar icon更新も成功。
 `.local/vm-test/layout35-operations.log`。v6への既存prefix移行後の8字体profile試験も成功。
 `.local/vm-test/font-profile35.log`。
+
+
+### 部分再描画時のタイトルバー背景（0036）
+
+実XPの公開テーマ描画12条件では、clip/viewportを変えても背景画素は変化しない。
+WineはHALFTONE拡大の比率をclip後の矩形で計算し直し、補間用の隣接source画素も
+切り落としていた。0036は外部shell限定で元のstretch座標と補間位相を保持し、
+StretchBlt/StretchDIBits双方の必要なsource範囲を残す。整数演算は64bitを使う。
+
+独立環境で自作画素1408条件（8形式、拡大/縮小/等倍、反転、上下DIB、複合clip、viewport）
+が成功。実画面のWM_PAINT部分更新8条件も変色0となり、Luna公開12条件も差0。
+元の全面描画hashは維持。opt-outの既存1024条件とテーマ12条件は旧runtimeと同じhash。
+`.local/halftone-final-intmin-safe.log`、`.local/gradient-final-intmin-safe.txt`、
+`.local/gradient-onscreen-fixed.txt`、`.local/halftone-final-comparison.log`。
+
+別source/build/installでも全36patchの適用・全build/installが成功。
+`.local/wine-verified36-build.log`。Debian VMへのatomic反映後も公開12条件すべて差0、自作GDI1408条件すべて成功。
+`.local/vm-test/gradient36.log`。最終64bit版のopt-out比較も全1408条件同一。
+`.local/halftone-intmin-baseline-optout.log` / `halftone-intmin-fixed-optout.log`。
