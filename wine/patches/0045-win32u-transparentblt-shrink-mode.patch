@@ -1,0 +1,43 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] win32u: shrink TransparentBlt sources by whole pixels
+
+Purpose: keep colour-keyed theme images intact when they are drawn smaller
+than their source. TransparentBlt changed the source DC's stretch mode, but
+StretchBlt uses the destination's. The new work DC still had BLACKONWHITE,
+so dropped rows and columns were ANDed into the copy. The Luna Start image
+is 99x33 and is drawn 30 pixels high; its middle rows became colours that
+exist in neither row (for example 439543 & 3f9640 = 039440). XP keeps whole
+source rows there (13, 15 and 17 for this size). Select COLORONCOLOR in the
+work DC. tests/transparent-shrink.c uses self-authored pixels and checks
+every output pixel comes from the source or the untouched destination.
+No Microsoft binary is changed.
+
+diff --git a/dlls/win32u/bitblt.c b/dlls/win32u/bitblt.c
+index 758099d..813f411 100644
+--- a/dlls/win32u/bitblt.c
++++ b/dlls/win32u/bitblt.c
+@@ -860,7 +860,7 @@ BOOL WINAPI NtGdiTransparentBlt( HDC hdcDest, int xDest, int yDest, int widthDes
+     COLORREF oldForeground;
+     int oldStretchMode;
+     DIBSECTION dib;
+-    DC *dc_src;
++    DC *dc_src, *dc_work;
+ 
+     if(widthDest < 0 || heightDest < 0 || widthSrc < 0 || heightSrc < 0) {
+         TRACE("Cannot mirror\n");
+@@ -894,6 +894,15 @@ BOOL WINAPI NtGdiTransparentBlt( HDC hdcDest, int xDest, int yDest, int widthDes
+     }
+     else bmpWork = NtGdiCreateCompatibleBitmap( hdcDest, widthDest, heightDest );
+     oldWork = NtGdiSelectBitmap(hdcWork, bmpWork);
++    /* StretchBlt uses the destination DC's mode. A new DC starts with
++     * BLACKONWHITE, which ANDs the removed rows and columns of a shrunk image
++     * into colours that are neither the key nor the image. Sample whole
++     * source pixels, as Windows does for a colour-keyed stretch. */
++    if ((dc_work = get_dc_ptr( hdcWork )))
++    {
++        dc_work->attr->stretch_blt_mode = COLORONCOLOR;
++        release_dc_ptr( dc_work );
++    }
+     if (!NtGdiStretchBlt( hdcWork, 0, 0, widthDest, heightDest, hdcSrc, xSrc, ySrc,
+                           widthSrc, heightSrc, SRCCOPY, 0 ))
+     {

@@ -40,3 +40,6 @@
 0040-uxtheme-external-task-font-profile.patch
 0041-winex11-external-owner-maximize.patch
 0042-winex11-external-popup-no-redraw.patch
+0043-uxtheme-empty-window-theme.patch
+0044-comctl32-external-start-corners.patch
+0045-win32u-transparentblt-shrink-mode.patch

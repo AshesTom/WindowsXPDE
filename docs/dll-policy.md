@@ -561,3 +561,22 @@ Wine自身のtraceと公開API fixtureで確認し、所有threadが計算した
 取得できない条件は既存fallbackを使い、通常表示・layered・opt-outを維持する。
 Startが安定した後の画像は修正前と同じで、描画方式を直接X描画へ置き換えない。
 観測は公開API・画面・Wine自身の実装のみで、Microsoft内部実装を解析しない。
+
+## 35. Start パネル下部の文字色と Start 画像の縮小
+
+**判断: 0043は SetWindowTheme の空文字列を受け付ける。**
+XP explorer はログオフ用 toolbar に `SetWindowTheme(hwnd, L"", L"")` を使い、
+custom draw で白い文字色を与える。Wine は空文字列の atom 作成に失敗して呼び出し全体を
+失敗させ、WM_THEMECHANGED も送らなかった。native toolbar はテーマ付きのまま黒字で描いた。
+どのテーマ class にも一致しない名前を保存し、その window の OpenThemeData だけを失敗させる。
+文書化された Win32 の挙動の修正で、opt-in に限定しない。
+
+**判断: 0044は外部 shell の Win4WineStartButton に限り WM_CTLCOLORBTN の再塗りを省く。**
+後の Windows の試験に基づく Wine の再塗りが、XP タスクバーの BTNFACE を Start 画像の
+透過した丸角に出していた。通常の Button は変更しない。
+
+**判断: 0045は TransparentBlt の作業 DC に COLORONCOLOR を設定する。**
+Wine は元画像側の DC の伸縮 mode を変えていたが、StretchBlt は転送先の mode を使う。
+新規 DC の BLACKONWHITE で縮小時に複数行が AND 合成され、Start 画像の中段に存在しない色が出た。
+実XPは同じ寸法で元画像の13/15/17行目をそのまま使う。自作画素の公開API試験で確認する。
+観測は公開API・画面・Wine自身の実装のみで、Microsoft内部実装やテーマ資源は解析・出力しない。
