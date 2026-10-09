@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""Set classic/Luna and DPI in a dedicated prefix; restart the session afterwards."""
+import argparse
+import os
+from pathlib import Path
+import subprocess
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--theme', choices=('classic', 'luna'), default='classic')
+parser.add_argument('--dpi', type=int, choices=(96, 144, 192), default=96)
+args = parser.parse_args()
+prefix = Path(os.environ['WINEPREFIX']).resolve(strict=True)
+if not (prefix / 'xp-shell.json').is_file():
+    raise SystemExit('Not a dedicated XP prefix')
+if args.theme == 'luna' and not (prefix / 'drive_c/windows/Resources/Themes/Luna/luna.msstyles').is_file():
+    raise SystemExit('Luna must be extracted from your local XP media first')
+wine = os.environ.get('WINE', 'wine')
+env = dict(os.environ, WINEDLLOVERRIDES='explorer,shell32,shdocvw,browseui,shlwapi,uxtheme=b;mscoree,mshtml=')
+def reg(key, name, value, kind='REG_SZ'):
+    subprocess.run([wine, 'reg', 'add', key, '/v', name, '/t', kind, '/d', str(value), '/f'], env=env, check=True)
+base = r'HKCU\Software\Microsoft\Windows\CurrentVersion\ThemeManager'
+reg(base, 'ThemeActive', '1' if args.theme == 'luna' else '0')
+if args.theme == 'luna':
+    reg(base, 'DllName', r'C:\windows\Resources\Themes\Luna\luna.msstyles')
+    reg(base, 'ColorName', 'NormalColor')
+    reg(base, 'SizeName', 'NormalSize')
+reg(r'HKCU\Control Panel\Desktop', 'LogPixels', args.dpi, 'REG_DWORD')
+print('Display settings saved. Restart the dedicated Wine session to apply.')

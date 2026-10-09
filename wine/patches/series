@@ -2,3 +2,7 @@
 0002-user32-shell-hook-subscriptions.patch
 0003-explorer-external-shell.patch
 0004-winebuild-binutils244-delay-imports.patch
+0005-services-xp-scm-readiness.patch
+0006-setupapi-no-dock-station.patch
+0007-kernelbase-xp-shell-module-alias.patch
+0008-user32-classic-button-ideal-size.patch

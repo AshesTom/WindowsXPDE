@@ -19,7 +19,7 @@ static LRESULT CALLBACK subscriber(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 int wmain(void)
 {
     WNDCLASSW cls = {0};
-    HWND hwnd;
+    HWND hwnd, parent;
     MSG msg;
     ULONGLONG until = GetTickCount64() + 20000;
     cls.lpfnWndProc = subscriber;
@@ -27,7 +27,8 @@ int wmain(void)
     cls.lpszClassName = L"Win4WineTestSubscriber";
     if (!RegisterClassW(&cls)) return 1;
     shell_message = RegisterWindowMessageW(L"SHELLHOOK");
-    hwnd = CreateWindowW(cls.lpszClassName, L"hook subscriber", 0, 0, 0, 1, 1, NULL, NULL, cls.hInstance, NULL);
+    parent = CreateWindowW(cls.lpszClassName, L"hook parent", 0, 0, 0, 1, 1, NULL, NULL, cls.hInstance, NULL);
+    hwnd = CreateWindowW(cls.lpszClassName, L"hook subscriber", WS_CHILD, 0, 0, 1, 1, parent, NULL, cls.hInstance, NULL);
     if (!RegisterShellHookWindow(hwnd)) return 2;
     puts("subscribed");
     fflush(stdout);
@@ -41,6 +42,6 @@ int wmain(void)
         MsgWaitForMultipleObjects(0, NULL, FALSE, 100, QS_ALLINPUT);
     }
     if (!DeregisterShellHookWindow(hwnd)) return 3;
-    DestroyWindow(hwnd);
+    DestroyWindow(parent);
     return 0;
 }

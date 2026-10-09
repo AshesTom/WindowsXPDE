@@ -11,7 +11,7 @@ import tempfile
 FILES = {
     'explorer.exe': 'windows',
     **dict.fromkeys(('shell32.dll', 'browseui.dll', 'shdocvw.dll', 'shlwapi.dll',
-                     'comctl32.dll', 'uxtheme.dll', 'shellstyle.dll', 'explorer.exe.manifest'), 'system32'),
+                     'comctl32.dll', 'linkinfo.dll', 'uxtheme.dll', 'shellstyle.dll', 'explorer.exe.manifest'), 'system32'),
     **dict.fromkeys(('tahoma.ttf', 'tahomabd.ttf', 'msgothic.ttc'), 'fonts'),
     'luna.msstyles': 'themes/Luna', 'luna.theme': 'themes',
     'blue_ss.dll': 'themes/Luna/Shell/NormalColor',

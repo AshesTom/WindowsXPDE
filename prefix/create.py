@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
+import registry
 
 
 def create(assets, dest, home, wine):
@@ -44,27 +45,37 @@ def create(assets, dest, home, wine):
         if attrs.get('processorArchitecture') != 'x86' or attrs.get('name') != 'Microsoft.Windows.Common-Controls':
             continue
         version = attrs['version']
+        if version == '6.0.0.0':
+            continue  # Prefer the SP3 assembly; avoid an exact-version legacy match.
         if any(ch not in '0123456789.' for ch in version):
             raise SystemExit('Invalid SxS version')
         name = f'x86_microsoft.windows.common-controls_6595b64144ccf1df_{version}_none_deadbeef'
         assembly = dest / 'drive_c/windows/winsxs' / name
         assembly.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(dll, assembly / 'comctl32.dll')
+        # Native XP toolbars depend on private messages absent from builtin controls.
+        if version == '6.0.2600.5512':
+            shutil.copyfile(dll, xp / 'comctl32.dll')
         shutil.copyfile(manifest, assembly.parent / 'manifests' / (name + '.manifest'))
     (dest / 'dosdevices/h:').symlink_to(home)
     # Preserve Wine's generated namespace registrations. Add only explicit XP settings.
     def reg(key, name, value, kind='REG_SZ'):
         run('reg', 'add', key, '/v', name, '/t', kind, '/d', value, '/f')
     reg(r'HKCU\Software\Wine', 'Version', 'winxp')
-    for dll in ('shell32', 'shdocvw', 'browseui', 'shlwapi'):
+    for dll in ('mscoree', 'mshtml'):
+        reg(r'HKCU\Software\Wine\DllOverrides', dll, '')
+    for dll in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'comctl32', 'linkinfo'):
+        reg(r'HKCU\Software\Wine\DllOverrides', dll, 'builtin')
         reg(r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides', dll, 'native')
         shutil.copyfile(native / (dll + '.dll'), system / (dll + '.dll'))
+    registry.install(run)
     reg(r'HKCU\Software\Wine\X11 Driver', 'Managed', 'Y')
     reg(r'HKCU\Software\Wine\X11 Driver', 'Decorated', 'N')
     for suffix in ('Shell Folders', 'User Shell Folders'):
         reg('HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\' + suffix,
             'Personal', 'H:\\')
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\ThemeManager', 'ThemeActive', '0')
+    reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoSimpleStartMenu', '1', 'REG_DWORD')
     reg(r'HKCU\Control Panel\Desktop', 'LogPixels', '96', 'REG_DWORD')
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced', 'WebView', '0', 'REG_DWORD')
     (dest / 'xp-shell.json').write_text(json.dumps({'assets': str(assets), 'home': str(home),

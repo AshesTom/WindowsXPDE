@@ -62,13 +62,23 @@ try:
             wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [target.id], 'restore/focus')
             assert target.get_attributes().map_state == X.IsViewable
         else:
-            wait(lambda: d.pending_events() > 0, 'close protocol event')
-            found = False
-            while d.pending_events():
-                event = d.next_event()
-                if event.type == X.ClientMessage and event.client_type == atom('WM_PROTOCOLS'):
-                    found = event.data[1][0] == atom('WM_DELETE_WINDOW')
-            assert found, 'WM_DELETE_WINDOW not delivered'
+            def received_close():
+                found = False
+                while d.pending_events():
+                    event = d.next_event()
+                    if event.type == X.ClientMessage and event.client_type == atom('WM_PROTOCOLS'):
+                        found |= event.data[1][0] == atom('WM_DELETE_WINDOW')
+                return found
+            wait(received_close, 'WM_DELETE_WINDOW delivered')
+    second.destroy()
+    windows.remove(second)
+    d.flush()
+    wait(lambda: f'{second.id:x}\t' not in (ipc / 'windows.tsv').read_text(), 'second removed')
+    (ipc / 'single.tmp').write_text(f'minimize {first.id:x}\n')
+    (ipc / 'single.tmp').replace(ipc / 'single.cmd')
+    wait(lambda: prop(first, 'WM_STATE')[:1] == [3], 'single window stays minimized')
+    time.sleep(.3)
+    assert first.get_attributes().map_state != X.IsViewable
     print('PASS: workarea, native snapshot, Alt+Tab, minimize, restore, activation, close')
 finally:
     for w in windows:

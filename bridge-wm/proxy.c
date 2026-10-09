@@ -11,7 +11,7 @@
 #include <string.h>
 
 #define MAX_CLIENTS 2048
-struct client { unsigned long xid; HWND hwnd; int seen; };
+struct client { unsigned long xid; HWND hwnd; int seen; int hidden; };
 static struct client clients[MAX_CLIENTS];
 static HWND previous[MAX_CLIENTS];
 static unsigned previous_count;
@@ -26,6 +26,7 @@ static unsigned sequence;
 static void command(const char *op, unsigned long xid)
 {
     WCHAR temp[MAX_PATH + 64], target[MAX_PATH + 64];
+    fprintf(stderr, "bridge command: %s %lx\n", op, xid);
     char data[80];
     DWORD written;
     HANDLE file;
@@ -56,9 +57,7 @@ static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if ((wp & 0xfff0) == SC_RESTORE || (wp & 0xfff0) == SC_MAXIMIZE)
             { command("activate", xid); return 0; }
         }
-        if (msg == WM_ACTIVATE && LOWORD(wp) != WA_INACTIVE) command("activate", xid);
-        if (msg == WM_SIZE && wp == SIZE_MINIMIZED) command("minimize", xid);
-        if (msg == WM_SIZE && wp == SIZE_RESTORED) command("activate", xid);
+        if (msg == WM_ACTIVATE && LOWORD(wp) != WA_INACTIVE && !IsIconic(hwnd)) command("activate", xid);
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
@@ -71,10 +70,18 @@ static BOOL CALLBACK deliver(HWND hwnd, LPARAM parameter)
     return TRUE;
 }
 
+static BOOL CALLBACK deliver_tree(HWND hwnd, LPARAM parameter)
+{
+    deliver(hwnd, parameter);
+    /* XP registers its child task-switcher window, not the taskbar parent. */
+    EnumChildWindows(hwnd, deliver, parameter);
+    return TRUE;
+}
+
 static void notify(UINT event, HWND window)
 {
     struct notification n = { event, (LPARAM)window };
-    EnumWindows(deliver, (LPARAM)&n);
+    EnumWindows(deliver_tree, (LPARAM)&n);
 }
 
 static BOOL CALLBACK collect(HWND hwnd, LPARAM unused)
@@ -152,6 +159,12 @@ static void snapshot(void)
         WCHAR old[1024];
         GetWindowTextW(c->hwnd, old, 1024);
         if (wcscmp(old, title)) { SetWindowTextW(c->hwnd, title); notify(HSHELL_REDRAW, c->hwnd); }
+        if (hidden == c->hidden && !!IsIconic(c->hwnd) != c->hidden)
+        {
+            command(IsIconic(c->hwnd) ? "minimize" : "activate", xid);
+            continue; /* Wait for X11 to acknowledge a direct ShowWindow operation. */
+        }
+        c->hidden = hidden;
         if (hidden && !IsIconic(c->hwnd)) ShowWindow(c->hwnd, SW_SHOWMINNOACTIVE);
         else if (!hidden && IsIconic(c->hwnd)) ShowWindow(c->hwnd, SW_SHOWNOACTIVATE);
         if (active) notify(HSHELL_WINDOWACTIVATED, c->hwnd);

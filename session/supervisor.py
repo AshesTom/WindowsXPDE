@@ -31,7 +31,7 @@ class Session:
         self.ipc = Path(tempfile.mkdtemp(prefix=f'win4wine-{os.getuid()}-', dir=runtime))
         self.env = dict(os.environ, WINEPREFIX=str(self.prefix), WINEARCH='win32',
                         WIN4WINE_EXTERNAL_SHELL='1', WINEDEBUG=config.get('debug', '+timestamp,+seh,+loaddll'),
-                        WINEDLLOVERRIDES='explorer=b;xp-explorer=n;mscoree,mshtml=;comctl32,uxtheme=b')
+                        WINEDLLOVERRIDES='explorer=b;xp-explorer=n;mscoree,mshtml=;uxtheme=b')
         self.processes = []
         self.logs = []
         self.stopping = False
@@ -64,7 +64,8 @@ class Session:
             try:
                 p = w.get_full_property(self.class_atom, X.AnyPropertyType)
                 if p and bytes(p.value).rstrip(b'\0') == b'Shell_TrayWnd' and w.get_attributes().map_state == X.IsViewable:
-                    return True
+                    geometry = w.get_geometry()
+                    return geometry.width >= 200 and geometry.height >= 20
             except error.XError:
                 pass
         return False
@@ -91,7 +92,7 @@ class Session:
         if wm.poll() is not None:
             raise RuntimeError('WM failed; see wm.log')
         # Install only the shell family in this dedicated prefix. Runtime overrides select them.
-        for dll in ('shell32', 'shdocvw', 'browseui', 'shlwapi'):
+        for dll in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'linkinfo'):
             shutil.copyfile(self.prefix / f'drive_c/xp/native/{dll}.dll',
                             self.prefix / f'drive_c/windows/system32/{dll}.dll')
         crashes = deque()

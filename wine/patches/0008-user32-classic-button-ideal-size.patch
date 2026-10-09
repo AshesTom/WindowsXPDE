@@ -1,0 +1,59 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] user32: measure classic pushbuttons for the opt-in XP shell
+
+Purpose: give the classic XP Start button a nonzero preferred size.
+XP behavior: explorer subclasses the unversioned Button class and sends
+BCM_GETIDEALSIZE. Relay logs show Wine's user32 Button returns FALSE,
+leaving the requested SIZE at zero and collapsing the taskbar.
+Provide a minimal text-based size using the selected font and DPI-scaled
+padding, only with WIN4WINE_EXTERNAL_SHELL and for pushbuttons. Native
+v6 image-list rendering and exact Windows sizing are not implemented here.
+The implementation uses public messages and Wine's text drawing API, with
+no Microsoft code or disassembly. This opt-in shim needs broader testing.
+
+diff --git a/dlls/user32/button.c b/dlls/user32/button.c
+index ab67878..8ea5695 100644
+--- a/dlls/user32/button.c
++++ b/dlls/user32/button.c
+@@ -41,6 +41,7 @@
+ 
+ #include "user_private.h"
+ #include "controls.h"
++#include "commctrl.h"
+ #include "wine/debug.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(button);
+@@ -174,6 +175,33 @@ LRESULT ButtonWndProc_common(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
+ 
+     switch (uMsg)
+     {
++    case BCM_GETIDEALSIZE:
++    {
++        SIZE *size = (SIZE *)lParam;
++        WCHAR *text;
++        HFONT old_font, font;
++        HDC dc;
++        RECT bounds = {0};
++        UINT dpi;
++
++        /* XP's classic shell uses this on the unversioned Button class. */
++        if (!GetEnvironmentVariableW( L"WIN4WINE_EXTERNAL_SHELL", NULL, 0 )
++            || !size || (btn_type != BS_PUSHBUTTON && btn_type != BS_DEFPUSHBUTTON))
++            return FALSE;
++        if (!(text = get_button_text( hWnd ))) return FALSE;
++        dc = NtUserGetDC( hWnd );
++        font = get_button_font( hWnd );
++        old_font = font ? SelectObject( dc, font ) : NULL;
++        DrawTextW( dc, text, -1, &bounds, DT_CALCRECT | DT_SINGLELINE );
++        dpi = GetDeviceCaps( dc, LOGPIXELSX );
++        size->cx = bounds.right + MulDiv( 12, dpi, 96 );
++        size->cy = bounds.bottom + MulDiv( 8, dpi, 96 );
++        if (old_font) SelectObject( dc, old_font );
++        NtUserReleaseDC( hWnd, dc );
++        HeapFree( GetProcessHeap(), 0, text );
++        return TRUE;
++    }
++
+     case WM_GETDLGCODE:
+         switch(btn_type)
+         {

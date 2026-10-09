@@ -51,3 +51,56 @@ MS バイナリではなく Wine 自身のソースと PE ヘッダのみを調�
 XP explorer をローカルで `xp-explorer.exe` として配置し、AppDefaults でそのプロセスにだけ native shell family を適用する。
 Wine 自身の explorer/desktop manager は builtin のまま。セッション全体へ native shell32 を指定すると、
 管理プロセスや復旧経路まで XP の DLL に依存するため。元ファイルの内容は変更しない。
+
+## 調査 5: サービス初期化待ちとドッキング API
+
+ソース版で `+relay,+seh` を取得。XP explorer が `Global\ScmCreatedEvent` を
+待つが Wine の services はイベントを作らず、起動が約 60 秒止まる。
+**判断: Wine に shim を足す。** RPC/サービス DB 初期化後にサービス管理プロセスが
+イベントを作成・通知し、終了まで保持する（0005）。
+その先で `CM_Is_Dock_Station_Present` の stub exception を確認。
+**判断: Wine に shim を足す。** Windows ドックを公開しない環境なので FALSE と成功を返す（0006）。
+生ログ: `.local/xp-controls-relay.log`、`.local/wine-dock-build.log`。
+
+## 調査 6: COM 登録の不足
+
+BandSite / ShellBrowser 等の生成が `REGDB_E_CLASSNOTREG` で失敗。
+**判断: native を使い、公開 CLSID の最小登録を生成する。**
+`prefix/registry.py` に公開 manifest のクラスと、起動ログに現れたクラスを登録。
+後者の提供 DLL は利用者の DLL に対する公開 API `DllGetClassObject` で確認した。
+診断用 `prefix/class-probe.c` はクラスファクトリを取得・解放するだけで、コードを解析しない。
+Wine 10.0 の HKCR 読み出しでは HKCU\Software\Classes に追加した登録が見えなかったため、
+専用 prefix 内の HKCR に生成する。任意の実環境ハイブの丸ごと移植はしない。
+生ログ: `.local/class-providers.log`、`.local/xp-menu-classes.log`。
+
+## 調査 7: コントロールと実行ファイル名
+
+builtin comctl32 には XP 内部 toolbar メッセージの不足があり、native shell と組み合わせた試験で例外が出た。
+native v5 では例外が減ったが表示寸法は崩れた。native v6 を SxS manifest で
+Button にも割り当てる試験は native v6 内の access violation で失敗した。
+**暫定判断: native v6 を実行ファイル隣に置き、Button は Wine 標準のままクラシック表示する。**
+SP3 の 6.0.2600.5512 を優先し、正確な SxS Button 選択用の実験 manifest は自動導入しない。
+表の comctl32 の初期選択から変更した。全アプリへの native 指定は行わない。
+
+名前を分離した shell に対する `GetModuleHandleW("EXPLORER.EXE")` の失敗も観測したため、
+外部シェル opt-in かつ当該プロセスにだけ元名を主モジュールに解決するパッチ 0007 を追加。
+これだけでは寸法不良は直らなかった。
+
+追加の relay で Start の `BCM_GETIDEALSIZE` が FALSE を返し SIZE がゼロのままになることを確認。
+**判断: Wine に限定 shim を足す。** 0008 は標準 pushbutton の文字寸法と DPI に応じた余白を返す。
+image-list 描画や Windows と同一の寸法を保証する実装ではない。
+生ログ: `.local/xp-sizing-relay.log`、`.local/xp-button-size.log`。
+
+## 調査 8: ショートカットと子ウィンドウの購読
+
+Classic メニューを `NoSimpleStartMenu=1` で選択し、必要な MenuBand / MenuDeskBar / MenuBandSite
+のクラスファクトリ提供元を公開 API で確認して登録した。
+[ポリシーの公開資料](https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-admx-startmenu) を参照。
+ショートカットの列挙で `LINKINFO.dll.IsValidLinkInfo` の未実装中断が発生。
+**判断: native に差し替える。** ローカル ISO の linkinfo.dll を抽出対象に追加した。
+生ログ `.local/xp-classic-menu.log`、`.local/xp-linkinfo.log`。
+
+XP は子ウィンドウ MSTaskSwWClass で RegisterShellHookWindow する。
+bridge の EnumWindows のみの配信では届かないため、子孫も購読検索の対象にした。
+子ウィンドウ購読に変更した統合試験と、実 XP のメモ帳 / xterm のタスクボタン表示を確認。
+生ログ `.local/bridge-child-integration.log`。
