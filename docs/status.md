@@ -362,3 +362,24 @@ VM内 `/work/.local/rebar-tail-29.log`。実 shell の境界3行も実 XP と一
 Luna を実行中に Classic 経由で再適用すると native tray の Classic 枠が残るため、
 描画確認は専用 session 再起動後に行う。再起動後は余分な左右下枠と Start脇の親灰色隙間はない。
 実 XP の高 DPI 比較は引き続き未測定。
+
+
+### Caption の統合回帰と taskbar 字体の確認
+
+`tests/nonclient-caption.c` は長い日本語・literal `&`・ellipsis、ボタンへの非重複、
+active/inactive、通常400/240pxと実最大化1288pxを検査する。空titleの同条件NC背景に
+公開 DrawThemeText を重ねた期待描画と全画素一致し、translated/clipped WM_PRINT の
+clip外画素とfont/text/bkcolor/bkmode/viewport/clip保持も成功。
+独立環境と Debian VM の `.local/vm-test/nonclient-caption33.log` に記録。
+最大化背景自体のclip時のsampling差はこの文字試験の対象外で、公開背景API単体で別途比較する。
+
+実 XP の task Toolbar/ReBar の公開 WM_GETFONT は MS UI Gothic -13 regular、
+通知 toolbar は -12 regular、Start は -13 boldだった。Wine の別プロセス WM_GETFONT は
+HFONTをmarshalしないためNULLになるが、自作の公開thread hookで同一process内から読むと
+同じ4字体を確認できた（`.local/task-font-sameprocess.log`）。NULLから既定字体を推定しない。
+追加の task font override は採用しない。stock DEFAULT_GUI_FONT はsystem localeに従い、
+英語Wineでは-11、日本語ACP932のWineでは実XP同じ-12になる。本文SPIとは別の設定である。
+
+検証VMの既存prefixにはJapaneseXPClassic初期値keyがなかったため、試験用に明示生成して
+classic-initializeを実行した。再起動後もClassic6字体 MS UI Gothic -12とcaption18×18を確認。
+既存prefixのmigrationが字体を自動変更しない方針は維持している。

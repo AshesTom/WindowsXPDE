@@ -504,7 +504,7 @@ childの画素・header・バンド配置・native入力・lock設定は維持�
 背景は0016の公開 DrawThemeParentBackground経路を使い、色・幅・Microsoft資源は埋め込まない。
 
 
-## 32. 公開 GDI 測定による caption と Start の寸法修正
+## 31. 公開 GDI 測定による caption と Start の寸法修正
 
 実 XP の自作ウィンドウと公開 DrawText/DrawThemeText/GetThemeTextExtent を比較した。
 SPI smoothing=TRUEのまま、Wine の小サイズ synthetic bold/italic 方針を専用 prefix の明示設定で選ぶ。
