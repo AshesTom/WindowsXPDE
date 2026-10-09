@@ -1,1 +1,3 @@
-# Patch filenames in application order. Every patch must explain purpose and XP behavior.
+0001-x11-export-window-identity.patch
+0002-user32-shell-hook-subscriptions.patch
+0003-explorer-external-shell.patch

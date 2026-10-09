@@ -1,0 +1,39 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] winex11: expose Win32 window identities to companion WM
+
+Purpose: let the X11 WM distinguish desktop, tray and proxy windows.
+XP behavior: Progman is below applications and Shell_TrayWnd reserves
+the desktop work area. Titles and process names cannot identify these.
+Derived from Wine source and public class names, without disassembly.
+This opt-in companion protocol uses private _WIN4WINE_* properties.
+
+diff --git a/dlls/winex11.drv/window.c b/dlls/winex11.drv/window.c
+index 32c3800..19dc408 100644
+--- a/dlls/winex11.drv/window.c
++++ b/dlls/winex11.drv/window.c
+@@ -2130,6 +2130,25 @@ static void create_whole_window( struct x11drv_win_data *data )
+ 
+     x11drv_xinput2_enable( data->display, data->whole_window );
+     set_initial_wm_hints( data->display, data->whole_window );
++    /* Expose Win32 identity to the companion WM without depending on titles. */
++    {
++        WCHAR buffer[256];
++        char class_name[256];
++        UNICODE_STRING name = { 0, sizeof(buffer), buffer };
++        unsigned int length, i;
++        unsigned long hwnd = HandleToULong( data->hwnd );
++
++        length = NtUserGetClassName( data->hwnd, FALSE, &name );
++        for (i = 0; i < length && i < sizeof(class_name) - 1; i++)
++            class_name[i] = buffer[i] < 128 ? buffer[i] : '?';
++        class_name[i] = 0;
++        XChangeProperty( data->display, data->whole_window,
++                         XInternAtom( data->display, "_WIN4WINE_CLASS", False ),
++                         XA_STRING, 8, PropModeReplace, (unsigned char *)class_name, i );
++        XChangeProperty( data->display, data->whole_window,
++                         XInternAtom( data->display, "_WIN4WINE_HWND", False ),
++                         XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&hwnd, 1 );
++    }
+     set_wm_hints( data );
+ 
+     XSaveContext( data->display, data->whole_window, winContext, (char *)data->hwnd );

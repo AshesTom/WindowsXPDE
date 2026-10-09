@@ -5,3 +5,16 @@
 /vendor/
 __pycache__/
 *.pyc
+# Microsoft media/assets and generated PE files belong only in ignored local zones.
+*.iso
+*.cab
+*.exe
+*.dll
+*.msstyles
+*.ttf
+*.ttc
+*.fon
+*.hiv
+*.dl_
+*.ex_
+*.tt_

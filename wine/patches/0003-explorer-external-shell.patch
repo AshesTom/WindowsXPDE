@@ -1,0 +1,24 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] explorer: allow an external shell to own the shell window
+
+Purpose: opt out of claiming GetShellWindow in the builtin desktop manager.
+XP behavior: native explorer checks for an existing shell and delegates to it.
+Observed: native XP explorer exits without creating Progman when Wine already
+registered its desktop HWND. Keep Wine desktop management, yield shell identity.
+Set WIN4WINE_EXTERNAL_SHELL=1 for native shell sessions only; unset for fallback.
+Derived from Wine source and WINEDEBUG relay logs, without disassembly.
+
+diff --git a/programs/explorer/desktop.c b/programs/explorer/desktop.c
+index e0b57a4..3dbc053 100644
+--- a/programs/explorer/desktop.c
++++ b/programs/explorer/desktop.c
+@@ -1176,6 +1176,9 @@ static void set_shell_window( HWND hwnd )
+     HDESK desk;
+     WCHAR desk_name[MAX_PATH];
+ 
++    /* Keep desktop management alive while a native shell owns the shell HWND. */
++    if (GetEnvironmentVariableW( L"WIN4WINE_EXTERNAL_SHELL", NULL, 0 )) return;
++
+     if (!(winsta = GetProcessWindowStation()) ||
+         !GetUserObjectInformationW( winsta, UOI_FLAGS, &flags, sizeof(flags), NULL ) ||
+         !(flags.dwFlags & WSF_VISIBLE))
