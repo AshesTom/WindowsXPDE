@@ -641,3 +641,9 @@ XP は JPEG の壁紙を自分で Wallpaper1.bmp に変換して表示し、変�
 行い、0056 が XP Explorer の process での読み込みと WallpaperStyle 2（拡大）を描く。元の画像は変更しない。
 registry profile 15/16 は壁紙設定と `LogonType=1`（ようこそ画面）を一度だけ入れる。実XP参照機と同じく
 Start のユーザー画像と「終了オプション」、XP の「コンピュータの電源を切る」ダイアログになる。
+
+**判断: 0057は日本語 Luna profile に Start のユーザー名と「すべてのプログラム」の字体を加え、連続影を描く。**
+実XPの公開 GetThemeFont は StartPanel の user pane を MS UI Gothic -19 太字、More Programs を -12 太字で返し、
+Wine はテーマの Franklin Gothic Medium / Tahoma のままだった。profile 17 で値を追加する。
+user pane の TST_CONTINUOUS の影は、実XP画素への当てはめ（5×5三角形ぼかし、オフセット−1、不透明度94%）で描く。
+縦線左側の影は実XPよりわずかに薄い。

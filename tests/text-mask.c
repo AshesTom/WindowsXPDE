@@ -1,5 +1,5 @@
 /* Print the pixels of text drawn with a requested font.
- * Usage: text-mask FACE HEIGHT WEIGHT ITALIC TEXT
+ * Usage: text-mask FACE HEIGHT WEIGHT ITALIC TEXT [QUALITY]
  * TEXT may use \uXXXX escapes. Prints '#' for text-colored pixels; used to
  * compare synthetic styles. */
 #include <windows.h>
@@ -41,7 +41,8 @@ int wmain(int argc, WCHAR **argv)
     SelectObject(dc, bitmap);
     for (int i = 0; i < width * height; i++) bits[i] = 0xffffff;
     font = CreateFontW(_wtoi(argv[2]), 0, 0, 0, _wtoi(argv[3]), _wtoi(argv[4]), FALSE, FALSE, DEFAULT_CHARSET,
-                       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, NONANTIALIASED_QUALITY, DEFAULT_PITCH, argv[1]);
+                       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, argc > 6 ? _wtoi(argv[6]) : NONANTIALIASED_QUALITY,
+                       DEFAULT_PITCH, argv[1]);
     SelectObject(dc, font);
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, 0);
@@ -51,7 +52,11 @@ int wmain(int argc, WCHAR **argv)
     printf("extent=%ldx%ld\n", size.cx, size.cy);
     for (int y = 0; y < height; y++)
     {
-        for (int x = 0; x < width; x++) putchar((bits[y * width + x] & 0xffffff) ? '.' : '#');
+        for (int x = 0; x < width; x++)
+        {
+            DWORD v = bits[y * width + x] & 0xff;
+            putchar(v == 0xff ? '.' : v < 0x40 ? '#' : v < 0xc0 ? '+' : '-');
+        }
         putchar('\n');
     }
     return 0;
