@@ -36,6 +36,9 @@ with tempfile.TemporaryDirectory(prefix='xp-extract-test-', dir=root / '.local')
     assert (temp / 'output/themes/Luna/luna.msstyles').read_bytes() == (assets / 'themes/Luna/luna.msstyles').read_bytes()
     assert len(list((temp / 'output/sxs').rglob('controls.man'))) == len(manifests)
     assert (temp / 'output/windows/explorer.exe').read_bytes() == (assets / 'windows/explorer.exe').read_bytes()
+    for font in (assets / 'fonts').iterdir():
+        if font.is_file():
+            assert (temp / 'output/fonts' / font.name).read_bytes() == font.read_bytes()
     for name in ('browselc.dll', 'shdoclc.dll'):
         assert (temp / 'output/system32' / name).read_bytes() == (assets / 'system32' / name).read_bytes()
     try:

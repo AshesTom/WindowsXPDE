@@ -9,3 +9,10 @@
 0009-explorer-external-shell-endpoints.patch
 0010-win32u-external-shell-system-menu.patch
 0011-user32-external-shell-rebar-alignment.patch
+0012-user32-external-shell-print-children.patch
+0013-user32-themed-start-button.patch
+0014-uxtheme-external-shell-window-frames.patch
+0015-uxtheme-optional-font-dc.patch
+0016-uxtheme-external-shell-taskbar-background.patch
+0017-user32-external-shell-control-clipping.patch
+0018-uxtheme-applied-system-font-size.patch

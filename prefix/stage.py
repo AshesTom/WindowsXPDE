@@ -38,13 +38,26 @@ def prepare(prefix, wine):
         subprocess.run([server, '-k'], env=env, check=True, timeout=15)
         subprocess.run([server, '-w'], env=env, check=True, timeout=15)
 
-def stage(prefix):
+def stage(prefix, wine=None):
     if not (prefix / 'xp-shell.json').is_file():
         raise SystemExit('Not a dedicated XP prefix')
     for name in ('browselc', 'shdoclc'):
         if not (prefix / f'drive_c/xp/native/{name}.dll').is_file():
             raise SystemExit(f'Missing {name}.dll: re-extract local XP media and add it to C:\\xp\\native')
     system = prefix / 'drive_c/windows/system32'
+    if wine:
+        source = wine.parent.parent / 'lib/wine/i386-windows/win4wine-controls.dll'
+        if not source.is_file():
+            raise SystemExit('Rebuild patched Wine: missing self-built themed controls module')
+        target = system / 'win4wine-controls.dll'
+        if not target.is_file() or not filecmp.cmp(source, target, shallow=False):
+            with tempfile.NamedTemporaryFile(dir=system, prefix='.wine-controls-', delete=False) as temp:
+                path = Path(temp.name)
+            try:
+                shutil.copyfile(source, path)
+                os.replace(path, target)
+            finally:
+                path.unlink(missing_ok=True)
     for name in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'linkinfo', 'browselc', 'shdoclc'):
         source = prefix / f'drive_c/xp/native/{name}.dll'
         target = system / f'{name}.dll'
@@ -69,4 +82,4 @@ if __name__ == '__main__':
         raise SystemExit('Not a dedicated XP prefix')
     if args.wine:
         prepare(prefix, args.wine.resolve(strict=True))
-    stage(prefix)
+    stage(prefix, args.wine.resolve(strict=True) if args.wine else None)

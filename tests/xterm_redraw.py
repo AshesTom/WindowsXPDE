@@ -26,9 +26,18 @@ def wait(predicate, label):
     raise AssertionError(label)
 
 def activate(window):
-    path = ipc / 'redraw-test.tmp'
+    path = ipc / f'redraw-{os.getpid()}-{time.monotonic_ns()}.tmp'
     path.write_text(f'activate {window.id:x}\n')
-    path.replace(ipc / 'redraw-test.cmd')
+    path.replace(path.with_suffix('.cmd'))
+
+def find_terminal():
+    for candidate in root.query_tree().children:
+        try:
+            if candidate.get_wm_name() == title:
+                return candidate
+        except error.BadWindow:
+            pass  # A recently retired proxy can disappear after QueryTree.
+    return None
 
 def pixels(window):
     try:
@@ -37,8 +46,7 @@ def pixels(window):
         return b''  # The client can exist before its first map/resize finishes.
 
 try:
-    w = wait(lambda: next((c for c in root.query_tree().children if c.get_wm_name() == title), None),
-             'xterm maps')
+    w = wait(find_terminal, 'xterm maps')
     child = wait(lambda: next(iter(w.query_tree().children), None), 'xterm drawing child')
     wait(lambda: len(set(pixels(child))) > 1, 'terminal marker appears')
     original = pixels(child)

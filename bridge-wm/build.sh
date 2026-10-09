@@ -9,3 +9,6 @@ mkdir -p "$root/.local/bridge"
 
 "${MINGW_CC:-i686-w64-mingw32-gcc}" -std=c11 -Wall -Wextra -Werror -O2 -municode \
     "$root/prefix/menu-settings.c" -o "$root/.local/bridge/menu-settings.exe" -lshell32
+
+"${MINGW_CC:-i686-w64-mingw32-gcc}" -std=c11 -Wall -Wextra -Werror -O2 -municode \
+    "$root/prefix/theme-settings.c" -o "$root/.local/bridge/theme-settings.exe" -luxtheme

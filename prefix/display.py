@@ -15,6 +15,9 @@ if not (prefix / 'xp-shell.json').is_file():
     raise SystemExit('Not a dedicated XP prefix')
 if args.theme == 'luna' and not (prefix / 'drive_c/windows/Resources/Themes/Luna/luna.msstyles').is_file():
     raise SystemExit('Luna must be extracted from your local XP media first')
+theme_helper = Path(__file__).resolve().parents[1] / '.local/bridge/theme-settings.exe'
+if not theme_helper.is_file():
+    raise SystemExit('Build bridge-wm before selecting a theme')
 wine = os.environ.get('WINE', 'wine')
 env = dict(os.environ, WINEDLLOVERRIDES='explorer,shell32,shdocvw,browseui,shlwapi,uxtheme=b;mscoree,mshtml=')
 def reg(key, name, value, kind='REG_SZ'):
@@ -27,11 +30,6 @@ if args.menu:
         'NoSimpleStartMenu', int(args.menu == 'classic'), 'REG_DWORD')
     menu_env = dict(env, WINEDLLOVERRIDES='shell32,shlwapi=n;explorer=b;mscoree,mshtml=')
     subprocess.run([wine, str(helper), args.menu], env=menu_env, check=True)
-base = r'HKCU\Software\Microsoft\Windows\CurrentVersion\ThemeManager'
-reg(base, 'ThemeActive', '1' if args.theme == 'luna' else '0')
-if args.theme == 'luna':
-    reg(base, 'DllName', r'C:\windows\Resources\Themes\Luna\luna.msstyles')
-    reg(base, 'ColorName', 'NormalColor')
-    reg(base, 'SizeName', 'NormalSize')
 reg(r'HKCU\Control Panel\Desktop', 'LogPixels', args.dpi, 'REG_DWORD')
+subprocess.run([wine, str(theme_helper), args.theme], env=env, check=True)
 print('Display settings saved. Restart the dedicated Wine session to apply.')

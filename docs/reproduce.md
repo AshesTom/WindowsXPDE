@@ -101,12 +101,16 @@ XP Shell を強制終了し、再起動回数と builtin ブラウザ / xterm �
 
 ```sh
 WINE="$WINE" WINEPREFIX="$WINEPREFIX" ./prefix/display.py --theme classic --dpi 144
-# 200% は --dpi 192。Luna の部分対応を試す場合は --theme luna。
+# 200% は --dpi 192。通常 XP Start と Luna は --theme luna --menu xp。
 ```
 
 `tests/build.sh` 後、`wine .local/bridge/display-test.exe 144 0` で実際の system DPI と
 classic を検査できる。第2引数 1 は Luna API / テーマファイルの読み込み検査であり、
 完全な見た目の合格判定ではない。DPI を戻すには `--theme classic --dpi 96`。
+
+`wine/build.sh` は重なる Wine パッチも `wine/patch-state.py` で判定する。
+一時コピーで逆順に戻してから全系列を検証し、不足分だけを適用する。
+既存 Wine ソースを reset したり、利用者の変更を破棄したりしない。衝突はビルド前に報告する。
 
 Wine の更新時は `prefix/stage.py --wine WINE PREFIX` が wine.inf の timestamp を照合し、
 wineboot 更新 → XP COM 再登録 → 専用 wineserver 終了 → native DLL の atomic 配置を行う。
@@ -114,36 +118,45 @@ supervisor / profile.sh から自動実行される。初回の更新には通�
 
 ## 表示修正後の既存 prefix の更新
 
-以前の抽出には `browselc.dll` / `shdoclc.dll` がないため、同じ利用者のローカルメディアを
+以前の抽出には `browselc.dll` / `shdoclc.dll` や Luna 用 Trebuchet 4種がないため、
+同じ利用者のローカルメディアを
 **新しい出力先**へ再抽出する。シェルセッションを終了してから以下を実行する。
 `WINEPREFIX` は更新する専用 XP prefix、`WINE` はソースビルド版の絶対パス。
 Microsoft のファイルは元の内容のままコピーする。
 
 ```sh
-./extract/extract.py localres/WindowsXPSP3.iso .local/assets-display
-./wine/build.sh > .local/wine-display-build.log 2>&1
+./extract/extract.py localres/WindowsXPSP3.iso .local/assets-luna
+./wine/build.sh > .local/wine-luna-build.log 2>&1
 ./bridge-wm/build.sh
 ./tests/build.sh
 WINEPREFIX="$WINEPREFIX" "$(dirname "$WINE")/wineserver" -k
 WINEPREFIX="$WINEPREFIX" "$(dirname "$WINE")/wineserver" -w
-cp .local/assets-display/system32/{browselc,shdoclc}.dll "$WINEPREFIX/drive_c/xp/native/"
+cp .local/assets-luna/system32/{browselc,shdoclc}.dll "$WINEPREFIX/drive_c/xp/native/"
+cp .local/assets-luna/fonts/* "$WINEPREFIX/drive_c/windows/Fonts/"
 ./prefix/stage.py --wine "$WINE" "$WINEPREFIX"
 ```
 
-stage は資源 DLL も atomic 配置し、registry profile version の変更を Wine 更新と別に検出する。
+stage は資源 DLL と自作 Wine controls の別名モジュールを atomic 配置し、
+registry profile version の変更を Wine 更新と別に検出する。version 3 は All Programs の
+最小 COM 登録も復元する。既に version 3 かつ Wine が同じなら registry 更新を繰り返さない。
 新規 prefix は `create.py` が資源不足を開始前に拒否する。全体の override は builtin、
 XP explorer の AppDefaults だけ native。復旧 prefix には導入しない。
 
 クラシックな外観とスタートメニューの形式は独立して指定できる。
-通常 XP Start は表示に黒い領域が残るため、既定はクラシック Start とする。
+通常 XP Start の保存画像、フォント、owner-draw の clip を Wine 側で修正した。
+初期設定のクラシック Start から、以下で通常 XP Start と Luna を選択できる。
 
 ```sh
-WINE="$WINE" WINEPREFIX="$WINEPREFIX" ./prefix/display.py --theme classic --dpi 96 --menu classic
-# 部分対応の通常 XP Start を調べる場合は --menu xp。その後専用セッションを再起動する。
+WINE="$WINE" WINEPREFIX="$WINEPREFIX" ./prefix/display.py --theme luna --dpi 96 --menu xp
+# クラシックへ戻す場合は --theme classic --menu classic。その後専用セッションを再起動する。
 ```
 
 `--menu` は専用 helper が native shell32 の公開 SHGetSetSettings / SSF_STARTPANELON を呼び、
 設定を読み戻す。レジストリの ShellState バイナリを手作業で書き換えない。
+`--theme` は自作 theme-settings helper が Wine builtin uxtheme のテーマ適用を呼び、
+色・font・非クライアント寸法をまとめて反映する。単に ThemeActive の registry 値を変更する手順ではない。
+helper の ordinal とシグネチャは Wine 自身の公開ソースに合わせ、native uxtheme は使用しない。
+DPI 変更の反映には専用 Wine セッションの再起動が必要。
 
 表示 API 試験は同じ専用 prefix、独立 X display で行う。
 
@@ -152,9 +165,56 @@ WIN4WINE_EXTERNAL_SHELL=1 WINEDLLOVERRIDES='explorer=b;mscoree,mshtml=' \
   "$WINE" .local/bridge/system-menu-test.exe
 WIN4WINE_EXTERNAL_SHELL=1 WINEDLLOVERRIDES='comctl32=n;explorer=b;mscoree,mshtml=' \
   "$WINE" .local/bridge/rebar-test.exe
+WIN4WINE_EXTERNAL_SHELL=1 WINEDLLOVERRIDES='explorer=b;mscoree,mshtml=' \
+  "$WINE" .local/bridge/print-window-test.exe
+# Luna を選択して再起動した prefix で、NULL DC を許す公開 font API を検査する。
+WINEDLLOVERRIDES='uxtheme,explorer=b;mscoree,mshtml=' \
+  "$WINE" .local/bridge/theme-font-test.exe
 XP_BRIDGE_DIR=/absolute/private/ipc python3 tests/xterm_redraw.py
 ```
 
 最後の試験には起動済み WM が必要。xterm の画面だけを一度消して、フォーカス変更で
 文字が入力なしで戻ることを検査する。対象は試験自身が起動した xterm に限定する。
-実 XP の左クリック操作、フォルダ移動、残る通常 Start の描画は別途画面で確認する。
+実 XP の左クリック操作、フォルダ移動、通常 Start / All Programs の実際の項目と操作は
+別途画面で確認する。API 試験だけでメニュー全体の完成とは判断しない。
+
+
+## native アプリの XP 枠の検証
+
+`bridge-wm/build.sh` で更新した proxy と WM を同時に再起動する。
+専用 prefix は `HKCU\Software\Wine\X11 Driver` の `Decorated=N` を使う。
+create.py はこの設定を作成する。Wine に非クライアント領域を描画させるための設定である。
+枠の classic / Luna は同じ prefix の表示設定に従う。
+
+`tests/native_frames.py` は、指定した独立 X display 上で WM と proxy が既に動いている状態で実行する。
+`XP_BRIDGE_DIR` はその WM / proxy が共有している所有者専用の IPC ディレクトリを指定する。
+テストは自身の native X ウィンドウを作り、実際にマウスを動かすので通常の作業用 display では実行しない。
+
+```sh
+DISPLAY=:93 XP_BRIDGE_DIR=/absolute/private/ipc python3 tests/native_frames.py
+```
+
+枠と native の正確な位置・サイズ、積み順、単一タスク ID、代理への EWMH activation、
+Start popup の除外、タイトルバー移動、角リサイズ、最大化と復元、最小化と復元、
+閉じるボタンの WM_DELETE_WINDOW、withdraw と再表示を検査する。
+classic と Luna は表示設定を保存して専用 Wine セッションを再起動し、それぞれ実行する。
+これは proxy と native の組の操作試験であり、スタートメニュー全体、Wine アプリ全体のテーマ、
+native アプリとの clipboard 相互運用の合格を代用しない。
+
+
+## テーマ適用と system font の往復試験
+
+`tests/theme-metrics.c` はテーマ設定を変更するため、作業用ではなく専用の使い捨て
+XP prefix で実行する。Wine builtin のテーマ適用を2往復し、実際の caption / menu 等の
+6種類の SPI font と theme API の値を比較する。終了時は classic へ戻る。
+
+```sh
+WINE="$WINE" WINEPREFIX="$TEST_PREFIX" ./prefix/display.py --theme luna --dpi 144
+WINEPREFIX="$TEST_PREFIX" "$(dirname "$WINE")/wineserver" -k
+WINEPREFIX="$TEST_PREFIX" "$(dirname "$WINE")/wineserver" -w
+WINEPREFIX="$TEST_PREFIX" WINEDLLOVERRIDES='uxtheme,explorer=b;mscoree,mshtml=' \
+  "$WINE" .local/bridge/theme-metrics-test.exe 144
+```
+
+96 / 192 DPI も同じ手順で設定・再起動し、試験の引数を合わせる。
+保存された DPI と起動中プロセスの DPI は、専用セッションの再起動までは同じとは限らない。

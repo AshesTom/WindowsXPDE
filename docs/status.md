@@ -11,7 +11,7 @@
 | M2 | 新規 prefix で実測 | マイドキュメントから H: の Linux ホームを表示し、サブフォルダへ移動。追加修正でメニュー・ツールバー・アドレス欄を表示。新規 prefix の `.local/display-clean-folder.png`、VM の `.local/vm-test/display-fixed-folder.png` |
 | M3 | 実 XP と Linux xterm で実測 | Start メニューから起動、Alt+Tab、タスクバー右クリックの最小化・閉じる、左クリック最小化・復元を確認。ログ `.local/final-m3-native-operations.log` / `final-m3-alt-tab.log`、左クリックは `.local/vm-test/task-leftclick-test.log` |
 | M4 | 独立 Debian 13 VM で実測 | kernel 6.12.107、Xorg、LightDM の xp-shell セッションでログイン。強制終了 2 回から再起動、3 回目で独立 builtin prefix + xterm へ復旧。画像 `.local/vm-test/login.png` / `recovery.png` |
-| M5 | クラシック HiDPI 実測、Luna 部分対応 | 144/192 DPI の Start メニュー・Programs・200% の Linux 起動を確認。Luna は API 有効・ローカル msstyles 読込を確認するがタスクバー背景・Start ボタンが不完全。完成扱いにはしない |
+| M5 | Luna の主要部を実測、残件あり | ローカル msstyles の Start ボタン・タスクバー・通常 Start・ウィンドウ枠を描画。96/144/192 DPI のキャプションボタン寸法・クリック領域を検証。時計背景など細部は未完成 |
 
 ## 自動試験
 
@@ -30,9 +30,10 @@
 
 ## 既知の制限
 
-- 通常の XP スタートメニューは右側を表示するが、ユーザー欄・左側・下部が黒い。classic / Luna とも未完成。クラシック Start を既定に保つ。
+- 通常 XP Start の黒い領域は解消。新規ユーザーの左側の利用履歴は空で、固定項目・履歴の蓄積は未検証。既定メニューは引き続き classic、`--menu xp` で通常形式を選択できる。
+- Luna の時計背景・一部の区切りやスクロールバーには classic の表示が残る。完全一致とはしない。
 - 外部プロセスのシステムメニュー shim は標準メニューのコピー。アプリ独自の項目や無効化は反映しない。
-- Linux ウィンドウの装飾は未実装。Alt+左ドラッグで移動、Alt+右ドラッグでサイズ変更。単一 X11 screen のみ検証。
+- Linux ウィンドウには Wine が描く本物の非クライアント枠を付ける。単一 X11 screen のみ検証。
 - 実 SOFTWARE/SYSTEM ハイブの変換、Ubuntu 24.04、Wayland/Xwayland は未検証。
 
 ## 独立 VM の検証
@@ -70,9 +71,9 @@ VM を通常の classic / 96 DPI に戻して再起動し、LightDM から attem
 今回の再描画要求で同種の残像から入力なしで復帰する試験は成功。
 VGA 経路でイベントが不足する元の原因までは特定していない。
 
-## 表示修正の追加検証（2026-10-09）
+## 前回の表示修正の追加検証（2026-10-09、d162a5b）
 
-- 同じローカル ISO から `browselc.dll` / `shdoclc.dll` を追加抽出（計23ファイル）。
+- 同じローカル ISO から `browselc.dll` / `shdoclc.dll` を追加抽出（当時は計22ファイル）。
   `.local/extract-display.log`、`extraction-display-test.log`。Microsoft ファイルは無改変。
 - 新規 `.local/prefix-display-clean` でクラシック 96 DPI のフォルダを表示。
   メニュー、ツールバーの文字、アドレス欄の表示を確認。画像 `display-clean-folder.png`。
@@ -98,5 +99,48 @@ VGA 経路でイベントが不足する元の原因までは特定していな�
   native v5 はアイコン等が欠落し、native v6 Button の SxS 選択は例外が再発したため採用しない。
   `--menu xp` は部分対応を調べるための選択肢であり、描画の合格ではない。
 
-最終 VM はネットワークなし、classic / 96 DPI、クラシック Start のまま稼働。
+前回修正終了時の VM はネットワークなし、classic / 96 DPI、クラシック Start で稼働。
 VNC は引き続き `127.0.0.1:5905`。MS 由来の表示・生ログは `.local/` のみ。
+
+## 通常 Start・Luna・Linux 枠の追加検証（2026-10-09）
+
+- 同じ ISO から Marlett と Trebuchet MS の4書体を追加抽出。計27ファイル、フォント8ファイル。
+  `.local/assets-luna` / `extract-luna.log`。抽出試験で各フォントが入力と同一であることも確認。
+- 通常 Start の WM_PRINT キャプチャに子・所有ウィンドウを合成する（0012）。
+  translated DC のコントロール clipping を修正（0013/0017）、NULL DC のテーマフォントも修正（0015）。
+  新規 prefix の `luna-final-programs-fixed.png`、VM の `luna-normal-programs.png` で
+  ユーザー欄・一覧・下部・すべてのプログラムを確認。実メニューから Linux Terminal が起動する。
+- native XP common controls は維持し、Start ボタンだけ別名の自作 Wine control で描く（0013）。
+  Windows ロゴの image list は native comctl32 の公開 API で描画する。native Button の SxS は採用しない。
+- Luna のタスクバー背景を利用者のテーマから描画（0016）。公開試験で clipping と DC の状態保持を確認。
+- Window テーマの画像寸法をボタン描画と WM_NCHITTEST で共有（0014）。
+  96 DPI は21×21px・間隔2px、144 DPI は32×32px・間隔3px、192 DPI は42×42px・間隔4px。
+  最小化・最大化が無効な領域は HTCAPTION。通常・hover・押下の実表示も確認。
+  `.local/luna-nonclient-test.log` / `luna-nonclient-144.log` / `luna-nonclient-192.log`、
+  `luna-min-pressed-final.png`。タイトル文字色もテーマの色 ID で読む。
+- Linux クライアントと Wine の枠は X root の兄弟で、枠を直下に配置する。
+  native 側のタスク ID とキーボード入力を維持し、caption の移動・サイズ変更・最大化・終了を bridge する。
+  新規 prefix の `luna-final-linux-launched.png` で通常 Start から起動した xterm の枠を確認。
+- DV2ControlHost は実フォーカスを受け取る popup とし、アプリの active ID や shell-hook のタスクにしない。
+  実メニューの開閉・All Programs・起動を確認し、余計な「スタート メニュー」タスクを除去。
+- 新規 prefix の `.local/luna-final-public-tests.log` で WM_PRINT / theme font / NC bounds /
+  taskbar background が成功。VM の `.local/vm-test/luna-final-integration.log` でも公開 API と
+  入力なしの xterm 復帰は成功。native 枠の試験は `.local/vm-test/frame-unique-command-test.log` で成功。
+  最初の失敗は試験が IPC ファイル名を再利用し、未処理の restore を上書きしたためだった。
+  試験を実 bridge と同じ一意なファイル名に直し、原因を確認して再検証した。
+
+- テーマ適用のフォントサイズは point の正値から LOGFONT の負の pixel 高さへ変換（0018）。
+  6種の system font を classic/Luna の2往復で検査し、96/144/192 DPI で成功。
+  `.local/theme-applied-font-before-test.log` は修正前の12件失敗、
+  `theme-applied-font-after-test.log` は修正後。DPI 丸めは標準 SPI の96 DPI基準に従う。
+- 重なった Wine パッチは一時コピー上で逆順に戻して適用済みを判定する。
+  `tests/patch_state.py` は新規・11本適用済み・全18本・17→18本・利用者の編集保持・
+  競合時の無変更を確認。Wine ソースの reset は行わない。
+
+今回の VM は Luna / 96 DPI / 通常 XP Start へ変更し、LightDM から attempt 1 で起動。
+最終18パッチでの枠操作は `luna-final-18-tests.log`、入力なしの xterm 復帰と公開 API は
+`luna-final-18-redraw-public.log`、実 system font は `luna-final-font-metrics.log` に記録。
+VNC は引き続き `127.0.0.1:5905`、NIC はない。
+
+スクリーンショット・テーマ・DLL・フォントはすべて `.local/` にのみ保存する。
+Microsoft バイナリを変更・解析・配布する修正はない。

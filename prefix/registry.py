@@ -1,5 +1,5 @@
 """Minimal native shell COM registrations absent from Wine's generated prefix."""
-VERSION = 2
+VERSION = 3
 
 # Public class identifiers, cross-checked against the browseui assembly manifest:
 # https://lists.reactos.org/hyperkitty/list/ros-diffs%40reactos.org/thread/ENB6UBPTHQSRZOG7GFIV2V4BJLWBTKYT/
@@ -24,6 +24,9 @@ BROWSEUI_CLASSES = (
 
 
 def install(run):
+    # This alias contains only our source-built Wine controls, never XP code.
+    run('reg', 'add', r'HKCU\Software\Wine\DllOverrides', '/v', 'win4wine-controls',
+        '/d', 'builtin', '/f')
     servers = [(c, 'browseui.dll') for c in BROWSEUI_CLASSES]
     servers.append(('{A5E46E3A-8849-11D1-9D8C-00C04FC99D61}', 'shdocvw.dll'))
     # Providers verified with DllGetClassObject on the user's local XP SP3 DLLs.
@@ -38,6 +41,7 @@ def install(run):
         ('{42AEDC87-2188-41FD-B9A3-0C966FEABEC1}', 'shdocvw.dll'),
         ('{7849596A-48EA-486E-8937-A2A3009F31A9}', 'shell32.dll'),
         ('{D912F8CF-0396-4915-884E-FB425D32943B}', 'shell32.dll'),
+        ('{3F6953F0-5359-47FC-BD99-9F2CB95A62FD}', 'shell32.dll'),
     ))
     for clsid, dll in servers:
         key = 'HKCR\\CLSID\\' + clsid + '\\InprocServer32'

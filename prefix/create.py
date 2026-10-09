@@ -14,6 +14,10 @@ def create(assets, dest, home, wine):
     assets, dest, home = assets.resolve(strict=True), dest.resolve(), home.resolve(strict=True)
     if dest.exists():
         raise SystemExit(f'Refusing existing prefix: {dest}')
+    wine_path = Path(shutil.which(wine) or wine).resolve(strict=True)
+    controls = wine_path.parent.parent / 'lib/wine/i386-windows/win4wine-controls.dll'
+    if not controls.is_file():
+        raise SystemExit('Build the patched Wine first: missing self-built themed controls module')
     records = json.loads((assets / 'manifest.json').read_text())
     if not records or not (assets / 'windows/explorer.exe').is_file():
         raise SystemExit('Incomplete XP assets')
@@ -30,6 +34,7 @@ def create(assets, dest, home, wine):
     system = dest / 'drive_c/windows/system32'
     xp = dest / 'drive_c/xp'
     xp.mkdir()
+    shutil.copyfile(controls, system / 'win4wine-controls.dll')
     shutil.copyfile(assets / 'windows/explorer.exe', xp / 'xp-explorer.exe')
     native = xp / 'native'
     native.mkdir()
@@ -71,6 +76,7 @@ def create(assets, dest, home, wine):
         reg(r'HKCU\Software\Wine\DllOverrides', dll, 'builtin')
         reg(r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides', dll, 'native')
         shutil.copyfile(native / (dll + '.dll'), system / (dll + '.dll'))
+    reg(r'HKCU\Software\Wine\DllOverrides', 'win4wine-controls', 'builtin')
     registry.install(run)
     reg(r'HKCU\Software\Wine\X11 Driver', 'Managed', 'Y')
     reg(r'HKCU\Software\Wine\X11 Driver', 'Decorated', 'N')

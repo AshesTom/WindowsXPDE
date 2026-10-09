@@ -1,4 +1,6 @@
-/* Win32 identities for native X11 clients. Uses public Win32 APIs only. */
+/* Win32 identities and genuine nonclient frames for native X11 clients.
+ * Uses public Win32 APIs only; X11 clients remain root children, paired below
+ * their frame by the WM. No Microsoft image/code is copied into this helper. */
 #ifndef UNICODE
 #define UNICODE
 #endif
@@ -11,7 +13,7 @@
 #include <string.h>
 
 #define MAX_CLIENTS 2048
-struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; };
+struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; int x, y, width, height; };
 static struct client clients[MAX_CLIENTS];
 static HWND previous[MAX_CLIENTS];
 static unsigned previous_count;
@@ -25,21 +27,38 @@ static UINT shell_message;
 static int syncing;
 static unsigned sequence;
 
-static void command(const char *op, unsigned long xid)
+static void write_command(const char *data)
 {
     WCHAR temp[MAX_PATH + 64], target[MAX_PATH + 64];
-    fprintf(stderr, "bridge command: %s %lx\n", op, xid);
-    char data[80];
+    fprintf(stderr, "bridge command: %s", data);
     DWORD written;
     HANDLE file;
     swprintf(temp, MAX_PATH + 64, L"%ls\\%lu-%u.tmp", directory, GetCurrentProcessId(), sequence);
     swprintf(target, MAX_PATH + 64, L"%ls\\%lu-%u.cmd", directory, GetCurrentProcessId(), sequence++);
     file = CreateFileW(temp, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE) return;
-    snprintf(data, sizeof(data), "%s %lx\n", op, xid);
     WriteFile(file, data, (DWORD)strlen(data), &written, NULL);
     CloseHandle(file);
     if (!MoveFileExW(temp, target, MOVEFILE_REPLACE_EXISTING)) DeleteFileW(temp);
+}
+
+static void command(const char *op, unsigned long xid)
+{
+    char data[80];
+    snprintf(data, sizeof(data), "%s %lx\n", op, xid);
+    write_command(data);
+}
+
+static void geometry_command(HWND hwnd, unsigned long xid)
+{
+    RECT r;
+    POINT pt = {0, 0};
+    char data[160];
+    GetClientRect(hwnd, &r);
+    ClientToScreen(hwnd, &pt);
+    snprintf(data, sizeof(data), "geometry %lx %ld %ld %ld %ld\n", xid,
+             pt.x, pt.y, r.right, r.bottom);
+    write_command(data);
 }
 
 static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -56,9 +75,12 @@ static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         if (msg == WM_SYSCOMMAND)
         {
             if ((wp & 0xfff0) == SC_MINIMIZE) { command("minimize", xid); return 0; }
-            if ((wp & 0xfff0) == SC_RESTORE || (wp & 0xfff0) == SC_MAXIMIZE)
-            { command("activate", xid); return 0; }
+            if ((wp & 0xfff0) == SC_MAXIMIZE)
+            { command(GetPropW(hwnd, L"Win4WineMaximized") ? "restore" : "maximize", xid); return 0; }
+            if ((wp & 0xfff0) == SC_RESTORE)
+            { command(IsIconic(hwnd) ? "activate" : "restore", xid); return 0; }
         }
+        if (msg == WM_WINDOWPOSCHANGED && !IsIconic(hwnd)) geometry_command(hwnd, xid);
         if (msg == WM_ACTIVATE && LOWORD(wp) != WA_INACTIVE && !IsIconic(hwnd)) command("activate", xid);
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
@@ -94,7 +116,7 @@ static BOOL CALLBACK collect(HWND hwnd, LPARAM unused)
     if (!IsWindowVisible(hwnd) || ((ex & WS_EX_TOOLWINDOW) && !(ex & WS_EX_APPWINDOW))) return TRUE;
     if (GetWindow(hwnd, GW_OWNER) && !(ex & WS_EX_APPWINDOW)) return TRUE;
     GetClassNameW(hwnd, name, 80);
-    if (!wcsicmp(name, L"Progman") || !wcsicmp(name, L"Shell_TrayWnd") || !wcsicmp(name, L"WorkerW")) return TRUE;
+    if (!wcsicmp(name, L"Progman") || !wcsicmp(name, L"Shell_TrayWnd") || !wcsicmp(name, L"WorkerW") || !wcsicmp(name, L"DV2ControlHost")) return TRUE;
     if (current_count < MAX_CLIENTS)
     {
         current[current_count] = hwnd;
@@ -127,6 +149,14 @@ static void shell_events(void)
     for (i = 0; i < previous_count; ++i)
         if (!contains(current, current_count, previous[i])) notify(HSHELL_WINDOWDESTROYED, previous[i]);
     foreground = GetForegroundWindow();
+    if (foreground)
+    {
+        WCHAR cls[80];
+        GetClassNameW(foreground, cls, 80);
+        /* XP's Start popup is not an application task. Excluding it only from
+         * WINDOWCREATED is insufficient: WINDOWACTIVATED can create a task too. */
+        if (!wcsicmp(cls, L"DV2ControlHost")) foreground = NULL;
+    }
     if (foreground != last_foreground)
     {
         notify(HSHELL_WINDOWACTIVATED, foreground);
@@ -135,6 +165,66 @@ static void shell_events(void)
     memcpy(previous, current, current_count * sizeof(HWND));
     memcpy(previous_titles, current_titles, current_count * sizeof(current_titles[0]));
     previous_count = current_count;
+}
+
+static void place_frame(struct client *c)
+{
+    RECT outer, inner;
+    POINT origin = {0, 0};
+    GetWindowRect(c->hwnd, &outer);
+    GetClientRect(c->hwnd, &inner);
+    ClientToScreen(c->hwnd, &origin);
+    SetWindowPos(c->hwnd, NULL, c->x - (origin.x - outer.left),
+                 c->y - (origin.y - outer.top),
+                 c->width + (outer.right - outer.left - inner.right),
+                 c->height + (outer.bottom - outer.top - inner.bottom),
+                 SWP_NOACTIVATE | SWP_NOZORDER);
+}
+
+static void frame_geometry(void)
+{
+    WCHAR path[MAX_PATH + 32], target[MAX_PATH + 32];
+    FILE *file;
+    unsigned long xid;
+    int x, y, width, height, maximized;
+    unsigned i;
+    swprintf(path, MAX_PATH + 32, L"%ls\\geometry.tsv", directory);
+    file = _wfopen(path, L"rb");
+    if (!file) return;
+    while (fscanf(file, "%lx %d %d %d %d %d", &xid, &x, &y, &width, &height, &maximized) == 6)
+        for (i = 0; i < MAX_CLIENTS; ++i)
+            if (clients[i].xid == xid && !clients[i].hidden)
+            {
+                struct client *c = &clients[i];
+                if (!!GetPropW(c->hwnd, L"Win4WineMaximized") != !!maximized)
+                {
+                    if (maximized) SetPropW(c->hwnd, L"Win4WineMaximized", (HANDLE)1);
+                    else RemovePropW(c->hwnd, L"Win4WineMaximized");
+                    RedrawWindow(c->hwnd, NULL, NULL, RDW_INVALIDATE | RDW_FRAME);
+                }
+                c->x = x; c->y = y; c->width = width; c->height = height;
+                place_frame(c);
+                break;
+            }
+    fclose(file);
+    swprintf(path, MAX_PATH + 32, L"%ls\\frames.tmp", directory);
+    swprintf(target, MAX_PATH + 32, L"%ls\\frames.tsv", directory);
+    file = _wfopen(path, L"wb");
+    if (!file) return;
+    for (i = 0; i < MAX_CLIENTS; ++i)
+        if (clients[i].xid)
+        {
+            RECT outer, inner;
+            POINT origin = {0, 0};
+            GetWindowRect(clients[i].hwnd, &outer);
+            GetClientRect(clients[i].hwnd, &inner);
+            ClientToScreen(clients[i].hwnd, &origin);
+            fprintf(file, "%lx %lx %ld %ld %ld %ld %d %d\n", (unsigned long)(uintptr_t)clients[i].hwnd,
+                    clients[i].xid, origin.x-outer.left, outer.right-origin.x-inner.right,
+                    origin.y-outer.top, outer.bottom-origin.y-inner.bottom, !!GetPropW(clients[i].hwnd, L"Win4WineMaximized"), !!IsIconic(clients[i].hwnd));
+        }
+    fclose(file);
+    MoveFileExW(path, target, MOVEFILE_REPLACE_EXISTING);
 }
 
 static void snapshot(void)
@@ -194,6 +284,7 @@ static void snapshot(void)
             DestroyWindow(clients[i].hwnd);
             memset(&clients[i], 0, sizeof(clients[i]));
         }
+    frame_geometry();
     syncing = 0;
 }
 

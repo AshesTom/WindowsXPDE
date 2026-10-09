@@ -1,0 +1,162 @@
+From: win4wine contributors
+Subject: [PATCH] user32/comctl32: isolate themed Start button from native XP controls
+
+The native shell sets the Start Button theme but user32's classic Button
+never opens it. A shell-wide v6 activation context also affects native
+common-control initialization. In opt-in external-shell mode, use an
+independently registered Wine Button class only for Shell_TrayWnd children.
+The separately named module is an unmodified copy of self-built Wine
+comctl32.dll; native XP common controls and their context stay unchanged.
+Use the theme's true image size as a minimum ideal Start button size.
+Native image list handles remain opaque: the isolated control delegates
+size/count/draw to their loaded native common-control owner's public API.
+Keep logical clipping rectangles logical in translated MM_TEXT print DCs.
+
+--- a/dlls/user32/win.c
++++ b/dlls/user32/win.c
+@@ -293,6 +293,24 @@
+     WCHAR name_buf[8];
+     HMENU menu;
+ 
++    /* Keep native XP controls and their activation context unchanged. Only
++     * the taskbar Start button uses Wine's independently registered themed
++     * Button implementation. */
++    if (!IS_INTRESOURCE(className) && !wcsicmp(className, L"Button") && cs->hwndParent
++        && GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL", NULL, 0))
++    {
++        WCHAR parent_class[64];
++        if (GetClassNameW(cs->hwndParent, parent_class, ARRAY_SIZE(parent_class))
++            && !wcsicmp(parent_class, L"Shell_TrayWnd"))
++        {
++            HMODULE controls = LoadLibraryW(L"win4wine-controls.dll");
++            BOOL (WINAPI *register_button)(void) = controls
++                ? (void *)GetProcAddress(controls, "Win4WineRegisterStartButton") : NULL;
++            if (register_button && register_button())
++                className = L"Win4WineStartButton";
++        }
++    }
++
+     if (!get_class_info( module, className, &info, &class, FALSE )) return FALSE;
+ 
+     TRACE("%s %s%s%s ex=%08lx style=%08lx %d,%d %dx%d parent=%p menu=%p inst=%p params=%p\n",
+--- a/dlls/comctl32/button.c
++++ b/dlls/comctl32/button.c
+@@ -321,7 +321,8 @@
+         DeleteObject( hrgn );
+         hrgn = 0;
+     }
+-    DPtoLP( hdc, (POINT *)&rc, 2 );
++    if (!GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL", NULL, 0) || GetMapMode(hdc) != MM_TEXT)
++        DPtoLP( hdc, (POINT *)&rc, 2 );
+     if (GetLayout( hdc ) & LAYOUT_RTL)  /* compensate for the shifting done by IntersectClipRect */
+     {
+         rc.left++;
+@@ -1086,7 +1087,21 @@
+ 
+         if (!size) return FALSE;
+ 
+-        return btnGetIdealSizeFunc[btn_type](infoPtr, size);
++        {
++            BOOL result = btnGetIdealSizeFunc[btn_type](infoPtr, size);
++            WCHAR class_name[64];
++            HTHEME theme = GetWindowTheme(hWnd);
++            SIZE image_size;
++            if (result && theme && GetClassNameW(hWnd, class_name, ARRAY_SIZE(class_name))
++                && !wcscmp(class_name, L"Win4WineStartButton")
++                && SUCCEEDED(GetThemePartSize(theme, NULL, BP_PUSHBUTTON, PBS_NORMAL,
++                                              NULL, TS_TRUE, &image_size)))
++            {
++                size->cx = max(size->cx, image_size.cx);
++                size->cy = max(size->cy, image_size.cy);
++            }
++            return result;
++        }
+     }
+ 
+     case WM_NCHITTEST:
+@@ -1247,6 +1262,17 @@
+     }
+ }
+ 
++/* The XP taskbar owns this image list in its native common-control module.
++ * HIMAGELIST is opaque; use that module's public API for its handles. */
++static HMODULE start_button_image_module(const BUTTON_INFO *info)
++{
++    WCHAR name[64];
++    if (GetClassNameW(info->hwnd, name, ARRAY_SIZE(name))
++        && !wcscmp(name, L"Win4WineStartButton"))
++        return GetModuleHandleW(L"comctl32.dll");
++    return NULL;
++}
++
+ static SIZE BUTTON_GetImageSize(const BUTTON_INFO *infoPtr)
+ {
+     ICONINFO iconInfo;
+@@ -1256,8 +1282,11 @@
+     /* ImageList has priority over image */
+     if (infoPtr->imagelist.himl)
+     {
+-        int scx, scy;
+-        ImageList_GetIconSize(infoPtr->imagelist.himl, &scx, &scy);
++        int scx = 0, scy = 0;
++        HMODULE module = start_button_image_module(infoPtr);
++        BOOL (WINAPI *get_size)(HIMAGELIST, int *, int *) = module
++            ? (void *)GetProcAddress(module, "ImageList_GetIconSize") : ImageList_GetIconSize;
++        if (get_size) get_size(infoPtr->imagelist.himl, &scx, &scy);
+         size.cx = scx;
+         size.cy = scy;
+     }
+@@ -1744,9 +1773,13 @@
+ {
+     if (infoPtr->imagelist.himl)
+     {
+-        int i = (ImageList_GetImageCount(infoPtr->imagelist.himl) == 1) ? 0 : get_draw_state(infoPtr) - 1;
+-
+-        ImageList_Draw(infoPtr->imagelist.himl, i, hdc, rect->left, rect->top, ILD_NORMAL);
++        HMODULE module = start_button_image_module(infoPtr);
++        int (WINAPI *get_count)(HIMAGELIST) = module
++            ? (void *)GetProcAddress(module, "ImageList_GetImageCount") : ImageList_GetImageCount;
++        BOOL (WINAPI *draw)(HIMAGELIST, int, HDC, int, int, UINT) = module
++            ? (void *)GetProcAddress(module, "ImageList_Draw") : ImageList_Draw;
++        int i = (get_count && get_count(infoPtr->imagelist.himl) == 1) ? 0 : get_draw_state(infoPtr) - 1;
++        if (draw) draw(infoPtr->imagelist.himl, i, hdc, rect->left, rect->top, ILD_NORMAL);
+     }
+     else
+     {
+@@ -3232,7 +3265,7 @@
+     }
+ }
+ 
+-void BUTTON_Register(void)
++static void register_button_class(const WCHAR *name)
+ {
+     WNDCLASSW wndClass;
+ 
+@@ -3243,6 +3276,19 @@
+     wndClass.cbWndExtra = sizeof(BUTTON_INFO *);
+     wndClass.hCursor = LoadCursorW(0, (LPWSTR)IDC_ARROW);
+     wndClass.hbrBackground = NULL;
+-    wndClass.lpszClassName = WC_BUTTONW;
++    wndClass.lpszClassName = name;
+     RegisterClassW(&wndClass);
+ }
++
++void BUTTON_Register(void)
++{
++    register_button_class(WC_BUTTONW);
++}
++
++BOOL WINAPI Win4WineRegisterStartButton(void)
++{
++    WNDCLASSW wc;
++    if (GetClassInfoW(COMCTL32_hModule, L"Win4WineStartButton", &wc)) return TRUE;
++    register_button_class(L"Win4WineStartButton");
++    return GetClassInfoW(COMCTL32_hModule, L"Win4WineStartButton", &wc);
++}
+--- a/dlls/comctl32/comctl32.spec
++++ b/dlls/comctl32/comctl32.spec
+@@ -198,3 +198,4 @@
+ @ stdcall RegisterClassNameW(wstr)
+ @ stdcall UninitializeFlatSB(long)
+ @ stdcall _TrackMouseEvent(ptr)
++@ stdcall Win4WineRegisterStartButton()

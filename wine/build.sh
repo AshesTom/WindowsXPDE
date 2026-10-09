@@ -9,14 +9,7 @@ if [[ ! -d $src/.git ]]; then
     git clone --depth 1 --branch "$WINE_TAG" "$WINE_URL" "$src"
 fi
 [[ $(git -C "$src" rev-parse HEAD) == "$WINE_COMMIT" ]] || { echo 'Unexpected upstream commit' >&2; exit 1; }
-while IFS= read -r patch; do
-    [[ -z $patch || $patch == \#* ]] && continue
-    if git -C "$src" apply --reverse --check "$root/wine/patches/$patch" 2>/dev/null; then
-        continue
-    fi
-    git -C "$src" apply --check "$root/wine/patches/$patch"
-    git -C "$src" apply "$root/wine/patches/$patch"
-done < "$root/wine/patches/series"
+python3 "$root/wine/patch-state.py" "$src" "$root/wine/patches" --apply
 mkdir -p "$build" "$install"
 cd "$build"
 export PKG_CONFIG_LIBDIR=${PKG_CONFIG_LIBDIR:-/usr/lib/i386-linux-gnu/pkgconfig:/usr/share/pkgconfig}
@@ -28,4 +21,6 @@ for version in {33..42} 46 47; do extra+=("--disable-d3dcompiler_$version"); don
 "$src/configure" --prefix="$install" --without-wayland --disable-tests "${extra[@]}" CC='gcc -m32' CXX='g++ -m32'
 make -j"${JOBS:-6}"
 make install
+# Isolate Wine's themed Start Button from the XP common-control module.
+cp "$install/lib/wine/i386-windows/comctl32.dll" "$install/lib/wine/i386-windows/win4wine-controls.dll"
 "$install/bin/wine" --version
