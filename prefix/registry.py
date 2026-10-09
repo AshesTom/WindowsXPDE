@@ -3,7 +3,7 @@ import os
 import pwd
 import struct
 
-VERSION = 17
+VERSION = 18
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -98,10 +98,14 @@ def install(run, exists):
     for name, (kind, data) in font_profile_defaults().items():
         if not exists(FONT_PROFILE, name):
             run('reg', 'add', FONT_PROFILE, '/v', name, '/t', kind, '/d', data, '/f')
+    advanced = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+    # XP's default user draws desktop icon labels with drop shadows; without
+    # the value XP fills the label background over the wallpaper.
+    if not exists(advanced, 'ListviewShadow'):
+        run('reg', 'add', advanced, '/v', 'ListviewShadow', '/t', 'REG_DWORD', '/d', '1', '/f')
     # XP's default user profile starts with the taskbar locked: no grippers or
     # top sizing bar, 30px high at 96 DPI. Explorer writes this value when the
     # user changes the lock, so only an absent value is seeded.
-    advanced = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
     if not exists(advanced, 'TaskbarSizeMove'):
         run('reg', 'add', advanced, '/v', 'TaskbarSizeMove', '/t', 'REG_DWORD', '/d', '0', '/f')
     # Japanese XP lays desktop icons out 78px apart (SPI_GETICONMETRICS on the

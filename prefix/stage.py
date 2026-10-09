@@ -107,9 +107,15 @@ def stage_media(prefix, wine=None):
     if wine and jpeg.is_file() and converter.is_file() and not bitmap.exists():
         bitmap.parent.mkdir(parents=True, exist_ok=True)
         env = dict(os.environ, WINEPREFIX=str(prefix), WINEARCH='win32', WINEDEBUG='-all')
-        subprocess.run([str(wine), str(converter), 'Z:' + str(jpeg).replace('/', '\\'),
-                        'Z:' + str(bitmap).replace('/', '\\')], env=env, check=False, timeout=120,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            subprocess.run([str(wine), str(converter), 'Z:' + str(jpeg).replace('/', '\\'),
+                            'Z:' + str(bitmap).replace('/', '\\')], env=env, check=False, timeout=120,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        finally:
+            # Do not leave a desktop started without the external shell flag.
+            server = str(wine.with_name('wineserver'))
+            subprocess.run([server, '-k'], env=env, check=False, timeout=15)
+            subprocess.run([server, '-w'], env=env, check=False, timeout=15)
 
 
 if __name__ == '__main__':
