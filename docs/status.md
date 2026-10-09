@@ -462,3 +462,42 @@ StretchBlt/StretchDIBits双方の必要なsource範囲を残す。整数演算�
 `.local/wine-verified36-build.log`。Debian VMへのatomic反映後も公開12条件すべて差0、自作GDI1408条件すべて成功。
 `.local/vm-test/gradient36.log`。最終64bit版のopt-out比較も全1408条件同一。
 `.local/halftone-intmin-baseline-optout.log` / `halftone-intmin-fixed-optout.log`。
+
+36反映後の日本語caption文字/影764画素・左icon256画素とhit領域、通常/最大化・
+非アクティブ・省略・clipped WM_PRINTも再成功。Startは実112×30/ideal112×26を維持。
+`.local/vm-test/caption-layout36.log` / `clock-caption36.log`。
+フォルダのicon本体をダブルクリックし、閲覧完了後にAlt+Left、task左クリック最小化/復元も成功。
+`.local/vm-test/folder36-operations.log`。
+以前のラベル座標へ連続入力する短いscriptは一部失敗しており、即時連続入力の完全保証とはしない。
+
+
+### フォルダ上角の追加調査（未解決）
+
+VMのExplorerは画面1280×800に対し800×600、座標-4,-4で表示される。
+public IsZoomed=TRUE / GetWindowPlacement.showCmd=SW_SHOWMAXIMIZED、X11の
+MAXIMIZED_VERT/HORZも有効だった。通常ウィンドウの丸角欠落と見なしていたが、
+実際は小さいままの最大化状態である。`.local/vm-test/folder-state36.log`、
+`folder-placement36-xprops.log`。通常ウィンドウを画面内に置いた自作probeでは丸角は存在する。
+
+Cabinet初回配置clamp候補の自作X11試験10項目は成功したが、この実VMの最大化は
+その対象外で、改善できていない。候補は未commit、最大化状態を受け取るWM経路を調査中。
+`.local/vm-test/window-placement36.log` / `folder-rounded36.png`。
+
+
+### Classic Startの文字幅（0037）
+
+実XP ClassicはStart実62×22/ideal62×21、MS UI Gothic -12 bold、text margins各1px。
+旧Wineのaliasは幅57pxで、classic時だけtext margin初期化も欠けていた。
+0037は外部shellのStart aliasかつtheme無効時だけ公開測定に基づく外側余白を加える。
+大きな画像はその高さを維持し、文字の最低高さと区別する。通常Button/Lunaは維持。
+
+自作7fixture（文字だけ、画像サイズ/余白、大小字体）が実XPと一致し、
+VMでも7項目、6種類の日本語Classic字体、Start実62×22とphysical開閉5往復が成功。
+`.local/vm-test/classic37-fixture.log`、`classic37.log` / `classic37.png`。
+Lunaへ復元・cold restart後もStart実112×30/ideal112×26と開閉5往復を維持。
+`.local/vm-test/luna37.log`。別sourceで全37patchの適用・全build/installも成功。
+`.local/wine-verified37-build.log`。144/192 DPIのこのClassic余白を実XPと比較した扱いにはしない。
+
+Classicのmin/max描画枠は実XPも接している。500px幅の視覚範囲はmin444..460、
+max460..476、close478..494で、既存Wine規則と一致するためgapを追加しない。
+`.local/xp-reference/classic-buttons.png` / `serial.log`（公開probe）。

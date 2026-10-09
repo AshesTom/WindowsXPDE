@@ -34,3 +34,4 @@
 0034-uxtheme-caption-icon-fallback.patch
 0035-uxtheme-external-clock-font-profile.patch
 0036-win32u-external-halftone-clip-mapping.patch
+0037-comctl32-external-classic-start-size.patch

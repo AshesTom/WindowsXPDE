@@ -32,3 +32,10 @@ compile "$root/.local/bridge/nonclient-theme-test.exe" -municode "$root/tests/no
 
 # Synthetic strings exercise the source parser without reading theme assets.
 python3 "$root/tests/font_parser.py"
+
+# Self-authored activation manifest selects the public v6 Button API on XP.
+"${MINGW_WINDRES:-i686-w64-mingw32-windres}" -I "$root/tests" \
+    "$root/tests/classic-start-sizing.rc" "$root/.local/bridge/classic-start-sizing-res.o"
+compile "$root/.local/bridge/classic-start-sizing-test.exe" -municode \
+    "$root/tests/classic-start-sizing.c" "$root/.local/bridge/classic-start-sizing-res.o" \
+    -luxtheme -lcomctl32 -lgdi32

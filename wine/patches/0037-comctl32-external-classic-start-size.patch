@@ -1,0 +1,62 @@
+From: Win4Wine contributors
+Subject: [PATCH] comctl32: preserve Classic external Start label padding
+
+Seven self-authored public Button/image/font fixtures on Japanese XP Classic
+show five additional horizontal pixels and seven additional text-height
+pixels beyond Wine's label calculation at 96 DPI. Tall image lists retain
+their own height. Apply those measured outer bounds only to the explicit
+external Start alias with themes inactive, and initialize its measured
+one-pixel text margins for Classic as well as Luna. Preserve ordinary
+Buttons and the existing themed sizing path. No Microsoft assets or code.
+
+--- a/dlls/comctl32/button.c
++++ b/dlls/comctl32/button.c
+@@ -512,7 +512,7 @@
+         infoPtr->style = cs->style;
+         {
+             WCHAR name[64];
+-            if (IsThemeActive() && GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL", NULL, 0) &&
++            if (GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL", NULL, 0) &&
+                 GetClassNameW(hWnd, name, ARRAY_SIZE(name)) && !wcscmp(name, L"Win4WineStartButton"))
+                 SetRect(&infoPtr->text_margin, 1, 1, 1, 1);
+         }
+@@ -1123,12 +1123,17 @@
+ /* If maxWidth is zero, rectangle width is unlimited */
+ /* This independently registered control is selected only by the opted-in
+  * external taskbar. Ordinary Buttons retain their own font and sizing. */
++static BOOL external_start_button(const BUTTON_INFO *info)
++{
++    WCHAR name[64];
++    return GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL", NULL, 0) &&
++        GetClassNameW(info->hwnd, name, ARRAY_SIZE(name)) &&
++        !wcscmp(name, L"Win4WineStartButton");
++}
++
+ static HTHEME start_button_theme(const BUTTON_INFO *info)
+ {
+-    WCHAR name[64];
+-    if (!IsThemeActive() || !GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL", NULL, 0) ||
+-        !GetClassNameW(info->hwnd, name, ARRAY_SIZE(name)) ||
+-        wcscmp(name, L"Win4WineStartButton")) return NULL;
++    if (!IsThemeActive() || !external_start_button(info)) return NULL;
+     return GetWindowTheme(info->hwnd);
+ }
+ 
+@@ -1483,6 +1488,17 @@
+ 
+         size->cx = labelSize.cx;
+         size->cy = labelSize.cy;
++        if (!IsThemeActive() && external_start_button(infoPtr))
++        {
++            SIZE textSize;
++            UINT dpi = GetDpiForWindow(infoPtr->hwnd);
++            /* Public Japanese XP Classic measurements: five outer horizontal
++             * pixels, seven additional text vertical pixels at 96 DPI. Keep
++             * tall image lists at their actual height instead of padding them. */
++            BUTTON_GetTextIdealSize(infoPtr, 0, &textSize);
++            size->cx += MulDiv(5, dpi, 96);
++            size->cy = max(size->cy, textSize.cy + MulDiv(7, dpi, 96));
++        }
+     }
+     return TRUE;
+ }
