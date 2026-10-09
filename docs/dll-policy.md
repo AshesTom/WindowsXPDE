@@ -612,3 +612,7 @@ Wine は3つとも未処理で、XP の native control は常に全手がかり�
 My Computer などの LocalizedString/InfoTip を、実XPで読んだ値（XP shell32 のリソース番号）にする。
 文字列そのものは利用者の XP DLL に残し、リポジトリには番号だけを置く。デスクトップの横間隔は実XPの
 SPI 値78px（Wine 既定75px では74px幅の「マイ コンピュータ」が折り返す）を一度だけ設定する。
+
+**判断: 0051は外部 shell の caption 領域が広がったとき、新たに見える非クライアント部分を再描画させる。**
+最大化・拡大の直後は古い丸角領域が枠の描画を切り取り、その後の SetWindowRgn(..., FALSE) は再描画しない。
+caption は後で描き直されるが、メニューバーの右端が黒く残った。広がった差分だけを RDW_FRAME で無効化する。

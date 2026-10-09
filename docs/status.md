@@ -685,7 +685,7 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
 - Windows アプリ: Wine cmd（wineconsole）は XP の枠・アイコン付きで動作。Domino 1.44（配布元から取得、
   `.local/` のみ）は起動・最大化・メニュー表示を確認した。C ロケールでは ANSI 文字列が化けたため、
   session.json の `locale`（例 `ja_JP.UTF-8`）で Wine の LANG/LC_ALL を指定できるようにした。日本語にすると
-  ACP/OEMCP が932、時計が「18:36」形式になる（実XPと同じ）。Domino のメニューバー右端に黒い矩形が残る（未調査）。
+  ACP/OEMCP が932、時計が「18:36」形式になる（実XPと同じ）。Domino のメニューバー右端の黒い矩形は、Wine の notepad でも最大化・拡大で再現し、0051 で修正した。
   ロケール変更後の Domino の再実行は、外部コードの実行として自動承認されず未確認。
 - デスクトップと Start の「My Computer」等は、registry profile 10 で XP shell32 の LocalizedString 参照に
   合わせ、「マイ コンピュータ」「マイ ネットワーク」「マイ ドキュメント」「プリンタと FAX」になった。

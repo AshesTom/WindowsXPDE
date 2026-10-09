@@ -1,0 +1,43 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] uxtheme: repaint the frame uncovered by a larger caption region
+
+Purpose: paint the whole menu bar after a Luna window grows. The external
+shell keeps a rounded caption region sized to the window. When a window
+was maximized or widened, the frame was painted while the previous,
+smaller region still clipped it; the region was then replaced with
+SetWindowRgn(..., FALSE), which does not repaint. The caption was drawn
+again afterwards, but the right end of the menu bar stayed black (Wine's
+Notepad and the Domino sequencer showed it after maximizing). When the new
+region adds visible area, invalidate that non-client part so DefWindowProc
+paints it. Limited to the regions managed for the opted-in external shell.
+No Microsoft binary is changed.
+
+diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
+index 4fda410..1a230f2 100644
+--- a/dlls/uxtheme/window.c
++++ b/dlls/uxtheme/window.c
+@@ -140,6 +140,24 @@ static void caption_region_update(HWND hwnd, HTHEME theme, const RECT *caption,
+         if (region->managed) DeleteObject(region->managed);
+         region->managed = copy;
+         copy = NULL;
++        /* The previous region clipped any frame painting done before this
++         * resize finished, and SetWindowRgn(..., FALSE) does not repaint.
++         * Repaint the non-client part that the larger region now shows,
++         * such as the right end of a menu bar after maximizing. */
++        if (kind != ERROR && CombineRgn(current, region->managed, current, RGN_DIFF) > NULLREGION)
++        {
++            RECT client;
++            POINT origin = {0, 0};
++            HRGN area = CreateRectRgn(0, 0, 0, 0);
++            GetClientRect(hwnd, &client);
++            ClientToScreen(hwnd, &origin);
++            if (area && CombineRgn(area, current, NULL, RGN_COPY) != ERROR)
++            {
++                OffsetRgn(area, window.left - origin.x, window.top - origin.y);
++                RedrawWindow(hwnd, NULL, area, RDW_INVALIDATE | RDW_FRAME | RDW_NOCHILDREN);
++            }
++            if (area) DeleteObject(area);
++        }
+     }
+ 
+ done:
