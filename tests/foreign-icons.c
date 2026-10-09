@@ -120,7 +120,10 @@ static void check_image_list(HICON foreign, HICON local)
     typedef INT (WINAPI *replace_fn)(HANDLE, INT, HICON);
     typedef HICON (WINAPI *get_fn)(HANDLE, INT, UINT);
     typedef BOOL (WINAPI *destroy_fn)(HANDLE);
-    HMODULE module = LoadLibraryW(L"comctl32.dll");
+    WCHAR path[MAX_PATH] = L"comctl32.dll";
+    HMODULE module;
+    GetEnvironmentVariableW(L"XP_ICON_COMCTL", path, MAX_PATH);
+    module = LoadLibraryW(path);
     create_fn create;
     replace_fn replace;
     get_fn get;
@@ -147,6 +150,15 @@ static void check_image_list(HICON foreign, HICON local)
     if (a) destroy(a);
     if (b) destroy(b);
     FreeLibrary(module);
+}
+
+static DWORD WINAPI concurrent_reader(void *data)
+{
+    HICON *handles = data;
+    unsigned int i;
+    for (i = 0; i < 160; ++i)
+        if (!inspect_icon(handles[i % 80]) || !draw_hash(handles[i % 80])) return 1;
+    return 0;
 }
 
 static LRESULT CALLBACK owner_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -231,6 +243,9 @@ int wmain(int argc, WCHAR **argv)
     }
     else
     {
+        HICON handles[80];
+        HANDLE readers[2];
+        DWORD code;
         check((HICON)SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0) == borrowed, "WM_GETICON preserves borrowed HICON identity");
         {
             MSG message;
@@ -259,6 +274,10 @@ int wmain(int argc, WCHAR **argv)
         SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)local);
         check((HICON)SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0) == borrowed,
               "unsupported foreign WM_SETICON cannot replace owner icon");
+        for (i = 0; i < 80; ++i) handles[i] = (HICON)SendMessageW(hwnd, WM_APP + 1, i, 0);
+        readers[0] = CreateThread(NULL, 0, concurrent_reader, handles, 0, NULL);
+        readers[1] = CreateThread(NULL, 0, concurrent_reader, handles, 0, NULL);
+        check(readers[0] && readers[1], "start concurrent foreign cache readers");
         for (i = 1; i < 80; ++i)
         {
             HICON other = (HICON)SendMessageW(hwnd, WM_APP + 1, i, 0);
@@ -266,6 +285,14 @@ int wmain(int argc, WCHAR **argv)
             check(inspect_icon(other) && draw_hash(other) == draw_hash(reference), "bounded cache pressure preserves pixels");
             DestroyIcon(reference);
         }
+        for (i = 0; i < 2; ++i)
+            if (readers[i])
+            {
+                check(WaitForSingleObject(readers[i], 10000) == WAIT_OBJECT_0 &&
+                      GetExitCodeThread(readers[i], &code) && !code,
+                      "concurrent cache publication, reads and eviction preserve pins");
+                CloseHandle(readers[i]);
+            }
         check(draw_hash(borrowed) == expected, "evicted live icon rematerializes");
         SendMessageW(hwnd, WM_APP + 2, 0, 0);
         check(!inspect_icon(borrowed) && !draw_hash(borrowed), "owner destruction invalidates cached borrowed icon");

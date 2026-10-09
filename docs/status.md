@@ -249,3 +249,7 @@ close のテーマ画像は両環境とも21×21・8状態。実際の配置と�
 - 実 XP の Start テーマ字体は MS UI Gothic -16・bold・italic。
   取得には自作 Button の SetWindowTheme(Start) → OpenThemeData(Button) を使った。
   上記の Shell_TrayWnd 子 Button の WM_GETFONT は、アプリのタスクボタンの字体と断定しない。
+- 0025 の追加試験で、初回の foreign GetIconInfo が GDI 初期化を USER lock 内で行う不具合を発見。
+  初期化・画像 import を lock 外へ移し、再取得時の owner/generation を検証する。
+  callback-first・SendMessageTimeout/Callback・並行読み取りと native XP ImageList の公開 API 試験が成功。
+  `.local/foreign-icons-native-comctl.log`。この修正前の25版は Debian VM へ配置していない。

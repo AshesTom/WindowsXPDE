@@ -404,7 +404,7 @@ diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
  
  static struct cursoricon_object *get_icon_ptr( HICON handle )
  {
-@@ -72,6 +78,252 @@
+@@ -72,6 +78,284 @@
          obj = NULL;
      }
      return obj;
@@ -522,17 +522,22 @@ diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
 +
 +/* The regular owner object and USER table are never replaced with imported
 + * objects. All calls here hold user_lock; every borrowed pointer is pinned. */
-+static void free_foreign_icon( struct cursoricon_object *obj )
++static void destroy_foreign_icon( struct cursoricon_object *obj )
 +{
 +    assert( obj->is_foreign && !obj->refs );
-+    list_remove( &obj->foreign_entry );
-+    --foreign_count;
 +    if (obj->frame.color) NtGdiDeleteObjectApp( obj->frame.color );
 +    if (obj->frame.alpha) NtGdiDeleteObjectApp( obj->frame.alpha );
 +    if (obj->frame.mask) NtGdiDeleteObjectApp( obj->frame.mask );
 +    free( obj->module.Buffer );
 +    if (!IS_INTRESOURCE( obj->resname )) free( obj->resname );
 +    free( obj );
++}
++
++static void free_foreign_icon( struct cursoricon_object *obj )
++{
++    list_remove( &obj->foreign_entry );
++    --foreign_count;
++    destroy_foreign_icon( obj );
 +}
 +
 +void release_foreign_icon( void *ptr )
@@ -545,15 +550,15 @@ diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
 +
 +static struct cursoricon_object *get_foreign_icon( HICON handle )
 +{
-+    struct cursoricon_object *obj, *next;
++    struct cursoricon_object *obj, *next, *cached;
 +    struct shared_icon_data *data;
 +    HICON full = NULL;
 +    unsigned int size = 0, received = 0;
 +    BYTE *pixels;
 +    size_t mask_size, color_size;
 +    BOOL ok;
++    HDC dc;
 +
-+    user_lock();
 +    SERVER_START_REQ( get_shared_icon )
 +    {
 +        req->handle = wine_server_user_handle( handle );
@@ -561,6 +566,7 @@ diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
 +        { full = wine_server_ptr_handle( reply->handle ); size = reply->size; }
 +    }
 +    SERVER_END_REQ;
++    user_lock();
 +    if (!full || size < sizeof(*data) || size > SHARED_ICON_MAX_BYTES)
 +    {
 +        LIST_FOR_EACH_ENTRY_SAFE( obj, next, &foreign_icons, struct cursoricon_object, foreign_entry )
@@ -580,15 +586,15 @@ diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
 +            list_add_head( &foreign_icons, &obj->foreign_entry );
 +            return obj;
 +        }
-+    /* Eviction destroys only unpinned local bitmap copies. A later read of the
-+     * same global HICON can rematerialize it while its owner remains alive. */
-+    if (foreign_count >= 64)
-+    {
-+        LIST_FOR_EACH_ENTRY_REV( obj, &foreign_icons, struct cursoricon_object, foreign_entry )
-+            if (!obj->refs) { free_foreign_icon( obj ); break; }
-+        if (foreign_count >= 64) { user_unlock(); return NULL; }
-+    }
-+    if (!(data = malloc( size ))) { user_unlock(); return NULL; }
++    /* GDI imports can initialize the graphics driver and dispatch messages.
++     * Keep the unpublished temporary object outside USER lock, then validate
++     * owner liveness and generation again before publishing it to the cache. */
++    user_unlock();
++    /* GetIconInfo's copy_bitmap creates a DC under its borrowed object lock.
++     * Initialize the display driver here, before that lock can be held. */
++    if (!(dc = NtGdiCreateCompatibleDC( 0 ))) return NULL;
++    NtGdiDeleteObjectApp( dc );
++    if (!(data = malloc( size ))) return NULL;
 +    SERVER_START_REQ( get_shared_icon )
 +    {
 +        req->handle = wine_server_user_handle( full );
@@ -599,7 +605,7 @@ diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
 +    SERVER_END_REQ;
 +    if (!ok || received != size || shared_icon_size( data ) != size ||
 +        !(obj = calloc( 1, sizeof(*obj) )))
-+    { free( data ); user_unlock(); return NULL; }
++    { free( data ); return NULL; }
 +    obj->obj.handle = full;
 +    obj->obj.type = NTUSER_OBJ_ICON;
 +    obj->is_foreign = obj->is_icon = TRUE;
@@ -641,9 +647,35 @@ diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
 +    }
 +    else obj->resname = MAKEINTRESOURCEW(data->name_id);
 +    free( data );
++    if (!ok) { destroy_foreign_icon( obj ); return NULL; }
++    user_lock();
++    SERVER_START_REQ( get_shared_icon )
++    {
++        req->handle = wine_server_user_handle( full );
++        ok = !wine_server_call( req ) && wine_server_ptr_handle( reply->handle ) == full &&
++             reply->size == size;
++    }
++    SERVER_END_REQ;
++    if (!ok) { user_unlock(); destroy_foreign_icon( obj ); return NULL; }
++    /* Another thread or a callback may have populated this handle meanwhile. */
++    LIST_FOR_EACH_ENTRY( cached, &foreign_icons, struct cursoricon_object, foreign_entry )
++        if (cached->obj.handle == full && !cached->retired)
++        {
++            ++cached->refs;
++            list_remove( &cached->foreign_entry );
++            list_add_head( &foreign_icons, &cached->foreign_entry );
++            destroy_foreign_icon( obj );
++            return cached;
++        }
++    /* Evict only unpinned copies, preserving the bound after unlocked import. */
++    if (foreign_count >= 64)
++    {
++        LIST_FOR_EACH_ENTRY_REV( cached, &foreign_icons, struct cursoricon_object, foreign_entry )
++            if (!cached->refs) { free_foreign_icon( cached ); break; }
++        if (foreign_count >= 64) { user_unlock(); destroy_foreign_icon( obj ); return NULL; }
++    }
 +    list_add_head( &foreign_icons, &obj->foreign_entry );
 +    ++foreign_count;
-+    if (!ok) { free_foreign_icon( obj ); user_unlock(); return NULL; }
 +    obj->refs = 1;
 +    return obj;
 +}
@@ -657,7 +689,7 @@ diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
  }
  
  BOOL process_wine_setcursor( HWND hwnd, HWND window, HCURSOR handle )
-@@ -160,7 +412,7 @@
+@@ -160,7 +444,7 @@
  {
      struct cursoricon_object *obj, *ret;
  
@@ -666,7 +698,7 @@ diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
      if (!obj->is_ani) return obj;
      if (step >= obj->ani.num_steps)
      {
-@@ -338,6 +590,7 @@
+@@ -338,6 +622,7 @@
          }
      }
  
@@ -674,7 +706,7 @@ diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
      release_user_handle_ptr( obj );
      return TRUE;
  }
-@@ -476,7 +729,7 @@
+@@ -476,7 +761,7 @@
      struct cursoricon_object *obj, *frame_obj;
      BOOL ret = TRUE;
  
