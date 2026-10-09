@@ -63,3 +63,4 @@
 0063-uxtheme-external-xp-image-resize.patch
 0064-win32u-external-transparent-blt-mapping.patch
 0065-user32-external-themed-frame-after-seticon.patch
+0066-user32-external-japanese-line-breaks.patch

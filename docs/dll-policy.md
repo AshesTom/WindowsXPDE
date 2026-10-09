@@ -675,3 +675,6 @@ XP の uxtheme は画像を自前で拡大縮小し、GDI の StretchBlt・Trans
 
 **判断: 0065 は WM_SETICON の後にも外部 shell の Luna 枠を描き直す。** WM_SETTEXT と同じ扱い。
 
+**判断: 0066 は日本語 ANSI コードページの外部 shell で、DrawText の折り返しを実XPで測った規則にする。**
+禁則文字の一覧と戻し方は自作文字列の折り返し位置の測定値から決めた。usp10 の UAX#14 とは結果が異なる。
+
