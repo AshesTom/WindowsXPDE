@@ -28,11 +28,14 @@ export WINEPREFIX=/work/.local/prefix-clean
 旧手順の `ThemeActive=0` だけでは Luna の caption height が残り、クラシックのボタンが縦長になる。
 既存 prefix は `WINEPREFIX=... WINE=... python3 prefix/display.py --theme classic --dpi 96` で復元し、専用 session を再起動する。
 初期実装では96 DPI の新規 prefix の caption font は -11 Tahoma だった。
-現在の日本語 XP profile（version 6）では新規 prefix の Classic 字体を MS UI Gothic -12 にする。
+現在の日本語 XP profile（version 7）では新規 prefix の Classic 字体を MS UI Gothic -12 にする。
 既存 prefix の独自字体は移行時に上書きしない。Luna の字体は公開 API 実測に基づく別 profile を使用する。
 version 6 は `ClockFont`（96 DPI で MS UI Gothic -12 regular）を未存在時だけ追加する。
 外部シェルの日本語 Luna profile が有効かつテーマ選択が一致する場合に、TrayNotify の Clock 字体へ適用する。
 独自の ClockFont、無効な値、profile の無効化はそのまま保持し、値が欠落・不正なら Wine のテーマ字体へ戻る。
+version 7 は `TaskFont`（96 DPI で MS UI Gothic -12 regular）を未存在時だけ追加する。
+外部シェルの同じ日本語 Luna profile に限り、TaskBand の Toolbar テーマ字体へ適用する。
+コントロール自身の WM_GETFONT（実XPでは -13）とは別の公開テーマ字体で、独自値と欠落・不正時の fallback は ClockFont と同じ。
 
 XP の実行ファイルは内容を変えず `C:\xp\xp-explorer.exe` に配置する。Wine 自身の `explorer.exe` と AppDefaults を分けるため。native DLL の override はそのファイル名に限定する。起動時には新しい desktop manager に外部 shell フラグを渡す必要があるため、単体試験の前にその専用 prefix の wineserver を終了する。
 

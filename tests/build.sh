@@ -17,14 +17,14 @@ compile() {
 }
 # The reference probe can stay open while a new version is built.
 # Publish a new inode instead of truncating a PE mapped by Wine.
-for name in shellhook shell-layout-sync button-size system-menu rebar print-window foreign-icons mono-advance text-vcenter taskbar-fonts; do
+for name in shellhook shell-layout-sync workarea button-size system-menu rebar print-window foreign-icons mono-advance text-vcenter taskbar-fonts; do
     compile "$root/.local/bridge/$name-test.exe" -municode "$root/tests/$name.c" -luser32 -lgdi32
 done
 compile "$root/.local/bridge/class-probe.exe" -municode "$root/prefix/class-probe.c" -lole32 -luuid
 
 compile "$root/.local/bridge/display-test.exe" -s "$root/tests/display.c" -luxtheme -lgdi32
 
-for name in start-button start-sizing start-metrics theme-font theme-text-shadow theme-metrics classic-fonts font-profile taskbar-background clock-theme scrollbar-theme rebar-theme rebar-gripper rebar-tail reference-metrics shell-layout caption-text nonclient-caption caption-icons gradient-clip halftone-clip clock-metrics; do
+for name in start-button start-sizing start-metrics theme-font theme-text-shadow theme-metrics classic-fonts font-profile taskbar-background clock-theme scrollbar-theme rebar-theme rebar-gripper rebar-tail reference-metrics shell-layout caption-text nonclient-caption caption-icons gradient-clip halftone-clip clock-metrics clock-pixels taskbar-text; do
     compile "$root/.local/bridge/$name-test.exe" -municode "$root/tests/$name.c" -luxtheme -lgdi32
 done
 

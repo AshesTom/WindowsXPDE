@@ -533,3 +533,17 @@ Wine自身の共有stock IDI_WINLOGOを使う。外部shellのLuna描画だけ�
 **判断: 0034は既存Classicと同じ公開APIの取得・補完順を使用する。**
 アイコンの所有権は変えず、LR_SHAREDのstock iconも破棄しない。modal no-iconは補完しない。
 自作ウィンドウ6パターンを公開DrawIconExの結果と比較し、独立環境とVMで成功した。
+
+## 33. 作業領域とタスク文字の追加修正
+
+**判断: 0039はWine自身の公開X11 property通知とmonitor cacheを修正する。**
+EWMH/GTKの有効な作業領域だけをdesktop所有threadで観測し、同一値を除外して
+WM_SETTINGCHANGEを通知する。明示SPI上書きと非opt-inの挙動を維持する。
+Microsoft資産なしの自作公開API試験で動的変更・最大化・通知回数を確認する。
+
+**判断: 0040は実XPの公開TaskBand::Toolbar測定値を既存の明示字体profileへ追加する。**
+TaskFontは未設定時だけ生成し、有効な日本語Luna profileのpart/stateに限り適用する。
+実タスクの公開Toolbar messageは自作bufferを相手processに確保して利用し、そのbuffer
+だけを読み戻す。Microsoft実装のメモリ・コード・非公開データは調べない。
+実時計の字体適用も、公開GetWindowTextとGetDCによる画面を自作DrawThemeTextと比較する。
+DLL・テーマ・フォントの改変や再配布は行わない。

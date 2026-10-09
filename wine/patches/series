@@ -36,3 +36,5 @@
 0036-win32u-external-halftone-clip-mapping.patch
 0037-comctl32-external-classic-start-size.patch
 0038-uxtheme-external-rebar-gripper-extent.patch
+0039-winex11-external-workarea-refresh.patch
+0040-uxtheme-external-task-font-profile.patch

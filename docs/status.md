@@ -518,3 +518,43 @@ sentinel、native paint/input維持のVM試験が成功し、実画面の点々�
 この局所比較は画面幅が異なるため全配置の一致を保証しないが、帯を削除する根拠にはしない。
 実XP publicgripper結果は`.local/xp-reference/serial.log`のGRIP6、補助記録は
 `.local/taskbar-gripper-findings.md`。Microsoftコード・資源は未変更。
+
+### 動的な作業領域（0039）
+
+WMの公開_NET_WORKAREAは1280×766でも、WineのSPI_GETWORKAREAとMonitor.rcWorkは
+1280×800のままだった。0039は外部shellのdesktop所有threadで公開EWMH/GTK propertyの
+有効な変更を観測し、monitor cacheを更新してWM_SETTINGCHANGEを通知する。
+同一値・不正値による通知を抑え、WM_DISPLAYCHANGEは送らない。
+明示SPI_SETWORKAREAを呼んだprocessの上書き値と、通常Wineの挙動は保持する。
+
+`tests/workarea.py`は独立Xvfbと一時prefixで、30/34px予約の切替、GTK優先・削除、
+同じHWNDの復元・最大化、40回の同値通知、不正property、明示SPIの保持を検査する。
+Microsoft資産なしの新規prefixでも全9段階が成功。opt-outは旧実装と出力が一致。
+`.local/workarea-final-fresh.log` / `workarea-final-fixed-optout.log`。
+別sourceで全40patchの適用・全build/installと、このrunnerの再試験も成功。
+`.local/wine-verified40-build.log` / `workarea-verified40.log`。
+
+### 実タスク文字の字体（0040）と時計の実適用
+
+実XPのTaskBand::Toolbar公開テーマ字体はMS UI Gothic -12 regularだった。
+controlのWM_GETFONTは-13であり、それだけの一致では描画を検証できない。
+Wineは実タスクのpart=0/state=1,5でTahoma -11を選び、文字幅も小さかった。
+0040は日本語Luna profileの有効なTaskFontをこの公開テーマ経路へ適用する。
+registry version 7は未設定時だけ追加し、独自設定を上書きしない。
+
+実タスクの自作文字列「W4W Task 1234」は、修正後の通常/active両状態で実XPと
+文字画素数199・位置・幅が一致した。`.local/taskbar-text-final.txt`。
+9種類のprofile字体は96/144/192 DPIと無効化・欠落・不正値・独自設定を検査済み。
+`tests/taskbar-text.c`は実タスク画面と公開theme queryを記録する診断用probe。
+
+時計も`tests/clock-pixels.c`で実TrayClockWClassの現在文字列を取得し、同じ文字列の
+公開DrawThemeTextおよび明示MS UI Gothic -12描画と比較した。2種類の時刻で
+全白文字画素の差0。0035の字体が実時計に適用されており、追加patchは不要だった。
+`.local/clock-pixels-actual.log`。英語形式の独立prefixでの適用検査であり、
+実XPの24時間形式との幅の比較とは区別する。
+
+Debian VMにも0039/0040とprofile version 7をatomic反映し、cold restartのattempt 1で起動。
+実SPI/Monitor作業領域はともに1280×766へ改善した。時計の白文字97画素は両比較で差0、
+タスク文字も通常/activeの位置と199画素を維持した。
+`.local/vm-test/fonts-workarea40.log` / `taskbar-text40.log`。
+folder-state probeはこの時点でフォルダを開いていないためexit 1だが、作業領域のAPI取得は成功。
