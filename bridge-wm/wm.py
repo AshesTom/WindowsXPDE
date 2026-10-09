@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import select
 import signal
+import struct
 import time
 from Xlib import X, XK, Xatom, display, error, protocol
 from icons import payload as icon_payload
@@ -52,6 +53,7 @@ class Manager:
         self.setprop(self.root, '_NET_SUPPORTED', Xatom.ATOM, [self.atom(a) for a in supported])
         self.setprop(self.root, '_NET_NUMBER_OF_DESKTOPS', Xatom.CARDINAL, [1])
         self.setprop(self.root, '_NET_CURRENT_DESKTOP', Xatom.CARDINAL, [0])
+        self.own_xsettings()
         self.tab = self.d.keysym_to_keycode(XK.string_to_keysym('Tab'))
         for modifiers in (0, X.LockMask, X.Mod2Mask, X.LockMask | X.Mod2Mask):
             self.root.grab_key(self.tab, X.Mod1Mask | modifiers, True, X.GrabModeAsync, X.GrabModeAsync)
@@ -66,6 +68,30 @@ class Manager:
             if w.get_attributes().map_state == X.IsViewable:
                 self.manage(w)
         self.workarea()
+
+    def own_xsettings(self):
+        """Hide GTK header-bar window buttons; the Win32 frame already has them.
+
+        Only claims an unowned XSETTINGS selection, so an existing settings
+        daemon keeps control. GTK falls back to its defaults for other keys.
+        """
+        selection = self.atom('_XSETTINGS_S%d' % self.d.get_default_screen())
+        if self.d.get_selection_owner(selection) != X.NONE:
+            return
+        def pad(data):
+            return data + b'\0' * (-len(data) % 4)
+        name, value = b'Gtk/DecorationLayout', b':'
+        entry = struct.pack('<BBH', 1, 0, len(name)) + pad(name) + struct.pack('<II', 0, len(value)) + pad(value)
+        settings = struct.pack('<B3xII', 0, 0, 1) + entry
+        kind = self.atom('_XSETTINGS_SETTINGS')
+        self.support.change_property(kind, kind, 8, settings)
+        self.support.set_selection_owner(selection, X.CurrentTime)
+        if self.d.get_selection_owner(selection) != self.support:
+            return
+        self.root.send_event(protocol.event.ClientMessage(
+            window=self.root, client_type=self.atom('MANAGER'),
+            data=(32, [X.CurrentTime, selection, self.support.id, 0, 0])), event_mask=X.StructureNotifyMask)
+        self.d.flush()
 
     def atom(self, name):
         if name not in self.atoms:

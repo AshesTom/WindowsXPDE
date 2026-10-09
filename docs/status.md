@@ -674,4 +674,8 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
 - フォルダウィンドウの「フォルダ」ボタンは枠だけ開いて中身が空だった。XP shdocvw の Explorer Band が
   未登録だったためで、registry profile version 9 で登録し、ツリーの表示・展開・移動・開閉を確認した。
   「検索」ボタンの検索コンパニオンは mshtml を使う HTML 画面で、mshtml を無効にしているため空のまま（対象外）。
+- Linux アプリ: lxterminal、gnome-terminal（UTF-8 ロケールが必要）、Remmina、l3afpad（leafpad は Debian 13 に
+  無く、その後継）、mousepad、Firefox ESR、Chromium を XP の枠・タスクボタン・アイコン付きで起動した。
+  Remmina の GTK ヘッダーバーが枠の内側に2組目の最小化・最大化・閉じるを出していたため、WM が空いている
+  XSETTINGS を所有して `Gtk/DecorationLayout=:` を公開する。ヘッダーバー内の題名は残る。
 - 「スタート」の太字斜体の字形は実XPと一部異なる（未修正）。

@@ -45,6 +45,10 @@ try:
     windows = [desktop, dock, first, second]
     second.set_wm_protocols([atom('WM_DELETE_WINDOW')])
     wait(lambda: prop(root, '_NET_WORKAREA') == [0, 0, g.width, g.height-32], 'taskbar workarea')
+    owner = d.get_selection_owner(atom('_XSETTINGS_S%d' % d.get_default_screen()))
+    assert owner != X.NONE, 'XSETTINGS owner'
+    settings = bytes(owner.get_full_property(atom('_XSETTINGS_SETTINGS'), X.AnyPropertyType).value)
+    assert b'Gtk/DecorationLayout' in settings and settings.endswith(b':\0\0\0'), 'GTK decoration layout'
     wait(lambda: f'{first.id:x}\t' in (ipc / 'windows.tsv').read_text(), 'native snapshot')
     assert f'{dock.id:x}\t' not in (ipc / 'windows.tsv').read_text()
     wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [second.id], 'initial focus')
