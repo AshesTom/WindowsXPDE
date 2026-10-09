@@ -590,3 +590,9 @@ Luna の caption button は 9/13/19/23px の glyph を持つ。Wine は21×21の
 固定解除した XP タスクバーは WS_CAPTION を持たず、自身の WM_NCHITTEST で帯の間を HTCAPTION とする。
 Wine の DefWindowProc は押下時はその値で capture loop に入るが、離した位置は内部の既定判定で調べ、
 HTCLIENT となって WM_CONTEXTMENU を送らなかった。押下時と同じく window に問い合わせる。
+
+**判断: 0048は外部 shell の DrawFrameControl(DFC_CAPTION) の Marlett 字体と位置を実XPに合わせる。**
+Wine は em=正方形の辺−2 を text extent で中央寄せし、16×14の最大化記号が1px左・1px幅広く、
+左のボタンに接して見えた。自作の公開API probe を実XPで実行し、高さ10〜30pxで em=辺−4、
+正方形の内側2px（押下時3px）から描くことを確認した。実XP・修正後Wineで `--verify` が成功し、
+修正前Wineで失敗する。XP の字形画素はリポジトリへ保存しない。

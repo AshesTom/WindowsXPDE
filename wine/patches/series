@@ -45,3 +45,4 @@
 0045-win32u-transparentblt-shrink-mode.patch
 0046-uxtheme-external-glyph-content-rect.patch
 0047-win32u-nc-right-click-hit-test.patch
+0048-user32-external-classic-caption-glyphs.patch
