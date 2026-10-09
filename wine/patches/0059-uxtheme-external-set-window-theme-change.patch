@@ -1,0 +1,32 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] uxtheme: send a per-window theme change number from SetWindowTheme
+
+Purpose: let XP's native controls reopen their theme after SetWindowTheme.
+XP's comctl32 v6 controls remember the change number in WM_THEMECHANGED's
+wParam and reopen their theme only when it differs. Wine sent 0, the
+number the controls start with, so the folder window's ReBar closed its
+theme after Explorer's SetWindowTheme(rebar, "ExplorerToolbar") and never
+reopened it: its band labels were drawn black on the classic face colour
+instead of the theme's grey text over the toolbar background. Sending -1,
+as a per-window change, makes the ReBar reopen its theme; its labels and
+background then match the reference XP machine. Only the opted-in
+external shell is affected.
+
+diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
+index 2f90dbb..10ec8c0 100644
+--- a/dlls/uxtheme/system.c
++++ b/dlls/uxtheme/system.c
+@@ -733,7 +733,12 @@ HRESULT WINAPI SetWindowTheme(HWND hwnd, LPCWSTR pszSubAppName,
+     if (SUCCEEDED(hr)) UXTHEME_InstallExternalClock(hwnd, pszSubAppName, pszSubIdList);
+     if (SUCCEEDED(hr)) UXTHEME_InstallExternalRebar(hwnd, pszSubAppName, pszSubIdList);
+     if(SUCCEEDED(hr))
+-        SendMessageW(hwnd, WM_THEMECHANGED, 0, 0);
++    {
++        /* XP's comctl32 v6 controls keep the change number from wParam and
++         * reopen their theme only when it differs; a per-window change sends -1. */
++        WPARAM change = GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL", NULL, 0) ? (WPARAM)-1 : 0;
++        SendMessageW(hwnd, WM_THEMECHANGED, change, 0);
++    }
+     return hr;
+ }
+ 

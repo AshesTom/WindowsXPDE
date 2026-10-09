@@ -24,6 +24,8 @@ int wmain(int argc, WCHAR **argv)
     static const struct { const WCHAR *cls; int part, state; } items[] = {
         {L"StartPanel", 1, 0}, {L"StartPanel", 2, 0}, {L"StartPanel", 4, 0}, {L"StartPanel", 6, 0},
         {L"StartPanel", 8, 0}, {L"StartPanel", 9, 1}, {L"Button", 1, 1}, {L"TaskBand", 0, 0},
+        {L"Rebar", 0, 0}, {L"Rebar", 1, 0}, {L"Rebar", 3, 0}, {L"ComboBox", 1, 1}, {L"ComboBox", 0, 0},
+        {L"Edit", 1, 1}, {L"Toolbar", 1, 1}, {L"Toolbar", 0, 0},
     };
     WCHAR line[512];
     HWND hwnd;
