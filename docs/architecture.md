@@ -31,7 +31,8 @@ proxy → WM: `PID-SEQUENCE.cmd` を atomic rename。内容は `activate|minimiz
 
 `_WIN4WINE_HWND` と `frames.tsv` の HWND を照合して枠と native クライアントを組にする。
 WM は枠をクライアントのすぐ下へ積み、枠の未使用の Win32 client 領域を native の画面で覆う。
-native ウィンドウの X border は 0 にし、測定した余白を `_NET_FRAME_EXTENTS` に公開する。初めて枠を付けるときは workarea の上端と左端を基準に位置を補正し、既定位置 0,0 で起動した xterm のタイトルバーも画面内に置く。
+native ウィンドウの X border は 0 にし、測定した余白を `_NET_FRAME_EXTENTS` に公開する。初めて枠を付けるとき、USPosition/PPosition のないウィンドウは XP の重ね配置の次の位置へ置く。
+位置指定のあるウィンドウは workarea の上端と左端を基準に補正し、0,0 で起動した xterm のタイトルバーも画面内に置く。
 EWMH の一覧、アクティブ ID、キーボードフォーカスは native XID のまま。
 アイコンは native の `_NET_WM_ICON` を優先し、なければ ICCCM `WM_HINTS` の pixmap / mask を読む。
 property は最大1 MiB、画像は256×256までとし、manage と icon / hints property 変更時だけ取得する。

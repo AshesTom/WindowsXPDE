@@ -596,3 +596,9 @@ Wine は em=正方形の辺−2 を text extent で中央寄せし、16×14の�
 左のボタンに接して見えた。自作の公開API probe を実XPで実行し、高さ10〜30pxで em=辺−4、
 正方形の内側2px（押下時3px）から描くことを確認した。実XP・修正後Wineで `--verify` が成功し、
 修正前Wineで失敗する。XP の字形画素はリポジトリへ保存しない。
+
+**判断: 0049は外部 shell の CW_USEDEFAULT を XP の重ね配置にする。**
+実XPの自作公開API probe で、96 DPI の Luna/Classic とも右へ22px、下へ SM_CYSIZE+SM_CYFRAME、
+作業領域の1/4を超えると先頭へ戻り、既定寸法は幅3/4×(高さ3/4−23px) と測った。番号は desktop window の
+property で全 process 共有する。STARTF_USEPOSITION/USESIZE を優先する。WM も位置指定のない Linux
+ウィンドウを同じ規則で重ねる（枠の上端−1を縦の間隔に使う）。Win32 と Linux の番号は別々に進む。

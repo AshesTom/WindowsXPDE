@@ -1,0 +1,76 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] win32u: cascade default-positioned windows like XP
+
+Purpose: open CW_USEDEFAULT windows at XP's cascading positions instead
+of stacking every one at the top-left corner of the work area. A
+self-authored probe (tests/default-position.c) on the reference XP machine
+measured, at 96 DPI, a 22 pixel step to the right in both Luna and classic,
+a step down of SM_CYSIZE + SM_CYFRAME (29 and 22 pixels), a restart after a
+quarter of the work area, and a default size of three quarters of the work
+area width by three quarters of its height minus 23 pixels, independent of
+the slot. Keep the slot in a property of the desktop window so that all
+processes share one sequence, as XP does per desktop. STARTF_USEPOSITION
+and STARTF_USESIZE keep precedence. Limited to the opted-in external shell.
+No Microsoft binary is changed.
+
+diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
+index ea4d111..9d33e9c 100644
+--- a/dlls/win32u/window.c
++++ b/dlls/win32u/window.c
+@@ -5380,6 +5380,26 @@ static BOOL is_default_coord( int x )
+     return x == CW_USEDEFAULT || x == 0x8000;
+ }
+ 
++/* XP cascades default-positioned overlapped windows. Public measurements on
++ * XP at 96 DPI: Luna and classic both step 22px right; down by
++ * SM_CYSIZE + SM_CYFRAME (29px Luna, 22px classic); the next slot wraps to
++ * the first one once it passes a quarter of the work area. The slot is shared
++ * through the desktop window, as XP keeps one sequence per desktop. */
++static void external_cascade_position( const RECT *work, int *x, int *y )
++{
++    static const WCHAR prop[] = {'_','_','w','i','n','4','w','i','n','e','_','c','a','s','c','a','d','e',0};
++    HWND desktop = get_desktop_window();
++    int step_x = muldiv( 22, get_system_dpi(), 96 );
++    int step_y = get_system_metrics( SM_CYSIZE ) + get_system_metrics( SM_CYFRAME );
++    int slot = HandleToUlong( NtUserGetProp( desktop, prop )) + 1;
++
++    if (slot * step_x > (work->right - work->left) / 4 || slot * step_y > (work->bottom - work->top) / 4)
++        slot = 1;
++    NtUserSetProp( desktop, prop, ULongToHandle( slot ));
++    *x = work->left + slot * step_x;
++    *y = work->top + slot * step_y;
++}
++
+ /***********************************************************************
+  *           fix_cs_coordinates
+  *
+@@ -5405,8 +5425,13 @@ static void fix_cs_coordinates( CREATESTRUCTW *cs, INT *sw )
+         if (is_default_coord( cs->x ))
+         {
+             if (!is_default_coord( cs->y )) *sw = cs->y;
+-            cs->x = (params->dwFlags & STARTF_USEPOSITION) ? params->dwX : mon_info.rcWork.left;
+-            cs->y = (params->dwFlags & STARTF_USEPOSITION) ? params->dwY : mon_info.rcWork.top;
++            if (!(params->dwFlags & STARTF_USEPOSITION) && getenv( "WIN4WINE_EXTERNAL_SHELL" ))
++                external_cascade_position( &mon_info.rcWork, &cs->x, &cs->y );
++            else
++            {
++                cs->x = (params->dwFlags & STARTF_USEPOSITION) ? params->dwX : mon_info.rcWork.left;
++                cs->y = (params->dwFlags & STARTF_USEPOSITION) ? params->dwY : mon_info.rcWork.top;
++            }
+         }
+ 
+         if (is_default_coord( cs->cx ))
+@@ -5416,6 +5441,13 @@ static void fix_cs_coordinates( CREATESTRUCTW *cs, INT *sw )
+                 cs->cx = params->dwXSize;
+                 cs->cy = params->dwYSize;
+             }
++            else if (getenv( "WIN4WINE_EXTERNAL_SHELL" ))
++            {
++                /* XP: three quarters of the work area, independent of the
++                 * cascade slot, and 23px (96 DPI) shorter in both themes. */
++                cs->cx = (mon_info.rcWork.right - mon_info.rcWork.left) * 3 / 4;
++                cs->cy = (mon_info.rcWork.bottom - mon_info.rcWork.top) * 3 / 4 - muldiv( 23, get_system_dpi(), 96 );
++            }
+             else
+             {
+                 cs->cx = (mon_info.rcWork.right - mon_info.rcWork.left) * 3 / 4 - cs->x;

@@ -8,7 +8,7 @@ import select
 import signal
 import struct
 import time
-from Xlib import X, XK, Xatom, display, error, protocol
+from Xlib import X, XK, Xatom, Xutil, display, error, protocol
 from icons import payload as icon_payload
 
 
@@ -30,6 +30,7 @@ class Manager:
         self.previous_geometry = None
         self.previous_icons = {}
         self.frames = {}
+        self.cascade_slot = 0
         self.bad_access = False
         def onerror(err, request):
             if isinstance(err, error.BadAccess):
@@ -346,6 +347,31 @@ class Manager:
         self.configure_notify(w)
         self.focus(w)
 
+    def positioned(self, w):
+        try:
+            hints = w.get_wm_normal_hints()
+        except error.XError:
+            return False
+        if not hints or not hints.flags & (Xutil.USPosition | Xutil.PPosition):
+            return False
+        r = w.get_geometry()
+        return bool(hints.flags & Xutil.USPosition) or (r.x, r.y) != (0, 0)
+
+    def cascade(self, left, top):
+        """Next XP default-window slot, as native client coordinates.
+
+        XP steps 22px right (96 DPI, scaled here by the frame width) and
+        SM_CYSIZE + SM_CYFRAME down, which is the caption extent minus one,
+        and restarts after a quarter of the work area.
+        """
+        x, y, width, height = self.area
+        step_x, step_y = max(1, round(22 * max(left, 1) / 4)), max(1, top - 1)
+        slot = self.cascade_slot + 1
+        if slot * step_x > width // 4 or slot * step_y > height // 4:
+            slot = 1
+        self.cascade_slot = slot
+        return x + slot * step_x + left, y + slot * step_y + top
+
     def sync_frames(self):
         try:
             pairs = [line.split() for line in (self.ipc / 'frames.tsv').read_text().splitlines()]
@@ -371,11 +397,14 @@ class Manager:
                 if metrics:
                     left, right, top, bottom, maximized = metrics
                     if not native['framed']:
-                        # A newly launched xterm commonly starts its content at
-                        # 0,0. Keep the first caption visible above that content.
                         r = native['w'].get_geometry()
-                        x = max(r.x, self.area[0]+left)
-                        y = max(r.y, self.area[1]+top)
+                        if self.positioned(native['w']):
+                            # Keep an explicit position, but keep the first
+                            # caption visible above content placed at 0,0.
+                            x = max(r.x, self.area[0]+left)
+                            y = max(r.y, self.area[1]+top)
+                        else:
+                            x, y = self.cascade(left, top)
                         if (x, y) != (r.x, r.y):
                             native['w'].configure(x=x, y=y)
                             self.configure_notify(native['w'])

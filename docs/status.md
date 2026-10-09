@@ -678,4 +678,8 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
   無く、その後継）、mousepad、Firefox ESR、Chromium を XP の枠・タスクボタン・アイコン付きで起動した。
   Remmina の GTK ヘッダーバーが枠の内側に2組目の最小化・最大化・閉じるを出していたため、WM が空いている
   XSETTINGS を所有して `Gtk/DecorationLayout=:` を公開する。ヘッダーバー内の題名は残る。
+- 新しいウィンドウがすべて作業領域の左上に重なっていた。実XPの CW_USEDEFAULT は右へ22px・下へ
+  SM_CYSIZE+SM_CYFRAME ずつずらし、1/4を超えると先頭に戻る（0049、`tests/default-position.c`）。
+  Win32 は Luna で 22,29 → 44,58 …、位置指定のない Linux ウィンドウも WM が同じ間隔で重ねる。
+  位置を指定した xterm（`-geometry +800+180`）はその位置を保つ。
 - 「スタート」の太字斜体の字形は実XPと一部異なる（未修正）。
