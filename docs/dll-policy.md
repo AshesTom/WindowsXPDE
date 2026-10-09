@@ -647,3 +647,9 @@ Start のユーザー画像と「終了オプション」、XP の「コンピ�
 Wine はテーマの Franklin Gothic Medium / Tahoma のままだった。profile 17 で値を追加する。
 user pane の TST_CONTINUOUS の影は、実XP画素への当てはめ（5×5三角形ぼかし、オフセット−1、不透明度94%）で描く。
 縦線左側の影は実XPよりわずかに薄い。
+
+**判断: 0058は localized msstyles の文字列テーブルにある値（`NormalBlue@[Section]Name=Value`）を ini に重ねる。**
+日本語 Luna はここに MS UI Gothic の字体を持ち、XP はそれを ini より優先する。Wine は ini だけを読み、
+Tahoma / Franklin Gothic Medium のままで、Start パネルも20px狭かった。選択中の配色・サイズの値を
+実行時に利用者のテーマファイルから読み、26 class・117件の TMT_FONT が実XPと一致した。
+0026/0057 の明示 profile は同じ値になり、profile を無効にした利用者にも XP と同じ字体が適用される。

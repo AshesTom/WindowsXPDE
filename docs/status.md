@@ -700,6 +700,8 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
   XP の「コンピュータの電源を切る」ダイアログ、Start のユーザー画像（beach）になった。
 - デスクトップは XP 既定の Bliss を拡大表示する（抽出30ファイル、0056、壁紙変換は `prefix/wallpaper-convert.c`）。
   壁紙があるとデスクトップのアイコン名に XP と同じ影が付く。
+- 日本語 Luna の文字列テーブルにある字体指定を 0058 で反映し、`tests/theme-props.c --fonts` の117件が実XPと一致した
+  （Rebar・ExplorerBar・TaskBand など）。Start パネルの幅も実XPと同じ400pxになった。
 - Start のユーザー名は実XPと同じ MS UI Gothic 太字・ぼかし影になった（0057、`tests/theme-props.c`）。
 - 「スタート」の太字斜体の字形は、XP では行ごとの傾きが約1/3で、太字化は1px の横の重ね描きだった。
   傾き1/3＋1px 重ね描きで近づくが文字間隔を含めて一致させられず、未修正。は実XPと一部異なる（未修正）。

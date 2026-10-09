@@ -1,5 +1,5 @@
 /* Print the text properties of theme parts with public uxtheme calls.
- * Usage: theme-props [COM1|FILE]. Self-authored; no theme data is exported
+ * Usage: theme-props [COM1|FILE] [--fonts]. Self-authored; no theme data is exported
  * beyond the property values themselves. */
 #include <windows.h>
 #include <uxtheme.h>
@@ -75,6 +75,28 @@ int wmain(int argc, WCHAR **argv)
                  offset.x, offset.y);
         emit(line);
         CloseThemeData(theme);
+    }
+    if (argc > 2 && !wcscmp(argv[2], L"--fonts"))
+    {
+        static const WCHAR *classes[] = {L"Button", L"Edit", L"ExplorerBar", L"Header", L"ListView", L"Menu",
+            L"Progress", L"Rebar", L"ScrollBar", L"Status", L"TaskBand", L"TaskBar", L"Toolbar", L"Tooltip",
+            L"TrayNotify", L"TreeView", L"Window", L"StartPanel", L"Clock", L"Tab", L"ComboBox", L"Spin",
+            L"Globals", L"Page", L"Navigation", L"Static"};
+        for (unsigned c = 0; c < ARRAYSIZE(classes); c++)
+        {
+            HTHEME theme = OpenThemeData(hwnd, classes[c]);
+            if (!theme) continue;
+            for (int part = 0; part <= 30; part++)
+                for (int state = 0; state <= 2; state++)
+                {
+                    LOGFONTW font = {0};
+                    if (FAILED(GetThemeFont(theme, NULL, part, state, TMT_FONT, &font))) continue;
+                    swprintf(line, ARRAYSIZE(line), L"font %ls %d %d '%ls' h=%ld w=%ld i=%d\r\n", classes[c], part,
+                             state, font.lfFaceName, font.lfHeight, font.lfWeight, font.lfItalic);
+                    emit(line);
+                }
+            CloseThemeData(theme);
+        }
     }
     emit(L"THEMEPROPS complete\r\n");
     if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
