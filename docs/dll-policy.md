@@ -653,3 +653,19 @@ user pane の TST_CONTINUOUS の影は、実XP画素への当てはめ（5×5三
 Tahoma / Franklin Gothic Medium のままで、Start パネルも20px狭かった。選択中の配色・サイズの値を
 実行時に利用者のテーマファイルから読み、26 class・117件の TMT_FONT が実XPと一致した。
 0026/0057 の明示 profile は同じ値になり、profile を無効にした利用者にも XP と同じ字体が適用される。
+
+## 38. フォルダウィンドウのツールバー領域とアドレスバー
+
+**判断: 0059 は外部 shell の SetWindowTheme で WM_THEMECHANGED の wParam に -1 を送る。**
+XP の comctl32 v6 は変更番号が前回と同じ（初期値0）ならテーマを開き直さない。0 を送っていたため、
+`SetWindowTheme(ReBar, "ExplorerToolbar")` 後の ReBar はテーマを閉じたままクラシック描画になった。
+送る値の根拠は、同じ ReBar に 0 と -1 を送った公開メッセージ試験で -1 だけが開き直したこと。
+
+**判断: 0060 は ComboBoxEx32 の子の ComboBox を別名モジュール（win4wine-controls）のテーマ付き実装にする。**
+native comctl32 は SxS の活性化コンテキストなしで読み込むため、XP の v6 ComboBox が使われず user32 になる。
+Start ボタン（0013）と同じ方式で、名前を分けたクラス（Win4WineComboBox / Win4WineComboLBox）を登録する。
+native comctl32 とその manifest は変更しない。全 ComboBox への適用はしない。
+
+**判断: 0061/0062 は実XPの画面に合わせて、テーマ画像の拡大を画素の繰り返し、glyph 中央寄せを（外形−glyph）/2、
+caption の背景を SM_CYCAPTION の全高にする。** いずれも外部 shell の opt-in 時だけ。
+
