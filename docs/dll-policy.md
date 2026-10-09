@@ -385,3 +385,41 @@ Start::Button の font は公開 `GetThemeFont` で `Franklin Gothic Medium / -1
 `caption-font-parser-themed.png` に API と実表示を記録した。
 6種の system font の classic/Luna 往復と optional NULL DC の公開試験も成功した。
 これは Wine の解釈と実描画の改善であり、実 XP OS との一致は別の reference 試験で確認する。
+
+## 27. 別プロセスの公開 WM_GETICON と borrowed HICON
+
+Wine 10 の自身の `win32u/message.c` は別プロセスの `WM_GETICON` を拒否し、
+`cursoricon.c` は foreign USER handle を拒否していた。proxy が正しい icon を所有しても、
+native XP タスクバーが公開 API でその画素を取得できないため、既定 icon へ戻っていた。
+Microsoft バイナリの内部コードは調べていない。
+
+**判断: 0025 は外部シェル opt-in 時に限り、公開 API の読み取り経路を実装する。**
+[WM_GETICON](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-geticon) の戻り値は元の borrowed HICON のままにし、
+server に登録した不変画素 snapshot を必要な読み手だけに materialize する。
+[GetIconInfo](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-geticoninfo) が返す bitmap と
+`CopyIcon` の結果は読み手が所有する。元の foreign icon の mutation / destruction は許可しない。
+共有 `LoadImage` icon を破棄しないという
+[DestroyIcon](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-destroyicon) の規則も維持する。
+`WM_SETICON` や他の GDI handle message のプロセス間制限は解除しない。
+
+server は owner、USER handle の generation、生存、画像寸法、payload 長を検証する。
+static icon の上限は256×256、resource metadata は各2048 bytes、snapshot は16 MiB/owner と64 MiB/server。
+owner の破棄・終了時に server の画素を解放する。読み手の cache は最大64個で、利用中の bitmap を pin し、
+次の読み取りごとに生存を再確認する。animated icon と上限を超える icon は共有対象外で、所有プロセス内の API は維持する。
+opt-in がない通常 Wine では従来どおり foreign message / icon 読み取りを拒否する。
+
+`tests/foreign-icons.c` は自作画素だけで2プロセスを起動し、元の HICON identity、`GetIconInfo`、
+半透明色・monochrome AND/XOR の `DrawIconEx`、独立した `CopyIcon`、foreign 破棄拒否、
+80個の cache pressure、100回の handle 再利用、owner 破棄・明示破棄なしのプロセス終了を検査する。
+257px icon は owner 内で使え、foreign snapshot だけ拒否された。
+256px alpha icon 40個のうち31個だけが共有され、owner 内では全て利用できた。
+`.local/foreign-icons-enabled.log` と `foreign-icons-disabled.log` はいずれも PASS。
+同一 wineserver を維持して owner の起動・大量共有・強制終了を5回繰り返しても毎回31個を共有でき、
+終了済み owner の snapshot が server の64 MiB上限を消費し続けないことも確認した
+（`.local/foreign-icons-owner-cleanup.log`）。
+実行は専用 X display と専用 `WINEPREFIX` を指定し、`foreign-icons-test.exe` を
+`WIN4WINE_EXTERNAL_SHELL=1` の有無それぞれで起動する。
+
+0025 は Wine server protocol を変更する。wineserver、ntdll、win32u が混在しない完全 build を使い、
+利用中の prefix server を停止してから切り替える。検証では独立した source / build / install を使用し、
+元の共有 Wine install を上書きしていない。これにより Microsoft DLL の修正・再配布は発生しない。

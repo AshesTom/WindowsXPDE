@@ -34,10 +34,17 @@ property は最大1 MiB、画像は256×256までとし、manage と icon / hint
 small / big の WM_SETICON に同じ HICON を設定し、交換・ウィンドウ破棄時に所有した HICON を一度破棄する。
 アイコンがない・壊れている場合は Wine builtin の共有 `IDI_APPLICATION` に戻す。共有アイコンは破棄しない。
 Wine の CreateIconIndirect は alpha 用 bitmap を内部で premultiply するため、bridge では二重変換しない。
-Wine10 は別プロセス間 WM_GETICON を marshal しない。読み取り専用 WM_APP query は、所有する proxy 内で
-WM_GETICON / GetIconInfo / DrawIconEx を実行し、検証用の寸法・画素 checksum を scalar として返す。
-実 caption は X image でも検査する。native XP タスクバー側はまだ既定の Wine アイコンになり、
-この変更だけで Linux アプリ固有の task icon が正しく表示されるとはしていない。
+Wine 0025 は外部シェル opt-in 時だけ、別プロセス間の公開 `WM_GETICON` を許可する。
+返す値は所有者の元の borrowed HICON で、受信側で `GetIconInfo` / `DrawIconEx` / `CopyIcon` を使える。
+所有者が初期化した static icon の画素・resource metadata を wineserver に不変 snapshot として登録する。
+画像は256×256、metadata は各2048 bytes、所有プロセスは16 MiB、server 全体は64 MiBまで。
+読み手は毎回 handle generation と生存を照合し、最大64個のローカル bitmap コピーを保持する。
+参照中のコピーは pin し、所有者の破棄・終了後は次の読み取りを拒否する。`CopyIcon` の結果は読み手が所有する。
+foreign HICON の破棄・変更、別プロセスの `WM_SETICON`、他の GDI handle message は許可しない。
+opt-in がない通常 Wine の挙動は維持する。上限を超える画像と animated icon は foreign snapshot の対象外。
+検証用の読み取り専用 WM_APP query は引き続き proxy 内で寸法・画素 checksum を返し、実 caption は X image でも検査する。
+0025 は server protocol を変更するため、wineserver / ntdll / win32u を揃えて配備し、既存 prefix server を停止して切り替える。
+
 代理 XID への EWMH activate も native のフォーカスに変換するので、タスクが二重にならない。
 タイトルバーと角の操作は Win32 の通常の非クライアント処理を通し、移動・リサイズを
 `geometry` コマンドで native へ戻す。最小化では組を隠し、復元では proxy の非 iconic 応答を待って枠を戻す。

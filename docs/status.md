@@ -228,3 +228,24 @@ close のテーマ画像は両環境とも21×21・8状態。実際の配置と�
 画像寸法だけでボタンの見た目が一致したとは判断しない。
 生ログは `.local/xp-reference/serial.log`、Wine 側は `.local/reference-wine-24.txt`。
 上角・非アクティブ・Start 斜体・Linux の左上アイコンは改善したが、実 XP との最終比較は継続する。
+
+## 外部プロセスのアイコン API と実 XP 比較の追補
+
+- 0025 は外部シェル opt-in の別プロセス WM_GETICON / HICON 読み取りを実装。
+  元の handle の所有権を保ち、server にサイズ・個数を制限した不変画素を保存する。
+  自作画素による2プロセス試験で半透明・白黒・CopyIcon・foreign 破棄拒否・80個の cache・
+  handle 再利用・owner 終了時の解放・通常 Wine の opt-out が成功。
+  `.local/foreign-icons-enabled.log`、`foreign-icons-disabled.log`、`foreign-icons-owner-cleanup.log`。
+- 別ディレクトリへの完全 build/install と native 枠の操作試験は成功。
+  server protocol を変更するため、wineserver / ntdll / win32u を一組で更新する。
+  24パッチの既存 Debian VM はこの追補時点ではまだ切り替えていない。
+- Wine 上の XP タスクバーは公開 API で実際のアイコンを取得できるようになったが、
+  settled screenshot のタスクボタンには既定アイコンが残る。画面側の更新経路は調査中。
+  API 試験の成功をタスクバー表示の一致とはしない。
+- 実 XP のインストール済み Luna と抽出済み Luna の SHA256 は一致した。
+  自作多言語 fixture の言語選択、SPI 変更時のテーマ字体保持、公開 property origin も両環境で一致。
+  真の日本語 locale と、Wine のテーマ読込みを日本語優先にする限定実験でも字体差は解消しなかった。
+  根拠を得られなかった言語選択の変更は採用しない。
+- 実 XP の Start テーマ字体は MS UI Gothic -16・bold・italic。
+  取得には自作 Button の SetWindowTheme(Start) → OpenThemeData(Button) を使った。
+  上記の Shell_TrayWnd 子 Button の WM_GETFONT は、アプリのタスクボタンの字体と断定しない。

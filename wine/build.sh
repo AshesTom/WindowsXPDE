@@ -22,5 +22,7 @@ for version in {33..42} 46 47; do extra+=("--disable-d3dcompiler_$version"); don
 make -j"${JOBS:-6}"
 make install
 # Isolate Wine's themed Start Button from the XP common-control module.
-cp "$install/lib/wine/i386-windows/comctl32.dll" "$install/lib/wine/i386-windows/win4wine-controls.dll"
+controls_tmp=$(mktemp "$install/lib/wine/i386-windows/win4wine-controls.dll.XXXXXX")
+cp -p -- "$install/lib/wine/i386-windows/comctl32.dll" "$controls_tmp"
+mv -f -- "$controls_tmp" "$install/lib/wine/i386-windows/win4wine-controls.dll"
 "$install/bin/wine" --version

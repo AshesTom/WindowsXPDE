@@ -19,6 +19,14 @@
 #endif
 
 static FILE *output;
+static BOOL property_origin;
+static void origin(const char *label, HTHEME theme, int part, int state, int property)
+{
+    PROPERTYORIGIN value=PO_NOTFOUND;
+    HRESULT hr=GetThemePropertyOrigin(theme,part,state,property,&value);
+    fprintf(output,"%s origin hr=%08lx value=%d part=%d state=%d property=%d\n",
+            label,(unsigned long)hr,value,part,state,property);
+}
 static void theme_hash(void)
 {
     WCHAR path[MAX_PATH],color[128],theme_size[128];
@@ -159,7 +167,25 @@ static void theme_font(const char *label, HWND owner, HDC dc, LPCWSTR class_name
     {
         snprintf(name,sizeof(name),"%s-real-dc",label);font(name,&f);
     }
+    if(property_origin)origin(label,theme,BP_PUSHBUTTON,PBS_NORMAL,TMT_FONT);
     CloseThemeData(theme);
+}
+static void documentation(void)
+{
+    WCHAR file[MAX_PATH]={0},color[128]={0},size[128]={0},value[1024];
+    const WCHAR *properties[]={L"DisplayName",L"Tooltip",L"Author",L"Version"};
+    const char *labels[]={"theme-doc-displayname","theme-doc-tooltip","theme-doc-author","theme-doc-version"};
+    HRESULT hr=GetCurrentThemeName(file,MAX_PATH,color,128,size,128);
+    int i;
+    fprintf(output,"theme-doc-name hr=%08lx\n",(unsigned long)hr);
+    if(FAILED(hr))return;
+    for(i=0;i<4;i++)
+    {
+        value[0]=0;
+        hr=GetThemeDocumentationProperty(file,properties[i],value,1024);
+        fprintf(output,"%s hr=%08lx\n",labels[i],(unsigned long)hr);
+        if(SUCCEEDED(hr))text_value(labels[i],value);
+    }
 }
 static void measure(HWND hwnd)
 {
@@ -169,6 +195,12 @@ static void measure(HWND hwnd)
     HTHEME window=OpenThemeData(hwnd,L"Window");
     RECT rect;int x,y,code,ids[]={HTMINBUTTON,HTMAXBUTTON,HTCLOSE},i;
     n.cbSize=sizeof(n);
+    if(property_origin)
+    {
+        origin("window-caption-sysfont",window,0,0,TMT_CAPTIONFONT);
+        origin("window-caption-partfont",window,WP_CAPTION,CS_ACTIVE,TMT_FONT);
+        documentation();
+    }
     {
         WCHAR file[MAX_PATH]={0},color[128]={0},size[128]={0};
         HTHEME task_band;
@@ -256,10 +288,12 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp)
 int wmain(int argc,WCHAR **argv)
 {
     WNDCLASSW cls={0};HWND a,b;MSG msg;int i;
-    BOOL display=FALSE,spi_font=FALSE,hash_theme=FALSE;
+    BOOL display=FALSE,spi_font=FALSE,hash_theme=FALSE,thread_english=FALSE;
     for(i=2;i<argc;i++)
     {
         if(!lstrcmpW(argv[i],L"--display-1024x768"))display=TRUE;
+        else if(!lstrcmpW(argv[i],L"--thread-english"))thread_english=TRUE;
+        else if(!lstrcmpW(argv[i],L"--property-origin"))property_origin=TRUE;
         else if(!lstrcmpW(argv[i],L"--probe-spi-font"))spi_font=TRUE;
         else if(!lstrcmpW(argv[i],L"--theme-hash"))hash_theme=TRUE;
         else return 2;
@@ -285,6 +319,13 @@ int wmain(int argc,WCHAR **argv)
     }
     else output=argc>1?_wfopen(argv[1],L"wb"):fopen("C:\\win4wine-reference.txt","wb");
     if(!output)return 2;
+    if(thread_english)
+    {
+        LCID before=GetThreadLocale();
+        BOOL changed=SetThreadLocale(0x0409);
+        fprintf(output,"thread-english result=%d before=%04lx after=%04lx user=%04x system=%04x\n",
+                changed,before,GetThreadLocale(),GetUserDefaultLangID(),GetSystemDefaultLangID());
+    }
     if(display)
     {
         DEVMODEW mode={0};
