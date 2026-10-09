@@ -10,9 +10,10 @@
 #include <wchar.h>
 
 static const WCHAR key_name[]=L"Software\\Win4Wine\\ThemeProfiles\\JapaneseXPLuna";
-static const WCHAR *names[]={L"CaptionFont",L"SmallCaptionFont",L"MenuFont",L"StatusFont",L"MessageFont",L"IconFont",L"StartFont"};
+static const WCHAR *names[]={L"CaptionFont",L"SmallCaptionFont",L"MenuFont",L"StatusFont",L"MessageFont",L"IconFont",L"StartFont",L"ClockFont"};
 static const int ids[]={TMT_CAPTIONFONT,TMT_SMALLCAPTIONFONT,TMT_MENUFONT,TMT_STATUSFONT,TMT_MSGBOXFONT,TMT_ICONTITLEFONT};
 static int failures;
+static HTHEME clock_theme;
 static void check(BOOL ok,const char *label)
 {
     if(!ok){fprintf(stderr,"FAIL: %s\n",label);failures++;}
@@ -24,6 +25,7 @@ static void dword(HKEY key,LPCWSTR name,DWORD value)
 static HRESULT query(HTHEME window,HTHEME start,int role,LOGFONTW *font)
 {
     ZeroMemory(font,sizeof(*font));
+    if(role==7)return GetThemeFont(clock_theme,NULL,CLP_TIME,CLS_NORMAL,TMT_FONT,font);
     return role==6?GetThemeFont(start,NULL,BP_PUSHBUTTON,PBS_NORMAL,TMT_FONT,font):GetThemeSysFont(window,ids[role],font);
 }
 static BOOL equal(const LOGFONTW *a,const LOGFONTW *b)
@@ -45,7 +47,7 @@ static void compare(HTHEME window,HTHEME start,int role,const LOGFONTW *expected
 int wmain(int argc,WCHAR **argv)
 {
     HKEY key;
-    LOGFONTW saved[7],baseline[7],expected[7],custom,actual;
+    LOGFONTW saved[8],baseline[8],expected[8],custom,actual;
     DWORD type,size,enabled,version;
     HTHEME window,start,ordinary;
     NONCLIENTMETRICSW n={0},changed;
@@ -53,7 +55,8 @@ int wmain(int argc,WCHAR **argv)
     int dpi;
     WCHAR theme_path[MAX_PATH];DWORD path_size=sizeof(theme_path),path_type;
     HRESULT ordinary_hr;
-    LOGFONTW ordinary_font={0};
+    LOGFONTW ordinary_font={0},clock_zero_font={0};
+    HRESULT clock_zero_hr;
     if(argc!=2||wcscmp(argv[1],L"--isolated-prefix"))return 2;
     if(!SetProcessDPIAware()||!GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL",NULL,0))return 2;
     if(RegOpenKeyExW(HKEY_CURRENT_USER,key_name,0,KEY_READ|KEY_WRITE,&key))return 2;
@@ -62,23 +65,27 @@ int wmain(int argc,WCHAR **argv)
     size=sizeof(version);
     if(RegQueryValueExW(key,L"Version",NULL,&type,(BYTE*)&version,&size)||type!=REG_DWORD||version!=1)return 2;
     if(RegQueryValueExW(key,L"ThemePath",NULL,&path_type,(BYTE*)theme_path,&path_size)||path_type!=REG_SZ)return 2;
-    for(int i=0;i<7;i++)
+    for(int i=0;i<8;i++)
     {
         size=sizeof(saved[i]);
         if(RegQueryValueExW(key,names[i],NULL,&type,(BYTE*)&saved[i],&size)||type!=REG_BINARY||size!=sizeof(saved[i]))return 2;
     }
     dc=GetDC(NULL);dpi=GetDeviceCaps(dc,LOGPIXELSY);ReleaseDC(NULL,dc);
     window=OpenThemeData(NULL,L"Window");start=OpenThemeData(NULL,L"Start::Button");ordinary=OpenThemeData(NULL,L"Button");
-    if(!window||!start||!ordinary||!IsThemeActive())return 2;
+    clock_theme=OpenThemeData(NULL,L"TrayNotify::Clock");
+    if(!clock_theme||!window||!start||!ordinary||!IsThemeActive())return 2;
     ordinary_hr=GetThemeFont(ordinary,NULL,BP_PUSHBUTTON,PBS_NORMAL,TMT_FONT,&ordinary_font);
     dword(key,L"Enabled",0);
-    for(int i=0;i<7;i++)check(SUCCEEDED(query(window,start,i,&baseline[i])),"disabled baseline API");
+    for(int i=0;i<8;i++)check(SUCCEEDED(query(window,start,i,&baseline[i])),"disabled baseline API");
+    clock_zero_hr=GetThemeFont(clock_theme,NULL,CLP_TIME,0,TMT_FONT,&clock_zero_font);
     dword(key,L"Enabled",1);
+    check(GetThemeFont(clock_theme,NULL,CLP_TIME,0,TMT_FONT,&actual)==clock_zero_hr,"non-normal Clock state result unchanged");
+    if(SUCCEEDED(clock_zero_hr))check(equal(&actual,&clock_zero_font),"non-normal Clock state font unchanged");
     check(SUCCEEDED(GetThemeSysFont((HTHEME)(ULONG_PTR)1,TMT_CAPTIONFONT,&actual))
           &&equal(&actual,&baseline[0]),"non-profile handle keeps Wine's original metric behavior");
     check(GetThemeFont(NULL,NULL,BP_PUSHBUTTON,PBS_NORMAL,TMT_FONT,&actual)==E_HANDLE,
           "NULL font handle keeps original error");
-    for(int i=0;i<7;i++)
+    for(int i=0;i<8;i++)
     {
         expected[i]=saved[i];expected[i].lfHeight=MulDiv(saved[i].lfHeight,dpi,96);
         compare(window,start,i,&expected[i]);
@@ -90,26 +97,33 @@ int wmain(int argc,WCHAR **argv)
     check(!RegSetValueExW(key,names[0],0,REG_BINARY,(BYTE*)&custom,sizeof(custom)),"write custom profile caption");
     custom.lfHeight=MulDiv(-15,dpi,96);compare(window,start,0,&custom);
     check(!RegSetValueExW(key,names[0],0,REG_BINARY,(BYTE*)&saved[0],sizeof(saved[0])),"restore caption");
-    /* Invalid or missing data falls back to the unprofiled property. */
-    check(!RegSetValueExW(key,names[6],0,REG_BINARY,(BYTE*)&saved[6],1),"write invalid font length");
-    compare(window,start,6,&baseline[6]);
-    check(!RegDeleteValueW(key,names[6]),"remove own profile start font");compare(window,start,6,&baseline[6]);
-    check(!RegSetValueExW(key,names[6],0,REG_BINARY,(BYTE*)&saved[6],sizeof(saved[6])),"restore start font");
-    for(int bad=0;bad<3;bad++)
+    custom=saved[7];lstrcpyW(custom.lfFaceName,L"Tahoma");custom.lfHeight=-18;custom.lfWeight=700;
+    check(!RegSetValueExW(key,names[7],0,REG_BINARY,(BYTE*)&custom,sizeof(custom)),"write custom clock profile");
+    custom.lfHeight=MulDiv(-18,dpi,96);compare(window,start,7,&custom);
+    check(!RegSetValueExW(key,names[7],0,REG_BINARY,(BYTE*)&saved[7],sizeof(saved[7])),"restore clock font");
+    for(int role=6;role<8;role++)
     {
-        custom=saved[6];
-        if(bad==0)custom.lfHeight=16;
-        if(bad==1)for(unsigned i=0;i<LF_FACESIZE;i++)custom.lfFaceName[i]='X';
-        if(bad==2)memset(&custom,0xff,sizeof(custom));
-        check(!RegSetValueExW(key,names[6],0,REG_BINARY,(BYTE*)&custom,sizeof(custom)),"write malformed LOGFONT");
-        compare(window,start,6,&baseline[6]);
+        /* Invalid or missing data falls back to the unprofiled property. */
+        check(!RegSetValueExW(key,names[role],0,REG_BINARY,(BYTE*)&saved[role],1),"write invalid font length");
+        compare(window,start,role,&baseline[role]);
+        check(!RegDeleteValueW(key,names[role]),"remove own profile part font");compare(window,start,role,&baseline[role]);
+        check(!RegSetValueExW(key,names[role],0,REG_BINARY,(BYTE*)&saved[role],sizeof(saved[role])),"restore part font");
+        for(int bad=0;bad<3;bad++)
+        {
+            custom=saved[role];
+            if(bad==0)custom.lfHeight=16;
+            if(bad==1)for(unsigned i=0;i<LF_FACESIZE;i++)custom.lfFaceName[i]='X';
+            if(bad==2)memset(&custom,0xff,sizeof(custom));
+            check(!RegSetValueExW(key,names[role],0,REG_BINARY,(BYTE*)&custom,sizeof(custom)),"write malformed LOGFONT");
+            compare(window,start,role,&baseline[role]);
+        }
+        check(!RegSetValueExW(key,names[role],0,REG_SZ,(BYTE*)&saved[role],sizeof(saved[role])),"write wrong registry type");
+        compare(window,start,role,&baseline[role]);
+        check(!RegSetValueExW(key,names[role],0,REG_BINARY,(BYTE*)&saved[role],sizeof(saved[role])),"restore valid LOGFONT");
     }
-    check(!RegSetValueExW(key,names[6],0,REG_SZ,(BYTE*)&saved[6],sizeof(saved[6])),"write wrong registry type");
-    compare(window,start,6,&baseline[6]);
-    check(!RegSetValueExW(key,names[6],0,REG_BINARY,(BYTE*)&saved[6],sizeof(saved[6])),"restore valid LOGFONT");
-    dword(key,L"Version",99);for(int i=0;i<7;i++)compare(window,start,i,&baseline[i]);dword(key,L"Version",version);
+    dword(key,L"Version",99);for(int i=0;i<8;i++)compare(window,start,i,&baseline[i]);dword(key,L"Version",version);
     check(!RegSetValueExW(key,L"ThemePath",0,REG_SZ,(BYTE*)L"C:\\not-the-active-theme.msstyles",sizeof(L"C:\\not-the-active-theme.msstyles")),"write mismatching path");
-    for(int i=0;i<7;i++)compare(window,start,i,&baseline[i]);
+    for(int i=0;i<8;i++)compare(window,start,i,&baseline[i]);
     check(!RegSetValueExW(key,L"ThemePath",0,path_type,(BYTE*)theme_path,path_size),"restore profile path");
     for(int setting=0;setting<2;setting++)
     {
@@ -117,11 +131,11 @@ int wmain(int argc,WCHAR **argv)
         WCHAR saved_name[128];DWORD bytes=sizeof(saved_name),kind;
         check(!RegQueryValueExW(key,value,NULL,&kind,(BYTE*)saved_name,&bytes),"read theme selection");
         check(!RegSetValueExW(key,value,0,REG_SZ,(BYTE*)L"NoMatch",sizeof(L"NoMatch")),"write mismatching selection");
-        for(int i=0;i<7;i++)compare(window,start,i,&baseline[i]);
+        for(int i=0;i<8;i++)compare(window,start,i,&baseline[i]);
         check(!RegSetValueExW(key,value,0,kind,(BYTE*)saved_name,bytes),"restore theme selection");
     }
     check(SetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL",NULL),"disable process opt-in");
-    for(int i=0;i<7;i++)compare(window,start,i,&baseline[i]);
+    for(int i=0;i<8;i++)compare(window,start,i,&baseline[i]);
     check(SetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL",L"1"),"restore process opt-in");
     n.cbSize=sizeof(n);
     if(SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,sizeof(n),&n,0))
@@ -134,8 +148,8 @@ int wmain(int argc,WCHAR **argv)
         check(SystemParametersInfoW(SPI_SETNONCLIENTMETRICS,sizeof(n),&n,0),"restore user SPI metrics");
     }
     else check(FALSE,"read user SPI metrics");
-    dword(key,L"Enabled",0);for(int i=0;i<7;i++)compare(window,start,i,&baseline[i]);dword(key,L"Enabled",enabled);
-    CloseThemeData(ordinary);CloseThemeData(start);CloseThemeData(window);RegCloseKey(key);
+    dword(key,L"Enabled",0);for(int i=0;i<8;i++)compare(window,start,i,&baseline[i]);dword(key,L"Enabled",enabled);
+    CloseThemeData(clock_theme);CloseThemeData(ordinary);CloseThemeData(start);CloseThemeData(window);RegCloseKey(key);
     if(!failures)printf("PASS: profile fonts, DPI %d, user overrides, missing/invalid data, path/version/disabled fallback, SPI semantics\n",dpi);
     return failures?1:0;
 }

@@ -430,6 +430,58 @@ static void snapshot(void)
     syncing = 0;
 }
 
+/* Explorer's initial WM_SIZE can run before its child layout is ready.
+ * Synchronize once after the mapped taskbar and its controls settle. The shell
+ * decides all child sizes; this message carries only its current client area. */
+static void shell_layout(void)
+{
+    static HWND previous_tray, previous_start, previous_rebar;
+    static DWORD previous_pid;
+    static RECT previous_rect, previous_start_rect, previous_rebar_rect;
+    static BOOL stable, attempted;
+    HWND tray = FindWindowW(L"Shell_TrayWnd", NULL), start, rebar;
+    DWORD pid = 0;
+    RECT rect, start_rect, rebar_rect;
+    DWORD_PTR result;
+    if (tray) GetWindowThreadProcessId(tray, &pid);
+    if (tray != previous_tray || pid != previous_pid)
+    {
+        previous_tray = tray;
+        previous_pid = pid;
+        previous_start = previous_rebar = NULL;
+        stable = attempted = FALSE;
+    }
+    if (!tray || attempted) return;
+    /* A temporarily hidden taskbar keeps its completed startup state. */
+    if (!IsWindowVisible(tray)) { stable = FALSE; return; }
+    start = FindWindowExW(tray, NULL, L"Win4WineStartButton", NULL);
+    if (!start) start = FindWindowExW(tray, NULL, L"Button", NULL);
+    rebar = FindWindowExW(tray, NULL, L"ReBarWindow32", NULL);
+    if (!start || !rebar || !IsWindowVisible(start) || !IsWindowVisible(rebar) ||
+        !GetClientRect(tray, &rect) || rect.right <= 0 || rect.bottom <= 0 ||
+        !GetWindowRect(start, &start_rect) || start_rect.right <= start_rect.left || start_rect.bottom <= start_rect.top ||
+        !GetWindowRect(rebar, &rebar_rect) || rebar_rect.right <= rebar_rect.left || rebar_rect.bottom <= rebar_rect.top)
+    { stable = FALSE; return; }
+    if (!stable || start != previous_start || rebar != previous_rebar || !EqualRect(&rect, &previous_rect) ||
+        !EqualRect(&start_rect, &previous_start_rect) || !EqualRect(&rebar_rect, &previous_rebar_rect))
+    {
+        previous_start = start;
+        previous_rebar = rebar;
+        previous_rect = rect;
+        previous_start_rect = start_rect;
+        previous_rebar_rect = rebar_rect;
+        stable = TRUE;
+        return;
+    }
+    /* One bounded attempt per shell lifetime, including an unresponsive shell. */
+    attempted = TRUE;
+    if (!IsWindow(tray) || GetWindowThreadProcessId(tray, &pid) == 0 || pid != previous_pid) return;
+    fprintf(stderr, "shell layout sync hwnd=%p pid=%lu client=%ld,%ld\n",
+            tray, pid, rect.right, rect.bottom);
+    SendMessageTimeoutW(tray, WM_SIZE, SIZE_RESTORED, MAKELPARAM(rect.right, rect.bottom),
+                        SMTO_ABORTIFHUNG, 500, &result);
+}
+
 int wmain(int argc, WCHAR **argv)
 {
     WNDCLASSW cls = {0};
@@ -465,6 +517,7 @@ int wmain(int argc, WCHAR **argv)
         {
             snapshot();
             shell_events();
+            shell_layout();
             next = GetTickCount64() + 200;
         }
         MsgWaitForMultipleObjects(0, NULL, FALSE, 100, QS_ALLINPUT);

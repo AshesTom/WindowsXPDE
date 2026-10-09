@@ -1,7 +1,7 @@
 """Minimal native shell COM registrations absent from Wine's generated prefix."""
 import struct
 
-VERSION = 5
+VERSION = 6
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -28,6 +28,7 @@ def font_profile_defaults():
         ('MessageFont', -12, 400, 0),
         ('IconFont', -12, 400, 0),
         ('StartFont', -16, 700, 1),
+        ('ClockFont', -12, 400, 0),
     ):
         data = struct.pack('<5l8B64s', height, 0, 0, 0, weight,
                            italic, 0, 0, 1, 0, 0, 0, 0, face)

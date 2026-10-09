@@ -28,8 +28,11 @@ export WINEPREFIX=/work/.local/prefix-clean
 旧手順の `ThemeActive=0` だけでは Luna の caption height が残り、クラシックのボタンが縦長になる。
 既存 prefix は `WINEPREFIX=... WINE=... python3 prefix/display.py --theme classic --dpi 96` で復元し、専用 session を再起動する。
 初期実装では96 DPI の新規 prefix の caption font は -11 Tahoma だった。
-現在の日本語 XP profile（version 5）では新規 prefix の Classic 字体を MS UI Gothic -12 にする。
+現在の日本語 XP profile（version 6）では新規 prefix の Classic 字体を MS UI Gothic -12 にする。
 既存 prefix の独自字体は移行時に上書きしない。Luna の字体は公開 API 実測に基づく別 profile を使用する。
+version 6 は `ClockFont`（96 DPI で MS UI Gothic -12 regular）を未存在時だけ追加する。
+外部シェルの日本語 Luna profile が有効かつテーマ選択が一致する場合に、TrayNotify の Clock 字体へ適用する。
+独自の ClockFont、無効な値、profile の無効化はそのまま保持し、値が欠落・不正なら Wine のテーマ字体へ戻る。
 
 XP の実行ファイルは内容を変えず `C:\xp\xp-explorer.exe` に配置する。Wine 自身の `explorer.exe` と AppDefaults を分けるため。native DLL の override はそのファイル名に限定する。起動時には新しい desktop manager に外部 shell フラグを渡す必要があるため、単体試験の前にその専用 prefix の wineserver を終了する。
 
@@ -246,3 +249,12 @@ WINEPREFIX="$TEST_PREFIX" WINEDLLOVERRIDES='uxtheme,explorer=b;mscoree,mshtml=' 
 
 96 / 192 DPI も同じ手順で設定・再起動し、試験の引数を合わせる。
 保存された DPI と起動中プロセスの DPI は、専用セッションの再起動までは同じとは限らない。
+
+タスクバーの起動後レイアウト同期の寿命試験は、専用 shell supervisor を停止した X display 上で実行する。同じディレクトリの `proxy.exe` を試験自身が起動する。
+
+```sh
+WINEPREFIX=/path/to/dedicated-prefix WIN4WINE_EXTERNAL_SHELL=1 \
+  /path/to/wine .local/bridge/shell-layout-sync-test.exe
+```
+
+準備前の抑止、一度だけの同期、一時非表示、Tray の破棄と再作成を公開 Win32 API の自作 fixture で検査する。実 shell の寸法・描画は別途確認する。

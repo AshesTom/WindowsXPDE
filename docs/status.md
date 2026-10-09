@@ -410,9 +410,36 @@ no-icons/class-big/class-small/window-big/window-small優先/modal no-iconの6�
 
 クリーンsourceへの再現確認で0026の追加ファイルheaderに`new file mode`が欠けていたため、
 patch metadataを修正した。既存適用済みsourceの整合性とpatch-state6試験が成功し、
-別の完全clone/source/build/installで33までのfresh buildを実行中（未完了）。
+別の完全clone/source/build/installで33までのfresh buildが成功し、続けて34/35の追加build/installも成功。
 稼働中runtimeとは分離している。`.local/wine-verified33-build.log`。
 
 公開背景比較probe `tests/gradient-clip.c` では、実XPは12条件すべてclip前後の差0。
 Wineは最大化captionのclip時だけsample画素に差がある。この差は確認済みの調査対象で、
 caption文字の統合試験が通ることと、背景samplingの完全一致は区別する。
+
+
+### 起動時のタスクバー配置と時計の字体（0035）
+
+公開APIの実XP測定では、Startのidealは112×26だが実配置は112×30。
+Wineでも通常のWM_SIZEでshell自身が112×30へ配置するため、proxyは表示済みTrayと
+Start/ReBarの識別子・矩形が連続2回安定してから、現在のclient sizeを一度だけ通知する。
+子の寸法は固定しない。独立fixtureの準備待ち・移動中・一時非表示・再作成など6項目、
+LunaとClassicの物理クリック5往復、Classicの利用者指定6字体の保持が成功。
+`.local/shell-layout-sync-lifetime.log`、`.local/start-layout-classic-custom-check.log`。
+
+時計は実XPでMS UI Gothic -12、旧WineはTahoma -11だった。
+0035は既存の外部shell限定・active theme一致・LOGFONT検証を共有し、
+TrayNotify::ClockのCLP_TIME/CLS_NORMAL/TMT_FONTだけClockFontを参照する。
+registry profile v6は未設定値だけ追加し、独自字体・無効設定を上書きしない。
+96/144/192 DPI、独自値、欠落・不正値・profile無効・非対象partの独立試験が成功。
+Debian VMの公開probeもMS UI Gothic -12、GDI height12/ascent10/descent2を確認。
+`.local/vm-test/clock35.log`。時刻形式・言語設定は変更していない。
+
+新規sourceから全35patchの適用・全build/installが成功。
+`.local/wine-verified33-build.log`、`.local/wine-verified35-build.log`。
+Microsoftファイルの変更・追加取得はない。
+
+VMの配置同期後、Start物理クリック5往復、xterm入力なし再描画、native枠の移動・resize・
+最大化/復元・最小化・close・taskbar icon更新も成功。
+`.local/vm-test/layout35-operations.log`。v6への既存prefix移行後の8字体profile試験も成功。
+`.local/vm-test/font-profile35.log`。
