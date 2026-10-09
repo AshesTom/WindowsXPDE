@@ -1,0 +1,76 @@
+From: win4wine maintainers
+Subject: [PATCH] uxtheme: theme the unused task ReBar tail
+
+Public XP child geometry and displayed edge colors identify an unused
+trailing client region behind the task child. Paint only that region
+with the public parent background, preserving native layout and input.
+
+--- a/dlls/uxtheme/rebar.c
++++ b/dlls/uxtheme/rebar.c
+@@ -21,6 +21,43 @@
+ static const WCHAR rebar_property[] = L"Win4WineThemedRebar";
+ struct external_rebar { WNDPROC original; BOOL enabled; };
+ 
++/* Only the task band's trailing unused client area is background. Public
++ * child geometry preserves its pixels, the native header and chevron bands. */
++static void rebar_paint_task_tail(HWND hwnd, HDC dc, BOOL vertical)
++{
++    REBARBANDINFOW info;
++    RECT band, child, tail;
++    WCHAR name[64];
++    int i, count = SendMessageW(hwnd, RB_GETBANDCOUNT, 0, 0);
++    for (i = 0; i < count && i < 256; ++i)
++    {
++        memset(&info, 0, sizeof(info));
++        info.cbSize = REBARBANDINFOW_V6_SIZE;
++        info.fMask = RBBIM_STYLE | RBBIM_CHILD | RBBIM_HEADERSIZE;
++        if (!SendMessageW(hwnd, RB_GETBANDINFOW, i, (LPARAM)&info) ||
++            (info.fStyle & (RBBS_HIDDEN | RBBS_USECHEVRON | RBBS_CHILDEDGE)) ||
++            !(info.fStyle & RBBS_HIDETITLE) || GetParent(info.hwndChild) != hwnd ||
++            !GetClassNameW(info.hwndChild, name, ARRAY_SIZE(name)) ||
++            lstrcmpiW(name, L"MSTaskSwWClass") ||
++            !SendMessageW(hwnd, RB_GETRECT, i, (LPARAM)&band) ||
++            !GetWindowRect(info.hwndChild, &child)) continue;
++        MapWindowPoints(NULL, hwnd, (POINT *)&child, 2);
++        if (vertical)
++        {
++            if (child.left > band.left || child.right < band.right) continue;
++            tail = band;
++            tail.top = max(child.bottom, band.top + info.cxHeader);
++        }
++        else
++        {
++            if (child.top > band.top || child.bottom < band.bottom) continue;
++            tail = band;
++            tail.left = max(child.right, band.left + info.cxHeader);
++        }
++        if (!IsRectEmpty(&tail)) DrawThemeParentBackground(hwnd, dc, &tail);
++    }
++}
++
+ static void rebar_paint(HWND hwnd, HDC dc)
+ {
+     HTHEME theme;
+@@ -34,12 +71,12 @@
+     theme = OpenThemeDataForDpi(NULL, L"Taskbar::Rebar", GetDpiForWindow(hwnd));
+     if (!theme) return;
+     part = vertical ? RP_GRIPPERVERT : RP_GRIPPER;
+-    if (FAILED(GetThemePartSize(theme, dc, part, 0, NULL, TS_TRUE, &size)))
+-    { CloseThemeData(theme); return; }
+     saved = SaveDC(dc);
+     if (!saved) { CloseThemeData(theme); return; }
+     GetClientRect(hwnd, &client);
+     IntersectClipRect(dc, client.left, client.top, client.right, client.bottom);
++    rebar_paint_task_tail(hwnd, dc, vertical);
++    if (FAILED(GetThemePartSize(theme, dc, part, 0, NULL, TS_TRUE, &size))) goto done;
+     count = SendMessageW(hwnd, RB_GETBANDCOUNT, 0, 0);
+     for (i = 0; i < count; ++i)
+     {
+@@ -63,6 +100,7 @@
+         grip.bottom = grip.top + size.cy;
+         DrawThemeBackground(theme, dc, part, 0, &grip, &header);
+     }
++done:
+     RestoreDC(dc, saved);
+     CloseThemeData(theme);
+ }

@@ -492,3 +492,13 @@ classic の taskbar 外枠は root の外へはみ出すため、画面に見え
 子・tool window・Classic・非opt-in は従来の経路を維持する。
 96 DPI は実 XP の独立fixtureと一致し、144/192は選んだ拡大規則で回帰検査した。
 高 DPI の実 XP 一致や文字のラスタライズの完全一致とはしない。
+
+
+## 30. task ReBar の子の後方余白
+
+実 XP と Wine の公開 ReBar band/child 矩形を比較し、両方に4pxの未使用末尾があるが、
+Wine だけ元の灰色背景が残ることを実画面の数値で確認した。
+**判断: 0029 は既存外部シェル ReBar hook で、公開 child/band 矩形の末尾だけをテーマ描画する。**
+Taskbar直下でHIDETITLEのMSTaskSwWClass childだけを扱い、hidden/chevron/child-edgeは除外。
+childの画素・header・バンド配置・native入力・lock設定は維持する。
+背景は0016の公開 DrawThemeParentBackground経路を使い、色・幅・Microsoft資源は埋め込まない。

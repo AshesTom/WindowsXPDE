@@ -315,3 +315,13 @@ Wine で灰色と確認できたため、これらは次の調整対象。
 システムメニュー入力も実 XP の4,4..23,29へ合わせ、右側をタイトル移動に戻す。
 VMの `shell-layout-28-test --verify-xp96-icon` は独立fixtureで成功。
 タイトル文字の配置・影の比較と、タスクバー隙間の調整は継続中。
+
+
+0029 は task ReBar の子ウィンドウ後方に残る未使用領域を、公開 parent background で描く。
+実 XP では同じ4pxが青いグラデーション、従来 Wine では灰色だった。
+固定4pxや色を埋め込まず、公開 child/band 矩形から末尾を算出する。
+locked/unlocked、横/縦、chevron/child-edge/hidden除外、translated/clipped DC、
+子画素・native入力の保持が独立環境と Debian VM で成功。
+`.local/rebar-tail-test.log`、`rebar-tail-regression.log`、
+VM内 `/work/.local/rebar-tail-29.log`。実 shell の境界3行も実 XP と一致した
+（`.local/shell-layout-tail-fixed.txt`）。Start脇の親隙間と外枠は引き続き調整対象。
