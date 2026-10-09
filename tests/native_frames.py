@@ -273,9 +273,33 @@ try:
     pointer('mousemove', x, y, 'click', '--repeat', 2, '--delay', 100, 1)
     wait(lambda: prop(native, '_NET_WM_STATE') and native.get_geometry().width > before[2], 'caption double click maximizes')
     wait(paired, 'maximized frame encloses native client')
+    hwnd=prop(frame,'_WIN4WINE_HWND')[0]
+    def public_frame():
+        result=subprocess.run([os.environ.get('WINE', 'wine'), str(Path(__file__).resolve().parents[1] / '.local/bridge/inspect.exe'), 'frame', f'{hwnd:x}'],
+            stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,env=dict(os.environ,WINEDEBUG='-all'), timeout=10)
+        return result.stdout.decode('ascii','replace')
+    wait(lambda:'zoomed=1' in public_frame(),'native proxy has genuine Win32 maximized state')
+    area=prop(root,'_NET_WORKAREA')
+    records=[row.split() for row in (ipc/'frames.tsv').read_text().splitlines()]
+    record=next(row for row in records if int(row[1],16)==native.id)
+    bx,by=map(int,record[8:10])
+    wanted=(area[0]-bx,area[1]-by,area[2]+2*bx,area[3]+2*by)
+    wait(lambda:geometry(frame)==wanted,'true maximized outer clips measured border outside workarea')
+    f,n=frame.get_geometry(),native.get_geometry()
+    visible=(n.x-max(f.x,area[0]), max(0,min(f.x+f.width,area[0]+area[2])-n.x-n.width),
+             n.y-max(f.y,area[1]), max(0,min(f.y+f.height,area[1]+area[3])-n.y-n.height))
+    assert visible==(0,0,int(record[4])-by,0),visible
+    print('PASS real IsZoomed/WS_MAXIMIZE and clipped NC max geometry',geometry(frame),geometry(native),'visible',visible,flush=True)
+
     x, y = caption()
     pointer('mousemove', x, y, 'click', '--repeat', 2, '--delay', 100, 1)
     wait(lambda: geometry(native) == before, 'caption double click restores original geometry')
+    wait(lambda:'zoomed=0' in public_frame(),'restore clears genuine Win32 maximized state')
+    restored = geometry(native)
+    x, y = caption()
+    pointer('mousemove', x, y, 'mousedown', 1, 'mousemove', x+25, y+18, 'sleep', .3, 'mouseup', 1)
+    wait(lambda: geometry(native)[:2] != restored[:2], 'restored caption remains draggable after true maximize')
+    wait(paired, 'frame follows drag after maximize/restore')
     command('minimize')
     wait(lambda: prop(native, 'WM_STATE')[:1] == [3] and frame.get_attributes().map_state != X.IsViewable,
          'minimize hides native and frame together')

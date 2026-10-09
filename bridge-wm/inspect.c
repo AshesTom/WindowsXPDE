@@ -102,6 +102,15 @@ int wmain(int argc, WCHAR **argv)
     }
     hwnd = (HWND)(uintptr_t)wcstoul(argv[2], NULL, 16);
     if (!IsWindow(hwnd)) return 3;
+    if (!wcscmp(argv[1], L"frame"))
+    {
+        WINDOWINFO info = {.cbSize = sizeof(info)};
+        if (!GetWindowInfo(hwnd, &info)) return 4;
+        printf("zoomed=%d style=%08lx borders=%u,%u rect=%ld,%ld,%ld,%ld\n",
+               IsZoomed(hwnd), info.dwStyle, info.cxWindowBorders, info.cyWindowBorders,
+               info.rcWindow.left, info.rcWindow.top, info.rcWindow.right, info.rcWindow.bottom);
+        return 0;
+    }
     if (!wcscmp(argv[1], L"icon"))
     {
         LRESULT values[6];

@@ -547,3 +547,17 @@ TaskFontは未設定時だけ生成し、有効な日本語Luna profileのpart/s
 だけを読み戻す。Microsoft実装のメモリ・コード・非公開データは調べない。
 実時計の字体適用も、公開GetWindowTextとGetDCによる画面を自作DrawThemeTextと比較する。
 DLL・テーマ・フォントの改変や再配布は行わない。
+
+## 34. 所有threadの最大化と描画しないpopup表示
+
+**判断: 0041は外部shellに限りWineのmanaged最大化サイズ抑制を解除する。**
+WMによる非同期補正ではWineのpending矩形と実Xサイズがずれ、復元位置を壊した。
+Wine自身のtraceと公開API fixtureで確認し、所有threadが計算した幾何を反映する。
+アプリ独自のWM_GETMINMAXINFOを尊重し、Linux代理も公開ShowWindowで最大化する。
+
+**判断: 0042は明示SWP_SHOWWINDOW|SWP_NOREDRAWの非layered popupに限り、元の画面を保持する。**
+実XPの自作公開API試験は描画せずに表示した領域の下地を維持したが、Wineは黒い初期bufferを
+転送していた。X11のbackgroundをNoneに保ち、新規bufferをclip済みのroot画素で初期化する。
+取得できない条件は既存fallbackを使い、通常表示・layered・opt-outを維持する。
+Startが安定した後の画像は修正前と同じで、描画方式を直接X描画へ置き換えない。
+観測は公開API・画面・Wine自身の実装のみで、Microsoft内部実装を解析しない。

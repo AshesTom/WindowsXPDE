@@ -275,10 +275,24 @@ taskbar-textは自作windowを開き、既存の同試験fixtureだけを閉じ�
 
 ```sh
 WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/taskbar-text-test.exe \
-  'Z:\\path\\to\\taskbar-text.log' --isolated-session
+  'Z:\path\to\taskbar-text.log' --isolated-session
 WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/clock-pixels-test.exe --isolated-session
 ```
 
 taskbar-textの出力は公開theme字体と実文字の位置・画素数を記録する診断資料で、
 自動で実XPとの一致を判定しない。clock-pixelsは取得した現在文字列の白画素を
 公開themeと明示MS UI Gothic -12の描画と比較する。測定中の分切替は再試験する。
+
+所有threadの最大化とNOREDRAW表示は、最終Wineとbridgeを起動した専用sessionで検査する。
+引数は現在の公開SPI_GETWORKAREAの幅・高さに合わせる（Luna / 1280×800 / 96 DPIの例）。
+
+```sh
+WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/wine-maximize-test.exe 1280 766
+WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/shell-activation-test.exe
+WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/no-redraw-test.exe
+```
+
+Wine最大化試験は所有process内の通常位置も検査し、独自WM_GETMINMAXINFOの上限を確認する。
+NOREDRAW試験は下地保持・明示owner描画・通常paint復帰・画面端・layered除外を検査する。
+Wine10の即時GdiFlush画面反映stubは別件として扱う。bridgeのgeometry.tsv / frames.tsvは
+0041対応と同時に形式を更新したため、Wine・WM・proxy・inspectをまとめて更新して再起動する。

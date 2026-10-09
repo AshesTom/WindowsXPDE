@@ -1,0 +1,40 @@
+From: Win4Wine contributors
+Subject: [PATCH] winex11: let the external-shell owner compute maximized geometry
+
+The companion WM acknowledges EWMH maximize state but delegates the outer
+rectangle to the Wine window owner. Permit its computed position and size,
+including application WM_GETMINMAXINFO limits. This also avoids asynchronous
+WM resizes contaminating a rapidly restored normal rectangle. Minimize and
+ordinary Wine without WIN4WINE_EXTERNAL_SHELL keep the existing policy.
+No Microsoft implementation code or resources are involved.
+
+--- a/dlls/winex11.drv/window.c
++++ b/dlls/winex11.drv/window.c
+@@ -1305,10 +1305,11 @@
+         return;
+     }
+ 
+-    /* resizing a managed maximized window is not allowed */
++    /* The companion WM delegates maximized geometry to the Wine owner thread.
++     * Other WMs retain the usual managed-window resize policy. */
+     if ((old_rect->right - old_rect->left != new_rect->right - new_rect->left ||
+          old_rect->bottom - old_rect->top != new_rect->bottom - new_rect->top) &&
+-        (!(style & WS_MAXIMIZE) || !data->managed))
++        (!(style & WS_MAXIMIZE) || !data->managed || getenv( "WIN4WINE_EXTERNAL_SHELL" )))
+     {
+         changes.width = new_rect->right - new_rect->left;
+         changes.height = new_rect->bottom - new_rect->top;
+@@ -2997,8 +2998,11 @@
+         }
+     }
+ 
+-    /* don't change position if we are about to minimize or maximize a managed window */
+-    if (!(data->managed && (swp_flags & SWP_STATECHANGED) && (new_style & (WS_MINIMIZE|WS_MAXIMIZE))))
++    /* Minimize remains WM-managed. The external shell allows the owner thread's
++     * maximized position/size, including application WM_GETMINMAXINFO limits. */
++    if (!(data->managed && (swp_flags & SWP_STATECHANGED) &&
++          ((new_style & WS_MINIMIZE) ||
++           ((new_style & WS_MAXIMIZE) && !getenv( "WIN4WINE_EXTERNAL_SHELL" )))))
+     {
+         sync_window_position( data, swp_flags, &old_rects );
+ #ifdef HAVE_LIBXSHAPE

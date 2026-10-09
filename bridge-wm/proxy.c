@@ -14,6 +14,7 @@
 
 #define MAX_CLIENTS 2048
 struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; int x, y, width, height;
+    RECT workarea;
     HICON icon; int icon_checked, icon_present; FILETIME icon_time; DWORD icon_size;
 };
 static struct client clients[MAX_CLIENTS];
@@ -132,6 +133,28 @@ static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         CREATESTRUCTW *cs = (CREATESTRUCTW *)lp;
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)cs->lpCreateParams);
     }
+    if (msg == WM_GETMINMAXINFO && xid)
+    {
+        unsigned i;
+        for (i = 0; i < MAX_CLIENTS; ++i)
+            if (clients[i].xid == xid && clients[i].workarea.right > clients[i].workarea.left)
+            {
+                MINMAXINFO *limits = (MINMAXINFO *)lp;
+                WINDOWINFO info = {.cbSize = sizeof(info)};
+                MONITORINFO monitor = {.cbSize = sizeof(monitor)};
+                RECT area = clients[i].workarea;
+                LRESULT result = DefWindowProcW(hwnd, msg, wp, lp);
+                if (!GetWindowInfo(hwnd, &info) ||
+                    !GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &monitor)) return result;
+                limits->ptMaxPosition.x = area.left - monitor.rcMonitor.left - info.cxWindowBorders;
+                limits->ptMaxPosition.y = area.top - monitor.rcMonitor.top - info.cyWindowBorders;
+                limits->ptMaxSize.x = area.right - area.left + 2 * info.cxWindowBorders;
+                limits->ptMaxSize.y = area.bottom - area.top + 2 * info.cyWindowBorders;
+                limits->ptMaxTrackSize.x = max(limits->ptMaxTrackSize.x, limits->ptMaxSize.x);
+                limits->ptMaxTrackSize.y = max(limits->ptMaxTrackSize.y, limits->ptMaxSize.y);
+                return result;
+            }
+    }
     if (!syncing && xid)
     {
         if (msg == WM_CLOSE) { command("close", xid); return 0; }
@@ -212,13 +235,15 @@ static void shell_events(void)
     for (i = 0; i < previous_count; ++i)
         if (!contains(current, current_count, previous[i])) notify(HSHELL_WINDOWDESTROYED, previous[i]);
     foreground = GetForegroundWindow();
-    if (foreground)
+    if (foreground && !contains(current, current_count, foreground))
     {
-        WCHAR cls[80];
-        GetClassNameW(foreground, cls, 80);
-        /* XP's Start popup is not an application task. Excluding it only from
-         * WINDOWCREATED is insufficient: WINDOWACTIVATED can create a task too. */
-        if (!wcsicmp(cls, L"DV2ControlHost")) foreground = NULL;
+        /* An activation can create an XP task too. Only activate identities
+         * included in this snapshot; owned dialogs highlight their app owner. */
+        HWND owner = foreground;
+        unsigned depth;
+        for (depth = 0; owner && depth < MAX_CLIENTS && !contains(current, current_count, owner); ++depth)
+            owner = GetWindow(owner, GW_OWNER);
+        foreground = contains(current, current_count, owner) ? owner : NULL;
     }
     if (foreground != last_foreground)
     {
@@ -326,26 +351,38 @@ static void frame_geometry(void)
     WCHAR path[MAX_PATH + 32], target[MAX_PATH + 32];
     FILE *file;
     unsigned long xid;
-    int x, y, width, height, maximized;
+    long long x, y, width, height, maximized, ax, ay, aw, ah;
+    char line[240];
     unsigned i;
     swprintf(path, MAX_PATH + 32, L"%ls\\geometry.tsv", directory);
     file = _wfopen(path, L"rb");
     if (!file) return;
-    while (fscanf(file, "%lx %d %d %d %d %d", &xid, &x, &y, &width, &height, &maximized) == 6)
+    while (fgets(line, sizeof(line), file))
+    {
+        if (sscanf(line, "%lx %lld %lld %lld %lld %lld %lld %lld %lld %lld", &xid, &x, &y, &width, &height,
+                   &maximized, &ax, &ay, &aw, &ah) != 10 || width <= 0 || height <= 0 ||
+            width > 65535 || height > 65535 || aw <= 0 || ah <= 0 || aw > 65535 || ah > 65535 ||
+            x < -65535 || x > 65535 || y < -65535 || y > 65535 ||
+            ax < -65535 || ax > 65535 || ay < -65535 || ay > 65535 ||
+            (maximized != 0 && maximized != 1)) continue;
         for (i = 0; i < MAX_CLIENTS; ++i)
             if (clients[i].xid == xid && !clients[i].hidden)
             {
                 struct client *c = &clients[i];
+                SetRect(&c->workarea, ax, ay, ax + aw, ay + ah);
                 if (!!GetPropW(c->hwnd, L"Win4WineMaximized") != !!maximized)
                 {
                     if (maximized) SetPropW(c->hwnd, L"Win4WineMaximized", (HANDLE)1);
                     else RemovePropW(c->hwnd, L"Win4WineMaximized");
                     RedrawWindow(c->hwnd, NULL, NULL, RDW_INVALIDATE | RDW_FRAME);
                 }
+                if (!!IsZoomed(c->hwnd) != !!maximized)
+                    ShowWindow(c->hwnd, maximized ? SW_MAXIMIZE : SW_RESTORE);
                 c->x = x; c->y = y; c->width = width; c->height = height;
                 place_frame(c);
                 break;
             }
+    }
     fclose(file);
     swprintf(path, MAX_PATH + 32, L"%ls\\frames.tmp", directory);
     swprintf(target, MAX_PATH + 32, L"%ls\\frames.tsv", directory);
@@ -355,13 +392,15 @@ static void frame_geometry(void)
         if (clients[i].xid)
         {
             RECT outer, inner;
+            WINDOWINFO info = {.cbSize = sizeof(info)};
             POINT origin = {0, 0};
             GetWindowRect(clients[i].hwnd, &outer);
             GetClientRect(clients[i].hwnd, &inner);
             ClientToScreen(clients[i].hwnd, &origin);
-            fprintf(file, "%lx %lx %ld %ld %ld %ld %d %d\n", (unsigned long)(uintptr_t)clients[i].hwnd,
+            GetWindowInfo(clients[i].hwnd, &info);
+            fprintf(file, "%lx %lx %ld %ld %ld %ld %d %d %u %u\n", (unsigned long)(uintptr_t)clients[i].hwnd,
                     clients[i].xid, origin.x-outer.left, outer.right-origin.x-inner.right,
-                    origin.y-outer.top, outer.bottom-origin.y-inner.bottom, !!GetPropW(clients[i].hwnd, L"Win4WineMaximized"), !!IsIconic(clients[i].hwnd));
+                    origin.y-outer.top, outer.bottom-origin.y-inner.bottom, !!GetPropW(clients[i].hwnd, L"Win4WineMaximized"), !!IsIconic(clients[i].hwnd), info.cxWindowBorders, info.cyWindowBorders);
         }
     fclose(file);
     MoveFileExW(path, target, MOVEFILE_REPLACE_EXISTING);

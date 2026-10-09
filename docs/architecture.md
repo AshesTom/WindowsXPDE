@@ -22,8 +22,8 @@ proxy → WM: `PID-SEQUENCE.cmd` を atomic rename。内容は `activate|minimiz
 
 枠の同期には次の 2 ファイルを追加する。どちらも同じ IPC ディレクトリで atomic rename し、数値を空白で区切る。
 
-- WM → proxy の `geometry.tsv`: `XID(hex) x y width height maximized(0/1)`。座標とサイズは root 上の native クライアント領域。
-- proxy → WM の `frames.tsv`: `HWND(hex) XID(hex) left right top bottom maximized(0/1) iconic(0/1)`。余白は公開 `GetWindowRect` / `GetClientRect` / `ClientToScreen` の測定値。
+- WM → proxy の `geometry.tsv`: `XID(hex) x y width height maximized(0/1) workX workY workWidth workHeight`。座標とサイズは root 上の native クライアント領域。末尾は現在の作業領域。
+- proxy → WM の `frames.tsv`: `HWND(hex) XID(hex) left right top bottom maximized(0/1) iconic(0/1) borderX borderY`。余白は公開 `GetWindowRect` / `GetClientRect` / `ClientToScreen`、borderは`GetWindowInfo`の測定値。
 
 `_WIN4WINE_HWND` と `frames.tsv` の HWND を照合して枠と native クライアントを組にする。
 WM は枠をクライアントのすぐ下へ積み、枠の未使用の Win32 client 領域を native の画面で覆う。
@@ -54,11 +54,20 @@ XP タスクバーは非同期 `WM_GETICON` の callback 後に固有 icon を�
 `geometry` コマンドで native へ戻す。最小化では組を隠し、復元では proxy の非 iconic 応答を待って枠を戻す。
 withdraw / destroy 時は組を直ちに解除して残った枠を隠す。真の withdraw では WM_STATE property を削除して WithdrawnState を通知する。Wine X11 driver はこの応答を待って次の XMapWindow を発行するため、応答がないと Start の Win32 HWND は visible でも X のメニューが再表示されない。最小化された client と WM が隠した代理枠にはこの削除を行わない。次の snapshot で不要な代理 HWND も破棄される。
 
-最大化は native の復元位置を WM に保存し、枠を含めて workarea に合わせる。
-代理の `WS_MAXIMIZE` は Wine X11 driver の managed-window サイズ抑制を招くため変更せず、
-公開 HWND property `Win4WineMaximized` で状態を伝える。非クライアント描画はこの property も参照して復元ボタンを選ぶ。
-Wine の通常ウィンドウは代理化しない。`DV2ControlHost` は上に積む popup として扱い、
-Alt+Tab、native snapshot、shell hook の通常タスク一覧から除く。popup には Wine の activation に必要な X フォーカスと WM_TAKE_FOCUS を与えるが、アクティブなアプリの EWMH ID は上書きしない。shell hook の WINDOWACTIVATED でも DV2ControlHost を通常タスクに通知しない。
+最大化はnativeの復元位置をWMに保存する。proxyは公開WM_GETMINMAXINFOで作業領域と
+border幅を返し、ShowWindow(SW_MAXIMIZE/RESTORE)で本物のWS_MAXIMIZEを切り替える。
+外側borderは画面外へ出し、Luna/96 DPIの可視余白は左右下0、上26pxになる。
+Win4WineMaximized propertyも既存の非クライアント描画との互換用に維持する。
+
+Wineの通常ウィンドウは代理化しない。0041は外部shellに限り、managed最大化windowの
+位置・サイズを所有threadからX11へ送る。WMはEWMH状態を確認し、幾何を上書きしない。
+これによりWM_GETMINMAXINFOのアプリ独自制限と復元位置を尊重する。
+WMが非同期に最大化サイズを強制する方式は、Wineのpending矩形と実Xサイズを食い違わせ、
+高速復元で位置だけ・サイズだけが混ざるため採用しない。
+wm.py、proxy.exe、Wine0041を同時に更新する。
+
+`DV2ControlHost` は上に積む popup として扱い、
+Alt+Tab、native snapshot、shell hook の通常タスク一覧から除く。popup には Wine の activation に必要な X フォーカスと WM_TAKE_FOCUS を与えるが、アクティブなアプリの EWMH ID は上書きしない。shell hook の WINDOWACTIVATED は現在のtask一覧に含まれるidentityだけを通知する。owned dialogは公開GW_OWNERを順に辿り、最も近いtask ownerを選ぶ。Start popupや未所属toolをactivation経由でtaskに追加しない。
 FocusIn は通常の通知だけを採用する。keyboard grab の NotifyGrab / NotifyUngrab と
 pointer 由来の通知で Alt+Tab の選択を上書きしない。
 

@@ -267,7 +267,8 @@ class Manager:
                 else:
                     left = max(left, r.x + r.width)
         self.area = (left, top, max(1, g.width-left-right), max(1, g.height-top-bottom))
-        self.setprop(self.root, '_NET_WORKAREA', Xatom.CARDINAL, list(self.area))
+        if list(self.prop(self.root, '_NET_WORKAREA')) != list(self.area):
+            self.setprop(self.root, '_NET_WORKAREA', Xatom.CARDINAL, list(self.area))
 
     def cycle(self, reverse=False):
         ids = [i for i, c in self.clients.items() if c['kind'] == 'normal']
@@ -280,6 +281,16 @@ class Manager:
 
     def maximize(self, w, restore=False):
         c = self.clients[w.id]
+        if len(self.prop(w, '_WIN4WINE_HWND')):
+            # Wine's owner thread supplies its computed outer rectangle. Only
+            # acknowledge EWMH state here; resizing it races restore placement.
+            atoms = {self.atom('_NET_WM_STATE_MAXIMIZED_VERT'), self.atom('_NET_WM_STATE_MAXIMIZED_HORZ')}
+            states = set(self.prop(w, '_NET_WM_STATE')) - atoms
+            if not restore:
+                states.update(atoms)
+            self.setprop(w, '_NET_WM_STATE', Xatom.ATOM, list(states))
+            self.focus(w)
+            return
         if restore and c['restore']:
             x, y, width, height = c['restore']
             c['restore'] = None
@@ -314,11 +325,13 @@ class Manager:
             pairs = [line.split() for line in (self.ipc / 'frames.tsv').read_text().splitlines()]
             handles = {int(fields[0], 16): int(fields[1], 16) for fields in pairs}
             extents = {int(fields[1], 16): tuple(map(int, fields[2:7])) for fields in pairs if len(fields) >= 7}
-            ready = {int(fields[1], 16): not int(fields[7]) for fields in pairs if len(fields) == 8}
+            ready = {int(fields[1], 16): not int(fields[7]) for fields in pairs if len(fields) >= 8}
+            clips = {int(fields[1], 16): tuple(map(int, fields[8:10])) for fields in pairs if len(fields) == 10}
         except (OSError, ValueError, IndexError):
             handles = {}
             extents = {}
             ready = {}
+            clips = {}
         frames = {}
         for i, c in self.clients.items():
             if c['kind'] != 'proxy':
@@ -344,7 +357,8 @@ class Manager:
                     self.setprop(native['w'], '_NET_FRAME_EXTENTS', Xatom.CARDINAL, [left, right, top, bottom])
                     if maximized and native['restore'] is not None:
                         x, y, width, height = self.area
-                        wanted = (x+left, y+top, max(1, width-left-right), max(1, height-top-bottom))
+                        bx, by = clips.get(native_id, (0, 0))
+                        wanted = (x+left-bx, y+top-by, max(1, width-left-right+2*bx), max(1, height-top-bottom+2*by))
                         r = native['w'].get_geometry()
                         if (r.x, r.y, r.width, r.height) != wanted:
                             native['w'].configure(x=wanted[0], y=wanted[1], width=wanted[2], height=wanted[3])
@@ -364,7 +378,7 @@ class Manager:
         for i, c in self.clients.items():
             if c['kind'] == 'normal' and not len(self.prop(c['w'], '_WIN4WINE_HWND')):
                 r = c['w'].get_geometry()
-                geometries.append(f'{i:x} {r.x} {r.y} {r.width} {r.height} {int(c["restore"] is not None)}\n')
+                geometries.append(f'{i:x} {r.x} {r.y} {r.width} {r.height} {int(c["restore"] is not None)} {self.area[0]} {self.area[1]} {self.area[2]} {self.area[3]}\n')
         text = ''.join(geometries)
         if text != self.previous_geometry:
             temporary = self.ipc / 'geometry.tmp'
@@ -531,7 +545,12 @@ class Manager:
                         states.discard(atom)
                 self.setprop(e.window, '_NET_WM_STATE', Xatom.ATOM, list(states))
                 maximized = self.atom('_NET_WM_STATE_MAXIMIZED_VERT') in states or self.atom('_NET_WM_STATE_MAXIMIZED_HORZ') in states
-                self.maximize(e.window, restore=not maximized)
+                if self.clients[e.window.id]['kind'] == 'proxy':
+                    native = self.clients.get(self.frames.get(e.window.id))
+                    if native and (native['restore'] is not None) != maximized:
+                        self.maximize(native['w'], restore=not maximized)
+                else:
+                    self.maximize(e.window, restore=not maximized)
 
     def run(self):
         while self.running:

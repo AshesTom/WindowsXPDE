@@ -471,7 +471,7 @@ StretchBlt/StretchDIBits双方の必要なsource範囲を残す。整数演算�
 以前のラベル座標へ連続入力する短いscriptは一部失敗しており、即時連続入力の完全保証とはしない。
 
 
-### フォルダ上角の追加調査（未解決）
+### フォルダ上角の追加調査（0036時点）
 
 VMのExplorerは画面1280×800に対し800×600、座標-4,-4で表示される。
 public IsZoomed=TRUE / GetWindowPlacement.showCmd=SW_SHOWMAXIMIZED、X11の
@@ -558,3 +558,89 @@ Debian VMにも0039/0040とprofile version 7をatomic反映し、cold restartの
 タスク文字も通常/activeの位置と199画素を維持した。
 `.local/vm-test/fonts-workarea40.log` / `taskbar-text40.log`。
 folder-state probeはこの時点でフォルダを開いていないためexit 1だが、作業領域のAPI取得は成功。
+
+### 所有threadによる最大化（0041）とtask activation
+
+WMがWineの最大化サイズを非同期に強制する候補は、公開IsZoomedのACKと世代番号を
+追加しても、高速復元で通常位置の座標や幅を壊した。Wine自身のtraceとWM要求maskで、
+実Xサイズが最大化のままなのにpending矩形が復元済みとなり、位置だけの要求を送ることを確認。
+`.local/vm-test/wine-maximize-lifetime40-repeat.log` / `max-rapid-mask-wm.log`。
+この候補と専用IPCは採用しない。
+
+0041は外部shellに限りWineのmanaged最大化サイズ抑制を解除し、所有threadが計算した
+位置・サイズを反映する。WMはWineのEWMH状態を確認するだけで幾何を上書きしない。
+通常/owned APPWINDOWの初回最大化、復元、高速往復、独自WM_GETMINMAXINFO上限の
+10項目が成功。Lunaは5回50/50成功、Classicも10項目成功。
+`.local/wine-maximize-owner41-luna-repeat.log` / `frame-owner41-classic-regression.log`。
+通常Wineの非opt-in経路とminimizeの従来抑制は変更しない。
+
+Linux代理枠も公開WM_GETMINMAXINFOとShowWindowで実WS_MAXIMIZEを使う。
+Lunaは外寸-4,-4..1284,770、client0,26..1280,766、可視余白0/0/26/0。
+Classicの可視余白は0/0/20/0。caption操作、復元後のdrag、resize、icon更新、
+最小化・終了・withdraw/remapが両テーマで成功。
+`.local/native-owner41-luna-final.log` / `native-owner41-classic-drag.log`。
+
+実Cabinetも最大化で閉じた後、次回から正しい作業領域へ最大化され、
+復元で通常800×600と丸角に戻る。`.local/cabinet-owner41-reopen.log`。
+Wineの別process向けGetWindowPlacementは未完全対応なので、そのnormal値だけでは
+復元位置を判定しない。所有process内のfixtureと実復元操作で検査する。
+
+shell activationは現在のtask一覧に含まれるHWNDだけを通知する。owned dialogは公開
+GW_OWNERを辿って最も近いtask ownerを選び、未所属tool/Startから余分なtaskを作らない。
+2段owner chainの途中がAPPWINDOWの場合を含め4項目が成功。
+`.local/shell-activation-owner41-final.log`。
+
+### Start表示直後の黒いframe（0042）
+
+安定後の描画とは別に、Startが開く約0.1〜0.3秒は全面黒だった。
+公開API traceではSWP_SHOWWINDOW|SWP_NOREDRAWで先に表示し、WM_PRINTでchildrenを
+捕捉した後に完成bitmapを転送していた。実XPの自作probeはNOREDRAW時に元の画面を
+保つが、Wineは新規surfaceの黒いbufferを先行転送する。AnimateWindowは使われていない。
+
+0042は外部shellの明示NOREDRAW表示・非layered popupに限り、X背景をNoneに維持し、
+新規bufferを同depthのroot画素から初期化する。画面外は64bit演算でclipし、root変更による
+BadMatchをtrapする。通常showで状態を解除し、既存のbuffered描画は維持する。
+取得失敗・depth不一致などでは既存fallbackとなり、その条件で下地保持は保証しない。
+
+公開15項目（初回/再show、owner DC、通常paintへの復帰、画面端、layered除外）が成功。
+`.local/no-redraw-final-test.log`。opt-outの出力は旧40と同一。
+実Start5回すべて全面黒なし、黒画素は最大1818（旧181616）。安定後画像は全5回とも
+同一で、旧40の画像ともbyte一致。All Programs submenuも描画した。
+`.local/start-flash-final42-match.log` / `start-flash-candidate-programs.png`。
+直接X描画へ切り替える試作は安定後に枠の差が出たため採用しない。
+
+独立source/build/installで全41/42patchの適用・全build/installが成功。
+`.local/wine-verified41-build.log` / `wine-verified42-build.log`。
+即時GdiFlushの画面反映はWine10の既存stub問題として残る。今回の公開試験はowner DCへの
+描画と明示paintを分けて確認し、その既存問題まで解決した扱いにはしない。
+
+### 最終42patch構成の独立VM検証
+
+pin済みのWine baseへ全42patchを新規適用し、変更・追加54sourceが独立full build側と
+byte一致した。`.local/patch-series42-fresh.log` / `patch-series42-source-match.log`。
+patch状態試験6件と、最終buildでの動的作業領域9段階も成功。
+`.local/patch-state42-tests.log` / `workarea-verified42.log`。
+
+Debian VMへ最終Wine・proxy・inspect・WMを反映し、cold restartのattempt 1で起動。
+公開NOREDRAW 15項目、所有thread最大化10項目、task activation 4項目が成功。
+`.local/vm-test/owner-noredraw42-public.log`。
+Linux枠の実IsZoomed・最大化外寸・復元後dragを含む操作試験もLuna/Classic双方で成功。
+Classic最終96 DPIでは外寸-4,-4..1284,776、可視caption 19px、作業領域高さ772px。
+以前の20px測定とは設定を区別する。`.local/vm-test/classic42-public-start.log`。
+
+通常XP Startを5回開閉し、全面黒のframeはなく、安定後の同一性も全5回確認。
+旧画像とのRGB差24画素は上部丸角の外側の背景だけで、公開X bounding shape内の差は0。
+`.local/vm-test/frames-start42.log` / `start42-rgb-comparison.log` /
+`menu-shape-folder42.log`。画面外の背景差までメニュー本体の差として扱わない。
+
+実Explorerのフォルダ移動・Alt+Left・タスク左クリック最小化と復元が成功。
+実xtermも文字の再描画・resize・focusを入力なしで確認した。
+`.local/vm-test/folder42-operations.log` / `redraw-classic42-switch.log`。
+後者のcommand全体はテーマ切替後の停止済みwineserverの終了値でexit 1になったが、
+xterm試験自体はPASS。停止処理を補正して再起動した。
+Classicの独立Start寸法7項目、通常XP Start開閉5回も成功。
+
+最後にLuna / 96 DPI / 通常XPメニューへ戻してcold restartし、Explorer操作を再確認。
+`.local/vm-test/final42-folder.log`、通常角に復元したExplorerと実xtermの画面
+`final42-desktop.png` / `final42-start.png`を保存した。
+Microsoftバイナリ・テーマ・フォントの変更や追加取得、追跡対象への格納は行っていない。

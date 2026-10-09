@@ -38,3 +38,5 @@
 0038-uxtheme-external-rebar-gripper-extent.patch
 0039-winex11-external-workarea-refresh.patch
 0040-uxtheme-external-task-font-profile.patch
+0041-winex11-external-owner-maximize.patch
+0042-winex11-external-popup-no-redraw.patch

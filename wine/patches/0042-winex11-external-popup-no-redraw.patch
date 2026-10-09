@@ -1,0 +1,92 @@
+From: Win4Wine contributors
+Subject: [PATCH] winex11: preserve explicitly shown no-redraw popup pixels
+
+Keep the underlying screen for opt-in non-layered popup SHOW|NOREDRAW.
+Seed new buffered surfaces from clipped same-depth root pixels and preserve
+the X background through map style synchronization. Keep ordinary buffered
+painting and the opt-out path. Public XP probes establish the behavior;
+no Microsoft implementation or resources are modified or embedded.
+
+--- a/dlls/winex11.drv/x11drv.h
++++ b/dlls/winex11.drv/x11drv.h
+@@ -648,6 +648,8 @@
+     unsigned long wm_state_serial;     /* serial of last pending WM_STATE request */
+     unsigned long net_wm_state_serial; /* serial of last pending _NET_WM_STATE request */
+     unsigned long configure_serial;    /* serial of last pending configure request */
++    BOOL preserve_no_redraw;          /* opt-in popup shown without redrawing */
++    RECT no_redraw_rect;              /* pending raw visible rectangle */
+ };
+ 
+ extern struct x11drv_win_data *get_win_data( HWND hwnd );
+--- a/dlls/winex11.drv/window.c
++++ b/dlls/winex11.drv/window.c
+@@ -477,12 +477,14 @@
+     attr->backing_store     = NotUseful;
+     attr->border_pixel      = 0;
+     attr->background_pixel  = 0;
++    if (data->preserve_no_redraw) attr->background_pixmap = None;
+     attr->event_mask        = (ExposureMask | PointerMotionMask |
+                                ButtonPressMask | ButtonReleaseMask | EnterWindowMask |
+                                KeyPressMask | KeyReleaseMask | FocusChangeMask |
+                                KeymapStateMask | StructureNotifyMask | PropertyChangeMask);
+ 
+-    return (CWOverrideRedirect | CWSaveUnder | CWColormap | CWBorderPixel | CWBackPixel |
++    return (CWOverrideRedirect | CWSaveUnder | CWColormap | CWBorderPixel |
++            (data->preserve_no_redraw ? CWBackPixmap : CWBackPixel) |
+             CWEventMask | CWBitGravity | CWBackingStore);
+ }
+ 
+@@ -2878,6 +2880,12 @@
+ 
+     if (!data && !(data = X11DRV_create_win_data( hwnd, rects ))) return FALSE; /* use default surface */
+     data->shaped = shaped;
++    data->no_redraw_rect = rects->visible;
++    if (!(NtUserGetWindowLongW( hwnd, GWL_STYLE ) & WS_POPUP) ||
++        (NtUserGetWindowLongW( hwnd, GWL_EXSTYLE ) & WS_EX_LAYERED))
++        data->preserve_no_redraw = FALSE;
++    else if (swp_flags & SWP_SHOWWINDOW)
++        data->preserve_no_redraw = getenv( "WIN4WINE_EXTERNAL_SHELL" ) && (swp_flags & SWP_NOREDRAW);
+ 
+     /* check if we need to switch the window to managed */
+     if (!data->managed && data->whole_window && is_window_managed( hwnd, swp_flags, &rects->window ))
+--- a/dlls/winex11.drv/bitblt.c
++++ b/dlls/winex11.drv/bitblt.c
+@@ -1906,6 +1906,38 @@
+ 
+     if (!(image = x11drv_image_create( info, vis ))) return NULL;
+ 
++    /* Preserve the screen under a newly shown no-redraw popup before any
++     * shape/exposure flush transfers its otherwise uninitialized bitmap. */
++    {
++        struct x11drv_win_data *data = get_win_data( hwnd );
++        if (data)
++        {
++            if (data->preserve_no_redraw)
++            {
++                POINT origin = virtual_screen_to_root( 0, 0 );
++                LONGLONG x = (LONGLONG)origin.x + data->no_redraw_rect.left + rect->left;
++                LONGLONG y = (LONGLONG)origin.y + data->no_redraw_rect.top + rect->top;
++                XWindowAttributes attrs;
++                if (XGetWindowAttributes( gdi_display, root_window, &attrs ) && attrs.depth == vis->depth)
++                {
++                    LONGLONG left = max( x, 0 ), top = max( y, 0 );
++                    LONGLONG right = min( x + width, attrs.width );
++                    LONGLONG bottom = min( y + height, attrs.height );
++                    /* A nonempty intersection bounds source coordinates by the
++                     * root size and destination offsets by the image size. */
++                    if (right > left && bottom > top)
++                    {
++                        X11DRV_expect_error( gdi_display, XGetImage_handler, NULL );
++                        XGetSubImage( gdi_display, root_window, left, top, right-left, bottom-top,
++                                      AllPlanes, ZPixmap, image->ximage, left-x, top-y );
++                        if (X11DRV_check_error()) WARN( "Cannot preserve root pixels for hwnd %p\n", hwnd );
++                    }
++                }
++            }
++            release_win_data( data );
++        }
++    }
++
+     /* wrap the XImage data in a HBITMAP if we can write to the surface pixels directly */
+     if ((byteswap = image_needs_byteswap( image->ximage, is_r8g8b8( vis ), info->bmiHeader.biBitCount )) ||
+         info->bmiHeader.biBitCount <= 8 || !(d3d_format = get_dib_d3dddifmt( info )))
