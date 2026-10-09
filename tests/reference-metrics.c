@@ -5,6 +5,7 @@
 #define UNICODE
 #endif
 #include <windows.h>
+#include <wincrypt.h>
 #include <uxtheme.h>
 #include <vssym32.h>
 #include <stdio.h>
@@ -12,7 +13,48 @@
 #include <io.h>
 #include <fcntl.h>
 
+/* XP SP3's RSA/AES provider supports SHA-256; older-target SDK headers hide it. */
+#ifndef CALG_SHA_256
+#define CALG_SHA_256 0x0000800c
+#endif
+
 static FILE *output;
+static void theme_hash(void)
+{
+    WCHAR path[MAX_PATH],color[128],theme_size[128];
+    HCRYPTPROV provider=0;
+    HCRYPTHASH hash=0;
+    HANDLE file=INVALID_HANDLE_VALUE;
+    BYTE buffer[16384],digest[32];
+    DWORD count,size=sizeof(digest),failure=0;
+    HRESULT result;
+    unsigned i;
+    result=GetCurrentThemeName(path,MAX_PATH,color,128,theme_size,128);
+    if(FAILED(result))
+    {fprintf(output,"theme-sha256 unavailable hr=%08lx\n",(unsigned long)result);return;}
+    file=CreateFileW(path,GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,0,NULL);
+    if(file==INVALID_HANDLE_VALUE ||
+       !CryptAcquireContextW(&provider,NULL,NULL,PROV_RSA_AES,CRYPT_VERIFYCONTEXT) ||
+       !CryptCreateHash(provider,CALG_SHA_256,0,0,&hash))goto failed;
+    for(;;)
+    {
+        if(!ReadFile(file,buffer,sizeof(buffer),&count,NULL))goto failed;
+        if(!count)break;
+        if(!CryptHashData(hash,buffer,count,0))goto failed;
+    }
+    if(!CryptGetHashParam(hash,HP_HASHVAL,digest,&size,0) || size!=sizeof(digest))goto failed;
+    fprintf(output,"theme-sha256=");
+    for(i=0;i<sizeof(digest);i++)fprintf(output,"%02x",digest[i]);
+    fprintf(output,"\n");
+    goto done;
+failed:
+    failure=GetLastError();
+    fprintf(output,"theme-sha256 error=%lu\n",failure);
+done:
+    if(hash)CryptDestroyHash(hash);
+    if(provider)CryptReleaseContext(provider,0);
+    if(file!=INVALID_HANDLE_VALUE)CloseHandle(file);
+}
 static void font(const char *label, const LOGFONTW *f)
 {
     char face[128];
@@ -214,11 +256,12 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp)
 int wmain(int argc,WCHAR **argv)
 {
     WNDCLASSW cls={0};HWND a,b;MSG msg;int i;
-    BOOL display=FALSE,spi_font=FALSE;
+    BOOL display=FALSE,spi_font=FALSE,hash_theme=FALSE;
     for(i=2;i<argc;i++)
     {
         if(!lstrcmpW(argv[i],L"--display-1024x768"))display=TRUE;
         else if(!lstrcmpW(argv[i],L"--probe-spi-font"))spi_font=TRUE;
+        else if(!lstrcmpW(argv[i],L"--theme-hash"))hash_theme=TRUE;
         else return 2;
     }
     if (argc>1 && !lstrcmpiW(argv[1],L"COM1"))
@@ -261,6 +304,7 @@ int wmain(int argc,WCHAR **argv)
     if(!a||!b)return 2;
     ShowWindow(b,SW_SHOWNOACTIVATE);ShowWindow(a,SW_SHOW);SetForegroundWindow(a);UpdateWindow(a);UpdateWindow(b);
     measure(a);
+    if(hash_theme)theme_hash();
     if(spi_font)probe_spi_font();
     fclose(output);
     while(GetMessageW(&msg,NULL,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}

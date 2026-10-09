@@ -55,3 +55,20 @@ API がテーマ指定と一致することと、実 XP の見た目が一致す
 MS UI Gothic -12、caption は -13 bold、taskbar Button は -13 bold だった。
 close button のテーマ画像は21×21・8状態。
 Wine でのテーマ適用結果と日本語 XP の実表示には書体・本文サイズの差があり、調整中。
+
+実 XP では `OpenThemeData(..., L"Start::Button")` は失敗した。
+自作 Button に `SetWindowTheme(button, L"Start", NULL)` を設定してから
+`OpenThemeData(button, L"Button")` を使うと、Start のフォントを取得できた。
+NULL / 実 DC の両方で MS UI Gothic -16・bold・italic が返った。
+
+任意の `--probe-spi-font` は caption の SPI 設定だけを一時変更し、
+既存 / 新規 / NULL HTHEME で GetThemeSysFont を比較してから元の設定を復元する。
+永続保存・変更通知は行わない。実 XP と Wine の両方で、既存 / 新規 HTHEME は
+テーマのフォントを保持し、NULL HTHEME は変更された SPI を返した。
+両環境とも復元成功と LOGFONT の完全一致を確認した。
+
+`--theme-hash` は現在のテーマファイルを読み取り、公開 CryptoAPI で SHA256 のみを出力する。
+ファイルの内容を解析・出力しない。実 XP のインストール済み Luna と、同じ ISO から
+抽出して Wine に配置した Luna の SHA256 は一致した。
+XP ではプロセスのテーマ初期化前の GetCurrentThemeName が失敗したため、
+この測定は自作ウィンドウのテーマを開いた後で行う。
