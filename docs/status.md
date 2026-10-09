@@ -662,4 +662,8 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
   実XP参照画像でも固定時は30px高、固定解除時は上端に4pxのサイズ変更帯（TaskBar part 5）が加わり34px高。
   Wine 上も両状態で背景・高さ・Start ボタンが実XPと一致した。新規ユーザーの XP は固定状態なので、
   registry profile version 8 で未設定時だけ `TaskbarSizeMove=0` を補う。
+- Luna の右上3ボタンが大きく見えたのは、ボタン外形ではなく glyph 画像の選択による（0046）。
+  21×21の button で19px glyph を選んでいたため、実XPと同じ13px glyph に修正した。
+  アクティブな閉じるボタンは実XPの画面と画素単位で一致する。nonclient-caption /
+  caption-icons / nonclient-theme の既存試験も成功。
 - 「スタート」の太字斜体の字形は実XPと一部異なる（未修正）。
