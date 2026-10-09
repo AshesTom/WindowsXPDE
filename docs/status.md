@@ -703,5 +703,8 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
 - 日本語 Luna の文字列テーブルにある字体指定を 0058 で反映し、`tests/theme-props.c --fonts` の117件が実XPと一致した
   （Rebar・ExplorerBar・TaskBand など）。Start パネルの幅も実XPと同じ400pxになった。
 - Start のユーザー名は実XPと同じ MS UI Gothic 太字・ぼかし影になった（0057、`tests/theme-props.c`）。
+- フォルダ左側の「ファイルとフォルダのタスク」（WebView）は、XP の duser.dll を native にすると Explorer は
+  異常終了しなくなるが、作業ウィンドウ自体が作られない（shellstyle.dll を読む前で止まる）。既定どおり無効のまま。
+  `menu-settings.exe webview-on|off` で XP の SSF_WEBVIEW を切り替えられる（調査用）。
 - 「スタート」の太字斜体の字形は、XP では行ごとの傾きが約1/3で、太字化は1px の横の重ね描きだった。
   傾き1/3＋1px 重ね描きで近づくが文字間隔を含めて一致させられず、未修正。は実XPと一部異なる（未修正）。
