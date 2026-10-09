@@ -1,0 +1,44 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] uxtheme: stretch and centre theme images like XP in the external shell
+
+Purpose: match XP's pixels where a theme image is resized.
+XP stretches theme images by repeating source pixels, and centres an image
+glyph on the difference between its rectangle and the glyph. Wine used
+HALFTONE smoothing, and centred each size separately, so an odd glyph in
+an even rectangle sat one pixel lower. On the folder window's address bar
+the drop-down button (16 pixels stretched to 18) and its arrow were both
+off; with COLORONCOLOR and the XP centring, the button's pixels equal the
+reference XP machine's. Glyphs whose sizes have the same parity, such as
+the caption buttons, are placed as before. Only the opted-in external
+shell is affected.
+
+diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
+index b50ab83..11b7126 100644
+--- a/dlls/uxtheme/draw.c
++++ b/dlls/uxtheme/draw.c
+@@ -394,7 +394,10 @@ static inline BOOL UXTHEME_StretchBlt(HDC hdcDst, int nXOriginDst, int nYOriginD
+     int old_stretch_mode;
+     POINT old_brush_org;
+ 
+-    old_stretch_mode = SetStretchBltMode(hdcDst, HALFTONE);
++    /* XP stretches theme images by repeating source pixels; the opted-in
++     * external shell matches that instead of Wine's halftone smoothing. */
++    old_stretch_mode = SetStretchBltMode(hdcDst, GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL", NULL, 0)
++                                                 ? COLORONCOLOR : HALFTONE);
+     SetBrushOrgEx(hdcDst, nXOriginDst, nYOriginDst, &old_brush_org);
+ 
+     if (transparent == ALPHABLEND_BINARY) {
+@@ -659,6 +662,13 @@ static HRESULT UXTHEME_DrawImageGlyph(HTHEME hTheme, HDC hdc, int iPartId,
+     else if(halign == HA_RIGHT)  topleft.x += dstSize.x-srcSize.x;
+     if(valign == VA_CENTER)      topleft.y += (dstSize.y/2)-(srcSize.y/2);
+     else if(valign == VA_BOTTOM) topleft.y += dstSize.y-srcSize.y;
++    /* XP centres on the difference: an odd glyph in an even rectangle sits a
++     * pixel higher, as the ComboBox drop-down arrow does. */
++    if (pRect == &content)
++    {
++        if (halign == HA_CENTER) topleft.x = pRect->left + (dstSize.x - srcSize.x) / 2;
++        if (valign == VA_CENTER) topleft.y = pRect->top + (dstSize.y - srcSize.y) / 2;
++    }
+ 
+     if(!UXTHEME_Blt(hdc, topleft.x, topleft.y, srcSize.x, srcSize.y,
+                     hdcSrc, rcSrc.left, rcSrc.top,

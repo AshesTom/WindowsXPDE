@@ -20,6 +20,7 @@ compile() {
 for name in shellhook shell-activation shell-layout-sync wine-maximize workarea no-redraw button-size system-menu rebar print-window foreign-icons mono-advance text-vcenter taskbar-fonts nc-context-menu marlett-caption frame-control default-position ui-state screen-capture text-mask; do
     compile "$root/.local/bridge/$name-test.exe" -municode "$root/tests/$name.c" -luser32 -lgdi32
 done
+compile "$root/.local/bridge/toolbar-layout-test.exe" "$root/tests/toolbar-layout.c" -luser32 -lgdi32
 compile "$root/.local/bridge/class-probe.exe" -municode "$root/prefix/class-probe.c" -lole32 -luuid
 
 compile "$root/.local/bridge/display-test.exe" -s "$root/tests/display.c" -luxtheme -lgdi32
