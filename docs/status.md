@@ -658,4 +658,8 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
   `tests/transparent-shrink.c` は修正前に21画素の不正値で失敗し、修正後は全 mode で成功する。
 - `tests/theme-part-pixels.c` は任意のテーマ part を公開APIで描き、property と画素を標準出力へ出す。
   画面との比較用で、ファイルやテーマ資源を書き出さない。
+- タスクバー上端の線が二重に見える場合と見えない場合の差は、タスクバーの固定状態による。
+  実XP参照画像でも固定時は30px高、固定解除時は上端に4pxのサイズ変更帯（TaskBar part 5）が加わり34px高。
+  Wine 上も両状態で背景・高さ・Start ボタンが実XPと一致した。新規ユーザーの XP は固定状態なので、
+  registry profile version 8 で未設定時だけ `TaskbarSizeMove=0` を補う。
 - 「スタート」の太字斜体の字形は実XPと一部異なる（未修正）。

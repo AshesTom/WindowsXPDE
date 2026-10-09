@@ -1,7 +1,7 @@
 """Minimal native shell COM registrations absent from Wine's generated prefix."""
 import struct
 
-VERSION = 7
+VERSION = 8
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -77,6 +77,12 @@ def install(run, exists):
     for name, (kind, data) in font_profile_defaults().items():
         if not exists(FONT_PROFILE, name):
             run('reg', 'add', FONT_PROFILE, '/v', name, '/t', kind, '/d', data, '/f')
+    # XP's default user profile starts with the taskbar locked: no grippers or
+    # top sizing bar, 30px high at 96 DPI. Explorer writes this value when the
+    # user changes the lock, so only an absent value is seeded.
+    advanced = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+    if not exists(advanced, 'TaskbarSizeMove'):
+        run('reg', 'add', advanced, '/v', 'TaskbarSizeMove', '/t', 'REG_DWORD', '/d', '0', '/f')
     # Native My Computer defaults to explorer.exe's first icon. Our XP Explorer
     # has a separate name so Wine's explorer.exe can remain the desktop manager.
     run('reg', 'add', r'HKCR\CLSID\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\DefaultIcon',
