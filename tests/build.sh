@@ -21,6 +21,8 @@ for name in shellhook shell-activation shell-layout-sync wine-maximize workarea 
     compile "$root/.local/bridge/$name-test.exe" -municode "$root/tests/$name.c" -luser32 -lgdi32
 done
 compile "$root/.local/bridge/toolbar-layout-test.exe" "$root/tests/toolbar-layout.c" -luser32 -lgdi32
+compile "$root/.local/bridge/stretch-map-test.exe" "$root/tests/stretch-map.c" -lgdi32 -lmsimg32
+compile "$root/.local/bridge/margin-shrink-test.exe" "$root/tests/margin-shrink.c" -luxtheme -lgdi32 -luser32
 compile "$root/.local/bridge/class-probe.exe" -municode "$root/prefix/class-probe.c" -lole32 -luuid
 
 compile "$root/.local/bridge/display-test.exe" -s "$root/tests/display.c" -luxtheme -lgdi32

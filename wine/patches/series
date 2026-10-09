@@ -60,3 +60,5 @@
 0060-comctl32-external-themed-address-combo.patch
 0061-uxtheme-external-xp-stretch-and-glyph-centre.patch
 0062-uxtheme-external-full-caption-height.patch
+0063-uxtheme-external-xp-image-resize.patch
+0064-win32u-external-transparent-blt-mapping.patch
