@@ -66,3 +66,5 @@
 0066-user32-external-japanese-line-breaks.patch
 0067-user32-external-caption-help-button.patch
 0068-user32-external-themed-shell-controls.patch
+0069-comctl32-external-label-offsets.patch
+0070-uxtheme-external-premultiply.patch
