@@ -1,7 +1,7 @@
 """Minimal native shell COM registrations absent from Wine's generated prefix."""
 import struct
 
-VERSION = 8
+VERSION = 9
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -106,6 +106,8 @@ def install(run, exists):
         ('{603D3800-BD81-11D0-A3A5-00C04FD706EC}', 'browseui.dll'),
         ('{603D3801-BD81-11D0-A3A5-00C04FD706EC}', 'browseui.dll'),
         ('{42AEDC87-2188-41FD-B9A3-0C966FEABEC1}', 'shdocvw.dll'),
+        # Explorer Band: the tree shown by the folder window's Folders button.
+        ('{EFA24E64-B078-11D0-89E4-00C04FC9E26E}', 'shdocvw.dll'),
         ('{7849596A-48EA-486E-8937-A2A3009F31A9}', 'shell32.dll'),
         ('{D912F8CF-0396-4915-884E-FB425D32943B}', 'shell32.dll'),
         ('{3F6953F0-5359-47FC-BD99-9F2CB95A62FD}', 'shell32.dll'),

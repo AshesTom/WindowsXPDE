@@ -33,6 +33,8 @@ export WINEPREFIX=/work/.local/prefix-clean
 version 6 は `ClockFont`（96 DPI で MS UI Gothic -12 regular）を未存在時だけ追加する。
 外部シェルの日本語 Luna profile が有効かつテーマ選択が一致する場合に、TrayNotify の Clock 字体へ適用する。
 独自の ClockFont、無効な値、profile の無効化はそのまま保持し、値が欠落・不正なら Wine のテーマ字体へ戻る。
+version 9 は XP shdocvw の Explorer Band（`{EFA24E64-B078-11D0-89E4-00C04FC9E26E}`）を登録し、
+フォルダウィンドウの「フォルダ」ボタンでツリーを表示する。
 version 8 は `TaskbarSizeMove=0`（タスクバーを固定）を未存在時だけ追加する。
 XP の既定ユーザーと同じく、グリッパーと上端のサイズ変更帯がない30px高（96 DPI）で始まる。
 固定を解除すると explorer 自身が値を1にし、34px高でサイズ変更帯が上端の二重線として見える。
