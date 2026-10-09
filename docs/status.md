@@ -192,4 +192,39 @@ Microsoft バイナリを変更・解析・配布する修正はない。
   `luna-details-frame-redraw.log` で成功。
 
 ここでの native XP Explorer の確認は Wine 上の試験であり、実 XP OS との比較ではない。
-利用者指摘の6点と、タスクバー両端の細い classic 区切りは引き続き残件。
+この時点では利用者指摘の6点と、タスクバー両端の細い classic 区切りが残件だった。
+
+## 非アクティブ枠・角・フォント・Linux アイコンの追加検証
+
+- 0022 は公開テーマ API の8状態を使い、非アクティブ時のキャプションボタンを切り替える。
+  4状態のテーマには従来の状態を維持する。
+- 0023 は公開 GetThemeBackgroundRegion に基づく丸い上角を適用する。
+  アプリが指定した region を保持し、自前で管理する region だけを更新・解除する。
+  非アクティブ描画・resize・最大化・classic 切替・破棄を96/144/192 DPIで検証。
+  `.local/nc-region-after.log`、`nc-region-144.log`、`nc-region-192.log`。
+- 0024 は Wine のフォント属性の空白処理と複数属性の認識を修正する。
+  caption の Bold、Start の Italic が欠落していた。自作7入力と境界外参照の検査が成功。
+  Luna 再適用後は caption weight 700、Start italic 1 を公開 API で確認。
+  `.local/font-parser-regression.log`、`shell-font-probe-after0024.log`。
+- Linux アプリの EWMH / ICCCM アイコンを代理 HWND の本物の HICON に反映する。
+  画像のサイズを制限し、更新・削除・不正な画像・既定アイコン・半透明を検証。
+  classic / Luna の実キャプション画像でも確認。タスクバーの別プロセス HICON 参照は未対応。
+  `.local/native-icons-final-test.log`、`native-icons-classic-final-test.log`。
+- 独立 Debian VM の24パッチで、8種類の公開 API 試験と Linux 枠の操作・アイコン更新、
+  入力なしの xterm 再描画試験が成功。
+  `.local/vm-test/luna-fidelity-public-tests.log`、`luna-fidelity-frames-redraw.log`。
+
+## 日本語 XP OS での初回比較
+
+利用者の ISO からネットワークなしの別 VM を新規作成し、デスクトップまで到達。
+利用者が入力を許可したキーはセットアップで受理された。キー値は保存資料に記載しない。
+VNC は `127.0.0.1:5906`。手順は [実 XP の比較](xp-reference.md)。
+
+自作 `tests/reference-metrics.c` を実 XP で実行し、96 DPI の公開 API を測定した。
+実 XP の本文・メニュー・アイコンは MS UI Gothic -12、caption は同 -13 bold、
+taskbar Button は同 -13 bold。一方、現在の Wine では本文 Tahoma -11、caption Trebuchet MS -13 bold。
+日本語の書体と文字サイズの差は未修正で、利用者の指摘と対応する具体的な残件。
+close のテーマ画像は両環境とも21×21・8状態。実際の配置とクリック領域には差があるため、
+画像寸法だけでボタンの見た目が一致したとは判断しない。
+生ログは `.local/xp-reference/serial.log`、Wine 側は `.local/reference-wine-24.txt`。
+上角・非アクティブ・Start 斜体・Linux の左上アイコンは改善したが、実 XP との最終比較は継続する。

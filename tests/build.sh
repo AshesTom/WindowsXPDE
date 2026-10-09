@@ -12,10 +12,13 @@ done
 "${MINGW_CC:-i686-w64-mingw32-gcc}" -std=c11 -Wall -Wextra -Werror -O2 -s \
     "$root/tests/display.c" -o "$root/.local/bridge/display-test.exe" -luxtheme -lgdi32
 
-for name in start-button theme-font theme-metrics taskbar-background clock-theme scrollbar-theme rebar-theme; do
+for name in start-button theme-font theme-metrics taskbar-background clock-theme scrollbar-theme rebar-theme reference-metrics; do
     "${MINGW_CC:-i686-w64-mingw32-gcc}" -std=c11 -Wall -Wextra -Werror -O2 -municode \
         "$root/tests/$name.c" -o "$root/.local/bridge/$name-test.exe" -luxtheme -lgdi32
 done
 
 "${MINGW_CC:-i686-w64-mingw32-gcc}" -std=c11 -Wall -Wextra -Werror -O2 -municode \
     "$root/tests/nonclient-theme.c" -o "$root/.local/bridge/nonclient-theme-test.exe" -luxtheme -lgdi32
+
+# Synthetic strings exercise the source parser without reading theme assets.
+python3 "$root/tests/font_parser.py"

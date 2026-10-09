@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Real Wine frame gestures on a native X client; run with WM + proxy active."""
 import os
+import re
 from itertools import count
 from pathlib import Path
 import subprocess
 import time
-from Xlib import X, Xatom, display, error, protocol
+from Xlib import X, Xatom, Xutil, display, error, protocol
 
 ipc = Path(os.environ['XP_BRIDGE_DIR'])
 d = display.Display()
@@ -53,6 +54,65 @@ def frame_for(w):
         if hwnd and pairs.get(hwnd[0]) == w.id and child.get_attributes().map_state == X.IsViewable:
             return child
 
+def frame_icon():
+    hwnd = prop(frame, '_WIN4WINE_HWND')[0]
+    wine = os.environ.get('WINE', 'wine')
+    inspect = Path(__file__).resolve().parents[1] / '.local/bridge/inspect.exe'
+    result = subprocess.run([wine, str(inspect), 'icon', f'{hwnd:x}'],
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            env=dict(os.environ, WINEDEBUG='-all'))
+    if result.returncode:
+        return {}
+    return {key: int(value, 10 if key in ('width', 'height') else 16)
+            for key, value in re.findall(r'(icon|width|height|hash|first|center|last)=([0-9a-f]+)',
+                                         result.stdout.decode('ascii', 'replace'))}
+
+def icon_hash(pixels):
+    value = 2166136261
+    for pixel in pixels:
+        rgb = pixel & 0xffffff if pixel >> 24 else 0xffffff
+        value = ((value ^ rgb) * 16777619) & 0xffffffff
+    return value
+
+def expect_icon(width, height, pixels, message):
+    return wait(lambda: (actual := frame_icon()) and
+                (actual.get('width'), actual.get('height'), actual.get('hash')) ==
+                (width, height, icon_hash(pixels)), message)
+
+def caption_image():
+    f, n = frame.get_geometry(), native.get_geometry()
+    width, height = min(64, f.width), n.y-f.y
+    image = root.get_image(f.x, f.y, width, height, X.ZPixmap, 0xffffffff)
+    fmt = next(fmt for fmt in d.display.info.pixmap_formats if fmt.depth == root.get_geometry().depth)
+    visual = next(v for level in d.screen().allowed_depths for v in level.visuals
+                  if v.visual_id == d.screen().root_visual)
+    stride = ((width*fmt.bits_per_pixel+fmt.scanline_pad-1)//fmt.scanline_pad)*(fmt.scanline_pad//8)
+    result = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            offset = y*stride+x*(fmt.bits_per_pixel//8)
+            value = int.from_bytes(image.data[offset:offset+fmt.bits_per_pixel//8],
+                                   'little' if d.display.info.image_byte_order == X.LSBFirst else 'big')
+            rgb = 0
+            for mask, shift in ((visual.red_mask,16),(visual.green_mask,8),(visual.blue_mask,0)):
+                low = mask & -mask
+                rgb |= ((value & mask)//low*255//(mask//low)) << shift
+            row.append(rgb)
+        result.append(row)
+    return result
+
+def visible_icon(pixels):
+    image = caption_image()
+    for top in range(len(image)-15):
+        for left in range(len(image[0])-15):
+            if image[top][left+1] != (pixels[1] & 0xffffff):
+                continue
+            if all(image[top+y][left+x] == (pixels[y*16+x] & 0xffffff)
+                   for y in range(16) for x in range(16) if pixels[y*16+x] >> 24 == 255):
+                return left, top
+    return None
+
 def paired():
     f, n = frame.get_geometry(), native.get_geometry()
     metrics = prop(native, '_NET_FRAME_EXTENTS')
@@ -78,6 +138,69 @@ d.flush()
 try:
     frame = wait(lambda: frame_for(native), 'genuine Wine proxy frame is mapped')
     wait(paired, 'frame encloses native pixels')
+    fallback = wait(frame_icon, 'Wine generic application icon is set when native icon is absent')
+    pixels = [0xff00aa33] * 256
+    pixels[0], pixels[8*16+8], pixels[-1] = 0, 0xffe03020, 0xff2030e0
+    native.change_property(atom('_NET_WM_ICON'), Xatom.CARDINAL, 32, [16, 16] + pixels)
+    d.flush()
+    expect_icon(16, 16, pixels, 'EWMH ARGB, transparent mask and colors reach genuine Wine HICON')
+    icon_position = wait(lambda: visible_icon(pixels), 'actual visible caption pixels show native EWMH icon')
+    if os.environ.get('XP_FRAME_ICON_SCREENSHOT'):
+        subprocess.run(['import', '-window', 'root', os.environ['XP_FRAME_ICON_SCREENSHOT']], check=True)
+    sidecar = ipc / f'icon-{native.id:x}.argb'
+    unchanged = sidecar.stat().st_mtime_ns
+    native.set_wm_name('XP native frame integration renamed')
+    d.flush()
+    time.sleep(.5)
+    assert sidecar.stat().st_mtime_ns == unchanged, 'title change must not recopy icon pixels'
+    # Wine's CreateIconIndirect makes its own premultiplied alpha bitmap.
+    # Supplying premultiplied EWMH channels would multiply them twice.
+    transparent = [0] * 256
+    native.change_property(atom('_NET_WM_ICON'), Xatom.CARDINAL, 32, [16,16] + transparent)
+    d.flush()
+    expect_icon(16, 16, transparent, 'fully transparent HICON preserves background')
+    left, top = icon_position
+    time.sleep(.2)
+    background = caption_image()[top+8][left+8]
+    half = [0x8000aa33] * 256
+    native.change_property(atom('_NET_WM_ICON'), Xatom.CARDINAL, 32, [16,16] + half)
+    d.flush()
+    wait(lambda: (actual := frame_icon()) and actual.get('width') == 16 and
+         all(abs(a-b) <= 1 for a,b in zip(((actual.get('center',0)>>16)&255,
+                                          (actual.get('center',0)>>8)&255,actual.get('center',0)&255),
+                                         (127,212,153))), 'half-alpha HICON blends straight ARGB once')
+    expected = tuple((source*128+127)//255 + ((background>>shift)&255)*127//255
+                     for source,shift in ((0,16),(170,8),(51,0)))
+    def visible_half_alpha():
+        pixel = caption_image()[top+8][left+8]
+        return all(abs(((pixel>>shift)&255)-target) <= 1
+                   for shift,target in zip((16,8,0),expected))
+    wait(visible_half_alpha, 'actual caption image blends half-alpha native icon against Luna background')
+    large = [0xff502090] * (32*32)
+    native.change_property(atom('_NET_WM_ICON'), Xatom.CARDINAL, 32,
+                           [16, 16] + pixels + [32, 32] + large)
+    d.flush()
+    expect_icon(32, 32, large, 'updated EWMH icon chooses suitable32px image and replaces HICON')
+    pixmap = root.create_pixmap(16, 16, root.get_geometry().depth)
+    mask = root.create_pixmap(16, 16, 1)
+    gc = pixmap.create_gc(foreground=0x112233)
+    pixmap.fill_rectangle(gc, 0, 0, 16, 16)
+    mask_gc = mask.create_gc(foreground=1)
+    mask.fill_rectangle(mask_gc, 0, 0, 16, 16)
+    mask_gc.change(foreground=0)
+    mask.fill_rectangle(mask_gc, 0, 0, 8, 16)
+    native.set_wm_hints(flags=Xutil.IconPixmapHint | Xutil.IconMaskHint,
+                        icon_pixmap=pixmap, icon_mask=mask)
+    native.change_property(atom('_NET_WM_ICON'), Xatom.CARDINAL, 32, [0xffffffff, 0xffffffff])
+    d.flush()
+    hints_pixels = [0 if x < 8 else 0xff112233 for y in range(16) for x in range(16)]
+    expect_icon(16, 16, hints_pixels, 'malformed EWMH safely falls back to ICCCM pixmap and mask')
+    native.delete_property(atom('_NET_WM_ICON'))
+    native.delete_property(atom('WM_HINTS'))
+    d.flush()
+    wait(lambda: frame_icon() == fallback and not sidecar.exists(), 'removed native icon restores shared Wine default')
+    pixmap.free(); mask.free(); gc.free(); mask_gc.free()
+    print('PASS: genuine HICON default, EWMH image selection/update, visible caption pixels and half-alpha, ICCCM pixmap mask and removal', flush=True)
     area = prop(root, '_NET_WORKAREA')
     assert frame.get_geometry().x >= area[0] and frame.get_geometry().y >= area[1], 'initial caption stays inside workarea'
     wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [native.id], 'native focus identity')
@@ -139,7 +262,7 @@ try:
     wait(closed, 'close button sends WM_DELETE_WINDOW to native client')
     native.unmap()
     d.flush()
-    wait(lambda: native.id not in prop(root, '_NET_CLIENT_LIST') and hidden(frame) and not prop(native, 'WM_STATE'),
+    wait(lambda: native.id not in prop(root, '_NET_CLIENT_LIST') and hidden(frame) and not prop(native, 'WM_STATE') and not (ipc / f'icon-{native.id:x}.argb').exists(),
          'withdrawal deletes WM_STATE, removes task and hides orphan frame')
     root.send_event(protocol.event.ClientMessage(window=frame, client_type=atom('_NET_ACTIVE_WINDOW'),
                     data=(32, [1, 0, 0, 0, 0])), event_mask=X.SubstructureRedirectMask | X.SubstructureNotifyMask)

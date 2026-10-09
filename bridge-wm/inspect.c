@@ -102,6 +102,19 @@ int wmain(int argc, WCHAR **argv)
     }
     hwnd = (HWND)(uintptr_t)wcstoul(argv[2], NULL, 16);
     if (!IsWindow(hwnd)) return 3;
+    if (!wcscmp(argv[1], L"icon"))
+    {
+        LRESULT values[6];
+        unsigned i;
+        /* The bridge executes public HICON APIs in its owning process because
+         * Wine10 does not marshal interprocess WM_GETICON. No pointers cross. */
+        for (i = 0; i < 6; ++i) values[i] = SendMessageW(hwnd, WM_APP + 0x574, i, 0x57344931);
+        if (!values[0]) return 4;
+        printf("icon=%lx width=%u height=%u hash=%08lx first=%06lx center=%06lx last=%06lx\n",
+               (unsigned long)values[0], LOWORD(values[1]), HIWORD(values[1]),
+               (unsigned long)values[2], (unsigned long)values[3], (unsigned long)values[4], (unsigned long)values[5]);
+        return 0;
+    }
     if (!wcscmp(argv[1], L"minimize")) ShowWindow(hwnd, SW_MINIMIZE);
     else if (!wcscmp(argv[1], L"restore")) { ShowWindow(hwnd, SW_RESTORE); SetForegroundWindow(hwnd); }
     else if (!wcscmp(argv[1], L"close")) PostMessageW(hwnd, WM_CLOSE, 0, 0);

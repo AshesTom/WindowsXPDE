@@ -8,6 +8,7 @@ import select
 import signal
 import time
 from Xlib import X, XK, Xatom, display, error, protocol
+from icons import payload as icon_payload
 
 
 class Manager:
@@ -26,6 +27,7 @@ class Manager:
         self.running = True
         self.previous_snapshot = None
         self.previous_geometry = None
+        self.previous_icons = {}
         self.frames = {}
         self.bad_access = False
         def onerror(err, request):
@@ -46,7 +48,7 @@ class Manager:
                      '_NET_NUMBER_OF_DESKTOPS', '_NET_CURRENT_DESKTOP', '_NET_WM_STATE',
                      '_NET_WM_STATE_HIDDEN', '_NET_WM_STATE_MAXIMIZED_VERT', '_NET_WM_STATE_MAXIMIZED_HORZ',
                      '_NET_WM_WINDOW_TYPE', '_NET_WM_WINDOW_TYPE_DESKTOP', '_NET_WM_WINDOW_TYPE_DOCK',
-                     '_NET_FRAME_EXTENTS', '_NET_CLOSE_WINDOW', '_NET_WM_STRUT', '_NET_WM_STRUT_PARTIAL']
+                     '_NET_WM_ICON', '_NET_FRAME_EXTENTS', '_NET_CLOSE_WINDOW', '_NET_WM_STRUT', '_NET_WM_STRUT_PARTIAL']
         self.setprop(self.root, '_NET_SUPPORTED', Xatom.ATOM, [self.atom(a) for a in supported])
         self.setprop(self.root, '_NET_NUMBER_OF_DESKTOPS', Xatom.CARDINAL, [1])
         self.setprop(self.root, '_NET_CURRENT_DESKTOP', Xatom.CARDINAL, [0])
@@ -96,7 +98,7 @@ class Manager:
             w.map()
             return
         if w.id not in self.clients:
-            self.clients[w.id] = {'w': w, 'hidden': False, 'kind': self.kind(w), 'restore': None, 'geometry': None, 'framed': False}
+            self.clients[w.id] = {'w': w, 'hidden': False, 'kind': self.kind(w), 'restore': None, 'geometry': None, 'framed': False, 'icon_dirty': True}
             w.change_attributes(event_mask=X.PropertyChangeMask | X.FocusChangeMask)
             w.grab_button(1, 0, True, X.ButtonPressMask, X.GrabModeSync, X.GrabModeAsync, X.NONE, X.NONE)
         client = self.clients[w.id]
@@ -207,6 +209,8 @@ class Manager:
 
     def unmanage(self, window_id):
         self.clients.pop(window_id, None)
+        self.previous_icons.pop(window_id, None)
+        (self.ipc / f'icon-{window_id:x}.argb').unlink(missing_ok=True)
         # Withdrawals can arrive before the next 200ms proxy snapshot. Hide the
         # orphan frame immediately and reject any queued activation for it.
         for frame_id, native_id in list(self.frames.items()):
@@ -386,6 +390,18 @@ class Manager:
                 continue
             if w.get_wm_transient_for():
                 continue
+            if c['icon_dirty']:
+                data = icon_payload(self.d, w, self.atom('_NET_WM_ICON'))
+                target = self.ipc / f'icon-{i:x}.argb'
+                if i not in self.previous_icons or data != self.previous_icons[i]:
+                    if data:
+                        temporary = target.with_suffix('.tmp')
+                        temporary.write_bytes(data)
+                        temporary.replace(target)
+                    else:
+                        target.unlink(missing_ok=True)
+                    self.previous_icons[i] = data
+                c['icon_dirty'] = False
             title = self.prop(w, '_NET_WM_NAME')
             if len(title):
                 name = bytes(title).decode('utf-8', 'replace')
@@ -451,6 +467,8 @@ class Manager:
         elif e.type == X.PropertyNotify:
             c = self.clients.get(e.window.id)
             if c:
+                if e.atom in (self.atom('_NET_WM_ICON'), self.atom('WM_HINTS')):
+                    c['icon_dirty'] = True
                 c['kind'] = self.kind(e.window)
                 if c['kind'] == 'proxy' and e.window.id not in self.frames:
                     e.window.unmap()

@@ -27,6 +27,17 @@ proxy → WM: `PID-SEQUENCE.cmd` を atomic rename。内容は `activate|minimiz
 WM は枠をクライアントのすぐ下へ積み、枠の未使用の Win32 client 領域を native の画面で覆う。
 native ウィンドウの X border は 0 にし、測定した余白を `_NET_FRAME_EXTENTS` に公開する。初めて枠を付けるときは workarea の上端と左端を基準に位置を補正し、既定位置 0,0 で起動した xterm のタイトルバーも画面内に置く。
 EWMH の一覧、アクティブ ID、キーボードフォーカスは native XID のまま。
+アイコンは native の `_NET_WM_ICON` を優先し、なければ ICCCM `WM_HINTS` の pixmap / mask を読む。
+property は最大1 MiB、画像は256×256までとし、manage と icon / hints property 変更時だけ取得する。
+`icon-XID.argb` は `W4I1`、little-endian の32bit width / height、行順の straight ARGB32画素からなる。
+所有者専用 IPC へ atomic rename で公開し、proxy は更新されたファイルだけ読み、公開 Win32 API で HICON を作る。
+small / big の WM_SETICON に同じ HICON を設定し、交換・ウィンドウ破棄時に所有した HICON を一度破棄する。
+アイコンがない・壊れている場合は Wine builtin の共有 `IDI_APPLICATION` に戻す。共有アイコンは破棄しない。
+Wine の CreateIconIndirect は alpha 用 bitmap を内部で premultiply するため、bridge では二重変換しない。
+Wine10 は別プロセス間 WM_GETICON を marshal しない。読み取り専用 WM_APP query は、所有する proxy 内で
+WM_GETICON / GetIconInfo / DrawIconEx を実行し、検証用の寸法・画素 checksum を scalar として返す。
+実 caption は X image でも検査する。native XP タスクバー側はまだ既定の Wine アイコンになり、
+この変更だけで Linux アプリ固有の task icon が正しく表示されるとはしていない。
 代理 XID への EWMH activate も native のフォーカスに変換するので、タスクが二重にならない。
 タイトルバーと角の操作は Win32 の通常の非クライアント処理を通し、移動・リサイズを
 `geometry` コマンドで native へ戻す。最小化では組を隠し、復元では proxy の非 iconic 応答を待って枠を戻す。

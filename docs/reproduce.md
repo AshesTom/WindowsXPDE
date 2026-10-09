@@ -197,12 +197,16 @@ create.py はこの設定を作成する。Wine に非クライアント領域�
 テストは自身の native X ウィンドウを作り、実際にマウスを動かすので通常の作業用 display では実行しない。
 
 ```sh
-DISPLAY=:93 XP_BRIDGE_DIR=/absolute/private/ipc python3 tests/native_frames.py
+DISPLAY=:93 XP_BRIDGE_DIR=/absolute/private/ipc \
+  WINE=/absolute/path/to/wine WINEPREFIX=/same/prefix/as/proxy python3 tests/native_frames.py
 ```
 
 枠と native の正確な位置・サイズ、積み順、単一タスク ID、代理への EWMH activation、
 Start popup の除外、タイトルバー移動、角リサイズ、最大化と復元、最小化と復元、
 閉じるボタンの WM_DELETE_WINDOW、withdraw と再表示を検査する。
+同時に EWMH / ICCCM のアイコン取得、更新・削除、Wine 既定アイコン、実 HICON と可視 caption の画素、
+half alpha を検査する。Wine / prefix は proxy と同じものを指定し、build 済み inspect.exe を使う。
+`XP_FRAME_ICON_SCREENSHOT=/absolute/local/output.png` を指定すれば実アイコン表示中の画面も保存できる。
 classic と Luna は表示設定を保存して専用 Wine セッションを再起動し、それぞれ実行する。
 これは proxy と native の組の操作試験であり、スタートメニュー全体、Wine アプリ全体のテーマ、
 native アプリとの clipboard 相互運用の合格を代用しない。

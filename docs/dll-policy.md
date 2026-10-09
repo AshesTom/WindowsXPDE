@@ -358,3 +358,30 @@ native ReBar は Taskbar app theme 設定時に初期 theme を閉じ、テー�
 元のバンド配置・入力・drag 処理を維持し、親のテーマ背景と実 part 寸法を使う。
 translated DC・native paint/input 戻り値・無効化・描画中の破棄を自作 rebar-theme 試験で確認。
 Start と通知領域の脇にある ReBar 外の細い区切りは残件で、全境界の一致とはしない。
+
+## 26. Wine のフォント属性 tokenizer と実フォントの再適用
+
+Wine の `MSSTYLES_GetNextToken` は末尾空白を除く際に token の直後を参照していた。
+length-delimited な値の終端を越えて読む可能性があり、末尾に空白のある名前・属性も残った。
+さらに font parser は comma で区切った属性欄全体を `bold` / `italic` 等と比較するため、
+複数の属性を空白で並べた欄を処理できなかった。
+
+**判断: 0024 は有効範囲の内側で末尾を trim し、font 属性だけは comma と空白の両方で区切る。**
+フォント名内の空白は保持し、テーマが指定する名前と point size は変更しない。
+`tests/font_parser.py` は Wine の実 parser 関数を一時 translation unit に取り込み、
+自作の `PTHEME_PROPERTY` 文字列 fixture を検査する。Microsoft の theme 資源やコードは読まない。
+comma-separated 属性は修正前も成功したが、combined attributes と末尾空白は4件失敗し、
+修正後は7件とも成功した。NUL 終端を持たない bounded token と、その直後のアクセス禁止 page
+も追加して範囲外参照がないことを確認した。
+`.local/msstyles-font-fixture-before.log` / `msstyles-font-fixture-after.log`、
+`.local/font-parser-regression.log` に結果がある。
+
+実 Luna の公開 API では caption の weight が400から700、Start::Button の italic が0から1になった。
+既存 prefix の保存済み SPI metrics は自動的には変わらないため、Luna の再適用後にも検査した。
+再適用後の SPI caption は `Trebuchet MS / -13 / weight 700` で `GetThemeSysFont` と一致し、
+menu / message / status は `Tahoma / -11 / weight 400` を維持する（96 DPI）。
+Start::Button の font は公開 `GetThemeFont` で `Franklin Gothic Medium / -19 / italic 1` を返す。
+`.local/shell-font-probe-after0024.log`、`start-font-parser-fixed.png`、
+`caption-font-parser-themed.png` に API と実表示を記録した。
+6種の system font の classic/Luna 往復と optional NULL DC の公開試験も成功した。
+これは Wine の解釈と実描画の改善であり、実 XP OS との一致は別の reference 試験で確認する。

@@ -13,7 +13,9 @@
 #include <string.h>
 
 #define MAX_CLIENTS 2048
-struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; int x, y, width, height; };
+struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; int x, y, width, height;
+    HICON icon; int icon_checked, icon_present; FILETIME icon_time; DWORD icon_size;
+};
 static struct client clients[MAX_CLIENTS];
 static HWND previous[MAX_CLIENTS];
 static unsigned previous_count;
@@ -24,6 +26,7 @@ static unsigned current_count;
 static HWND last_foreground;
 static WCHAR directory[MAX_PATH];
 static UINT shell_message;
+static HICON default_icon;
 static int syncing;
 static unsigned sequence;
 
@@ -61,9 +64,69 @@ static void geometry_command(HWND hwnd, unsigned long xid)
     write_command(data);
 }
 
+/* Wine10 cannot marshal WM_GETICON between processes. This read-only scalar
+ * query performs the public icon/readback APIs in their owning process. */
+static LRESULT icon_readback(HWND hwnd, WPARAM field)
+{
+    HICON icon = (HICON)SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0);
+    ICONINFO info;
+    BITMAP bitmap;
+    HDC dc;
+    HBITMAP image, previous;
+    RECT rect;
+    DWORD hash = 2166136261u, first = 0, center = 0, last = 0;
+    int x, y;
+    if (field == 0) return (LRESULT)icon;
+    if (field > 5) return 0;
+    if (!icon || !GetIconInfo(icon, &info)) return 0;
+    if (!GetObjectW(info.hbmColor ? info.hbmColor : info.hbmMask, sizeof(bitmap), &bitmap))
+    {
+        if (info.hbmColor) DeleteObject(info.hbmColor);
+        DeleteObject(info.hbmMask);
+        return 0;
+    }
+    rect.left = rect.top = 0;
+    rect.right = bitmap.bmWidth;
+    rect.bottom = bitmap.bmHeight / (info.hbmColor ? 1 : 2);
+    if (rect.right <= 0 || rect.right > 256 || rect.bottom <= 0 || rect.bottom > 256)
+    {
+        if (info.hbmColor) DeleteObject(info.hbmColor);
+        DeleteObject(info.hbmMask);
+        return 0;
+    }
+    dc = CreateCompatibleDC(NULL);
+    {
+        HDC screen = GetDC(NULL);
+        image = CreateCompatibleBitmap(screen, rect.right, rect.bottom);
+        ReleaseDC(NULL, screen);
+    }
+    previous = SelectObject(dc, image);
+    FillRect(dc, &rect, GetStockObject(WHITE_BRUSH));
+    DrawIconEx(dc, 0, 0, icon, rect.right, rect.bottom, 0, NULL, DI_NORMAL);
+    for (y = 0; y < rect.bottom; ++y) for (x = 0; x < rect.right; ++x)
+    {
+        COLORREF color = GetPixel(dc, x, y);
+        DWORD rgb = GetRValue(color) << 16 | GetGValue(color) << 8 | GetBValue(color);
+        hash = (hash ^ rgb) * 16777619u;
+        if (!x && !y) first = rgb;
+        if (x == rect.right / 2 && y == rect.bottom / 2) center = rgb;
+        last = rgb;
+    }
+    SelectObject(dc, previous); DeleteObject(image); DeleteDC(dc);
+    if (info.hbmColor) DeleteObject(info.hbmColor);
+    DeleteObject(info.hbmMask);
+    if (field == 1) return MAKELONG(rect.right, rect.bottom);
+    if (field == 2) return hash;
+    if (field == 3) return first;
+    if (field == 4) return center;
+    if (field == 5) return last;
+    return 0;
+}
+
 static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     unsigned long xid = (unsigned long)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    if (msg == WM_APP + 0x574 && lp == 0x57344931) return icon_readback(hwnd, wp);
     if (msg == WM_NCCREATE)
     {
         CREATESTRUCTW *cs = (CREATESTRUCTW *)lp;
@@ -167,6 +230,83 @@ static void shell_events(void)
     previous_count = current_count;
 }
 
+/* The WM exports bounded, little-endian ARGB pixels from public X11 icon
+ * properties. These are client-owned images, never bundled theme assets. */
+static HICON read_icon(const WCHAR *path, DWORD expected_size)
+{
+    HANDLE file;
+    DWORD header[3], count, bytes, i, width, height, stride;
+    BITMAPINFO color_info = {0};
+    struct { BITMAPINFOHEADER header; RGBQUAD colors[2]; } mask_info = {0};
+    HBITMAP color = NULL, mask = NULL;
+    DWORD *pixels;
+    BYTE *mask_bits;
+    ICONINFO info = {0};
+    HICON icon = NULL;
+    file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                       NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) return NULL;
+    if (!ReadFile(file, header, sizeof(header), &bytes, NULL) || bytes != sizeof(header) ||
+        memcmp(header, "W4I1", 4)) goto done;
+    width = header[1]; height = header[2];
+    if (!width || !height || width > 256 || height > 256) goto done;
+    count = width * height;
+    if (expected_size != sizeof(header) + count * sizeof(DWORD)) goto done;
+    color_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    color_info.bmiHeader.biWidth = width;
+    color_info.bmiHeader.biHeight = -(LONG)height;
+    color_info.bmiHeader.biPlanes = 1;
+    color_info.bmiHeader.biBitCount = 32;
+    color_info.bmiHeader.biCompression = BI_RGB;
+    color = CreateDIBSection(NULL, &color_info, DIB_RGB_COLORS, (void **)&pixels, NULL, 0);
+    if (!color || !ReadFile(file, pixels, count * sizeof(DWORD), &bytes, NULL) ||
+        bytes != count * sizeof(DWORD)) goto done;
+    mask_info.header = color_info.bmiHeader;
+    mask_info.header.biBitCount = 1;
+    mask_info.colors[1].rgbRed = mask_info.colors[1].rgbGreen = mask_info.colors[1].rgbBlue = 255;
+    mask = CreateDIBSection(NULL, (BITMAPINFO *)&mask_info, DIB_RGB_COLORS, (void **)&mask_bits, NULL, 0);
+    if (!mask) goto done;
+    stride = (width + 31) / 32 * 4;
+    memset(mask_bits, 0, stride * height);
+    for (i = 0; i < count; ++i)
+        if (!(pixels[i] >> 24)) mask_bits[(i / width) * stride + (i % width) / 8] |= 0x80 >> (i % width % 8);
+    info.fIcon = TRUE; info.hbmColor = color; info.hbmMask = mask;
+    icon = CreateIconIndirect(&info);
+ done:
+    if (color) DeleteObject(color);
+    if (mask) DeleteObject(mask);
+    CloseHandle(file);
+    return icon;
+}
+
+static void client_icon(struct client *c)
+{
+    WCHAR path[MAX_PATH + 40];
+    WIN32_FILE_ATTRIBUTE_DATA attrs;
+    HICON icon = NULL, previous;
+    int present;
+    swprintf(path, MAX_PATH + 40, L"%ls\\icon-%lx.argb", directory, c->xid);
+    present = GetFileAttributesExW(path, GetFileExInfoStandard, &attrs) &&
+              !(attrs.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT));
+    if (c->icon_checked && present == c->icon_present &&
+        (!present || (!CompareFileTime(&attrs.ftLastWriteTime, &c->icon_time) &&
+                      attrs.nFileSizeLow == c->icon_size && !attrs.nFileSizeHigh))) return;
+    c->icon_checked = 1; c->icon_present = present;
+    if (present)
+    {
+        c->icon_time = attrs.ftLastWriteTime; c->icon_size = attrs.nFileSizeLow;
+        if (!attrs.nFileSizeHigh && attrs.nFileSizeLow <= 12 + 256 * 256 * 4)
+            icon = read_icon(path, attrs.nFileSizeLow);
+    }
+    previous = c->icon;
+    c->icon = icon;
+    SendMessageW(c->hwnd, WM_SETICON, ICON_SMALL, (LPARAM)(icon ? icon : default_icon));
+    SendMessageW(c->hwnd, WM_SETICON, ICON_BIG, (LPARAM)(icon ? icon : default_icon));
+    if (previous) DestroyIcon(previous); /* IDI_APPLICATION is shared and never owned. */
+    RedrawWindow(c->hwnd, NULL, NULL, RDW_INVALIDATE | RDW_FRAME);
+    notify(HSHELL_REDRAW, c->hwnd);
+}
+
 static void place_frame(struct client *c)
 {
     RECT outer, inner;
@@ -259,6 +399,7 @@ static void snapshot(void)
             ShowWindow(c->hwnd, SW_SHOWNOACTIVATE);
         }
         c->seen = 1;
+        client_icon(c);
         WCHAR old[1024];
         GetWindowTextW(c->hwnd, old, 1024);
         if (wcscmp(old, title)) { SetWindowTextW(c->hwnd, title); notify(HSHELL_REDRAW, c->hwnd); }
@@ -282,6 +423,7 @@ static void snapshot(void)
         if (clients[i].xid && !clients[i].seen)
         {
             DestroyWindow(clients[i].hwnd);
+            if (clients[i].icon) DestroyIcon(clients[i].icon);
             memset(&clients[i], 0, sizeof(clients[i]));
         }
     frame_geometry();
@@ -296,6 +438,8 @@ int wmain(int argc, WCHAR **argv)
     if (argc != 2 || wcslen(argv[1]) >= MAX_PATH) return 2;
     wcscpy(directory, argv[1]);
     shell_message = RegisterWindowMessageW(L"SHELLHOOK");
+    default_icon = LoadIconW(NULL, IDI_APPLICATION);
+    cls.hIcon = default_icon;
     cls.lpfnWndProc = proxy_proc;
     cls.hInstance = GetModuleHandleW(NULL);
     cls.lpszClassName = L"Win4WineProxy";
@@ -304,7 +448,16 @@ int wmain(int argc, WCHAR **argv)
     {
         while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
         {
-            if (msg.message == WM_QUIT) return 0;
+            if (msg.message == WM_QUIT)
+            {
+                unsigned i;
+                for (i = 0; i < MAX_CLIENTS; ++i) if (clients[i].xid)
+                {
+                    DestroyWindow(clients[i].hwnd);
+                    if (clients[i].icon) DestroyIcon(clients[i].icon);
+                }
+                return 0;
+            }
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
