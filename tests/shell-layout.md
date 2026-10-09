@@ -28,3 +28,9 @@ it measures painted bounds, not the text layout rectangle. Compare runs with
 the same theme, fonts, DPI, resolution and taskbar lock setting. Keep the
 caption unobscured while the probe runs. It destroys its own window and icon;
 it does not alter shell layout or persist settings.
+
+For the independent measured 96 DPI Luna icon/input fixture, pass a filename
+and `--verify-xp96-icon`. It returns nonzero if the 16px synthetic icon is not
+at (6,8)..(22,24), or HTSYSMENU differs from (4,4)..(23,29). Use an isolated
+96 DPI external-shell prefix with Luna active. Other themes/DPIs are measurement
+inputs, not supported by this exact fixture.

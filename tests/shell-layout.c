@@ -14,6 +14,8 @@
 #include <fcntl.h>
 
 static FILE *out;
+static BOOL verify_icon;
+static int failed;
 static void rect(const char *label, const RECT *r)
 {
     fprintf(out,"%s=%ld,%ld..%ld,%ld ",label,r->left,r->top,r->right,r->bottom);
@@ -110,6 +112,13 @@ static void caption(void)
     for(y=0;y<height;y++)for(x=0;x<width-110;x++)if(before[y*width+x]!=after[y*width+x])
     {ntext++;text.left=min(text.left,x);text.top=min(text.top,y);text.right=max(text.right,x+1);text.bottom=max(text.bottom,y+1);}
     fprintf(out,"caption window-relative ");rect("icon-pixels",&iconbox);fprintf(out,"count=%d ",nicon);rect("title-change-pixels",&text);fprintf(out,"count=%d ",ntext);rect("HTSYSMENU",&hit);fputc('\n',out);
+    if(verify_icon)
+    {
+        RECT expected_icon={6,8,22,24},expected_hit={4,4,23,29};
+        if(nicon!=256 || !EqualRect(&iconbox,&expected_icon) || !EqualRect(&hit,&expected_hit))
+        {fprintf(out,"FAIL: independent measured XP96 caption icon/input fixture\n");failed=1;}
+        else {failed=0;fprintf(out,"PASS: measured XP96 caption icon pixels and system-menu input\n");}
+    }
     DestroyWindow(hwnd);DestroyIcon(icon);
 done:
     if(color)DeleteObject(color);
@@ -118,6 +127,7 @@ done:
 int wmain(int argc,wchar_t **argv)
 {
     HWND tray;
+    if(argc>2){if(argc!=3||lstrcmpW(argv[2],L"--verify-xp96-icon"))return 2;verify_icon=TRUE;failed=1;}
     if(argc>1 && !lstrcmpiW(argv[1],L"COM1"))
     {
         HANDLE port=CreateFileW(L"\\\\.\\COM1",GENERIC_WRITE,0,NULL,OPEN_EXISTING,0,NULL);
@@ -143,5 +153,5 @@ int wmain(int argc,wchar_t **argv)
     caption();
     if(fflush(out) || ferror(out)){if(out!=stdout)fclose(out);return 2;}
     if(out!=stdout && fclose(out))return 2;
-    return 0;
+    return failed?1:0;
 }
