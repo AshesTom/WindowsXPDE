@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 
 
 def create(assets, dest, home, wine):
@@ -25,7 +26,7 @@ def create(assets, dest, home, wine):
     system = dest / 'drive_c/windows/system32'
     xp = dest / 'drive_c/xp'
     xp.mkdir()
-    shutil.copyfile(assets / 'windows/explorer.exe', xp / 'explorer.exe')
+    shutil.copyfile(assets / 'windows/explorer.exe', xp / 'xp-explorer.exe')
     native = xp / 'native'
     native.mkdir()
     for dll in (assets / 'system32').glob('*.dll'):
@@ -34,11 +35,30 @@ def create(assets, dest, home, wine):
         shutil.copyfile(font, dest / 'drive_c/windows/Fonts' / font.name)
     if (assets / 'themes').exists():
         shutil.copytree(assets / 'themes', dest / 'drive_c/windows/Resources/Themes', dirs_exist_ok=True)
+    for manifest in (assets / 'sxs').rglob('controls.man'):
+        identity = ET.parse(manifest).getroot().find('{urn:schemas-microsoft-com:asm.v1}assemblyIdentity')
+        dll = manifest.with_name('comctl32.dll')
+        if identity is None or not dll.is_file():
+            continue
+        attrs = identity.attrib
+        if attrs.get('processorArchitecture') != 'x86' or attrs.get('name') != 'Microsoft.Windows.Common-Controls':
+            continue
+        version = attrs['version']
+        if any(ch not in '0123456789.' for ch in version):
+            raise SystemExit('Invalid SxS version')
+        name = f'x86_microsoft.windows.common-controls_6595b64144ccf1df_{version}_none_deadbeef'
+        assembly = dest / 'drive_c/windows/winsxs' / name
+        assembly.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(dll, assembly / 'comctl32.dll')
+        shutil.copyfile(manifest, assembly.parent / 'manifests' / (name + '.manifest'))
     (dest / 'dosdevices/h:').symlink_to(home)
     # Preserve Wine's generated namespace registrations. Add only explicit XP settings.
     def reg(key, name, value, kind='REG_SZ'):
         run('reg', 'add', key, '/v', name, '/t', kind, '/d', value, '/f')
     reg(r'HKCU\Software\Wine', 'Version', 'winxp')
+    for dll in ('shell32', 'shdocvw', 'browseui', 'shlwapi'):
+        reg(r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides', dll, 'native')
+        shutil.copyfile(native / (dll + '.dll'), system / (dll + '.dll'))
     reg(r'HKCU\Software\Wine\X11 Driver', 'Managed', 'Y')
     reg(r'HKCU\Software\Wine\X11 Driver', 'Decorated', 'N')
     for suffix in ('Shell Folders', 'User Shell Folders'):
@@ -48,7 +68,7 @@ def create(assets, dest, home, wine):
     reg(r'HKCU\Control Panel\Desktop', 'LogPixels', '96', 'REG_DWORD')
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced', 'WebView', '0', 'REG_DWORD')
     (dest / 'xp-shell.json').write_text(json.dumps({'assets': str(assets), 'home': str(home),
-                                                   'wine': wine, 'profile': 'builtin'}, indent=2) + '\n')
+                                                   'wine': wine, 'profile': 'shell'}, indent=2) + '\n')
     print(f'Prefix ready: {dest}')
 
 if __name__ == '__main__':

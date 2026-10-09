@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run against an isolated X display where bridge-wm is already running."""
 import os
+import subprocess
 from pathlib import Path
 import time
 from Xlib import X, Xatom, display, protocol
@@ -46,6 +47,11 @@ try:
     wait(lambda: prop(root, '_NET_WORKAREA') == [0, 0, g.width, g.height-32], 'taskbar workarea')
     wait(lambda: f'{first.id:x}\t' in (ipc / 'windows.tsv').read_text(), 'native snapshot')
     assert f'{dock.id:x}\t' not in (ipc / 'windows.tsv').read_text()
+    wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [second.id], 'initial focus')
+    subprocess.run(['xdotool', 'key', 'alt+Tab'], check=True)
+    wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [first.id], 'Alt+Tab cycles native windows')
+    subprocess.run(['xdotool', 'key', 'alt+shift+Tab'], check=True)
+    wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [second.id], 'reverse Alt+Tab')
     for index, (op, target) in enumerate((('minimize', first), ('activate', first), ('close', second))):
         (ipc / f'test-{index}.tmp').write_text(f'{op} {target.id:x}\n')
         (ipc / f'test-{index}.tmp').replace(ipc / f'test-{index}.cmd')
@@ -63,7 +69,7 @@ try:
                 if event.type == X.ClientMessage and event.client_type == atom('WM_PROTOCOLS'):
                     found = event.data[1][0] == atom('WM_DELETE_WINDOW')
             assert found, 'WM_DELETE_WINDOW not delivered'
-    print('PASS: workarea, native snapshot, minimize, restore, activation')
+    print('PASS: workarea, native snapshot, Alt+Tab, minimize, restore, activation, close')
 finally:
     for w in windows:
         try:

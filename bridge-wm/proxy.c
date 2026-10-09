@@ -57,6 +57,8 @@ static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             { command("activate", xid); return 0; }
         }
         if (msg == WM_ACTIVATE && LOWORD(wp) != WA_INACTIVE) command("activate", xid);
+        if (msg == WM_SIZE && wp == SIZE_MINIMIZED) command("minimize", xid);
+        if (msg == WM_SIZE && wp == SIZE_RESTORED) command("activate", xid);
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }

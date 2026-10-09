@@ -31,7 +31,7 @@ class Session:
         self.ipc = Path(tempfile.mkdtemp(prefix=f'win4wine-{os.getuid()}-', dir=runtime))
         self.env = dict(os.environ, WINEPREFIX=str(self.prefix), WINEARCH='win32',
                         WIN4WINE_EXTERNAL_SHELL='1', WINEDEBUG=config.get('debug', '+timestamp,+seh,+loaddll'),
-                        WINEDLLOVERRIDES='explorer=n;mscoree,mshtml=;shell32,shdocvw,browseui,shlwapi=n;comctl32,uxtheme=b')
+                        WINEDLLOVERRIDES='explorer=b;xp-explorer=n;mscoree,mshtml=;comctl32,uxtheme=b')
         self.processes = []
         self.logs = []
         self.stopping = False
@@ -102,7 +102,7 @@ class Session:
             attempt += 1
             ipc_win = 'Z:' + str(self.ipc).replace('/', '\\')
             proxy = self.spawn([self.wine, str(self.proxy), ipc_win], 'proxy')
-            shell = self.spawn([self.wine, r'C:\xp\explorer.exe'], 'xp-shell')
+            shell = self.spawn([self.wine, r'C:\xp\xp-explorer.exe'], 'xp-shell')
             started = time.monotonic()
             ready = False
             while not self.stopping:

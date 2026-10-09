@@ -22,6 +22,7 @@ class Manager:
         self.atoms = {}
         self.clients = {}
         self.active = 0
+        self.drag = None
         self.running = True
         self.previous_snapshot = None
         self.bad_access = False
@@ -51,6 +52,12 @@ class Manager:
         for modifiers in (0, X.LockMask, X.Mod2Mask, X.LockMask | X.Mod2Mask):
             self.root.grab_key(self.tab, X.Mod1Mask | modifiers, True, X.GrabModeAsync, X.GrabModeAsync)
             self.root.grab_key(self.tab, X.Mod1Mask | X.ShiftMask | modifiers, True, X.GrabModeAsync, X.GrabModeAsync)
+            for button in (1, 3):
+                self.root.grab_button(button, X.Mod1Mask | modifiers, False,
+                                      X.ButtonPressMask | X.ButtonReleaseMask | X.PointerMotionMask,
+                                      X.GrabModeAsync, X.GrabModeAsync, X.NONE, X.NONE)
+            self.root.grab_key(self.d.keysym_to_keycode(XK.string_to_keysym('F4')), X.Mod1Mask | modifiers,
+                               True, X.GrabModeAsync, X.GrabModeAsync)
         for w in self.root.query_tree().children:
             if w.get_attributes().map_state == X.IsViewable:
                 self.manage(w)
@@ -249,8 +256,27 @@ class Manager:
                     e.window.unmap()
                 self.workarea()
         elif e.type == X.ButtonPress:
-            self.focus(e.window)
-            self.d.allow_events(X.ReplayPointer, X.CurrentTime)
+            if e.state & X.Mod1Mask and e.window.id == self.root.id and e.child:
+                child = self.clients.get(e.child.id)
+                if child and child['kind'] == 'normal':
+                    self.focus(e.child)
+                    r = e.child.get_geometry()
+                    self.drag = (e.child, e.detail, e.root_x, e.root_y, r.x, r.y, r.width, r.height)
+            else:
+                self.focus(e.window)
+                self.d.allow_events(X.ReplayPointer, X.CurrentTime)
+        elif e.type == X.MotionNotify and self.drag:
+            w, button, px, py, x, y, width, height = self.drag
+            dx, dy = e.root_x-px, e.root_y-py
+            if button == 1:
+                w.configure(x=x+dx, y=y+dy)
+            else:
+                w.configure(width=max(64, width+dx), height=max(32, height+dy))
+        elif e.type == X.ButtonRelease:
+            self.drag = None
+        elif e.type == X.KeyPress and e.detail == self.d.keysym_to_keycode(XK.string_to_keysym('F4')):
+            if self.active in self.clients:
+                self.close(self.clients[self.active]['w'])
         elif e.type == X.KeyPress and e.detail == self.tab:
             self.cycle(bool(e.state & X.ShiftMask))
         elif e.type == X.FocusIn and e.window.id in self.clients:

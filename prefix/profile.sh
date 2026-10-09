@@ -4,8 +4,8 @@ set -euo pipefail
 [[ -f $WINEPREFIX/xp-shell.json ]] || { echo 'Not an XP prefix' >&2; exit 1; }
 profile=${1:-builtin}
 case "$profile" in
-    builtin) overrides='explorer=n;mscoree,mshtml=;shell32,shdocvw,browseui,shlwapi,comctl32,uxtheme=b' ;;
-    shell) overrides='explorer=n;mscoree,mshtml=;shell32,shdocvw,browseui,shlwapi=n;comctl32,uxtheme=b' ;;
+    builtin) overrides='explorer=b;xp-explorer=n;mscoree,mshtml=;shell32,shdocvw,browseui,shlwapi,comctl32,uxtheme=b' ;;
+    shell) overrides='explorer=b;xp-explorer=n;mscoree,mshtml=;comctl32,uxtheme=b' ;;
     *) echo 'Profile must be builtin or shell' >&2; exit 2 ;;
 esac
 if [[ $profile == shell ]]; then
@@ -15,4 +15,4 @@ if [[ $profile == shell ]]; then
 fi
 export WINEDLLOVERRIDES=$overrides
 shift || true
-exec "${WINE:-wine}" "${@:-C:\\xp\\explorer.exe}"
+exec "${WINE:-wine}" "${@:-C:\\xp\\xp-explorer.exe}"

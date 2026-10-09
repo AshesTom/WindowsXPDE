@@ -20,7 +20,12 @@ done < "$root/wine/patches/series"
 mkdir -p "$build" "$install"
 cd "$build"
 export PKG_CONFIG_LIBDIR=${PKG_CONFIG_LIBDIR:-/usr/lib/i386-linux-gnu/pkgconfig:/usr/share/pkgconfig}
-"$src/configure" --prefix="$install" --without-wayland CC='gcc -m32' CXX='g++ -m32'
-make -j"${JOBS:-4}"
+# DirectX helper version copies are outside the XP desktop milestones.
+extra=()
+for version in {24..43}; do extra+=("--disable-d3dx9_$version"); done
+for version in {33..43}; do extra+=("--disable-d3dx10_$version"); done
+for version in {33..42} 46 47; do extra+=("--disable-d3dcompiler_$version"); done
+"$src/configure" --prefix="$install" --without-wayland --disable-tests "${extra[@]}" CC='gcc -m32' CXX='g++ -m32'
+make -j"${JOBS:-6}"
 make install
 "$install/bin/wine" --version

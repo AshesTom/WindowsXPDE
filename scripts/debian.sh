@@ -4,9 +4,13 @@ set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 fs=$root/.local/debian
 mounts() {
-    sudo mkdir -p "$fs/work" "$fs/proc" "$fs/dev"
+    sudo mkdir -p "$fs/work" "$fs/proc" "$fs/dev" "$fs/sys"
     mountpoint -q "$fs/work" || sudo mount --bind "$root" "$fs/work"
     mountpoint -q "$fs/proc" || sudo mount -t proc proc "$fs/proc"
+    if ! mountpoint -q "$fs/sys"; then
+        sudo mount --bind /sys "$fs/sys"
+        sudo mount -o remount,bind,ro "$fs/sys"
+    fi
     if ! mountpoint -q "$fs/dev"; then
         sudo mount --rbind /dev "$fs/dev"
         sudo mount --make-rslave "$fs/dev"
@@ -44,7 +48,9 @@ case ${1:-help} in
         # Stop processes you launched inside the chroot before unmounting.
         mountpoint -q "$fs/work" && sudo umount "$fs/work"
         mountpoint -q "$fs/proc" && sudo umount "$fs/proc"
+        mountpoint -q "$fs/sys" && sudo umount "$fs/sys"
         mountpoint -q "$fs/dev" && sudo umount -R "$fs/dev"
+        true
         ;;
     *) echo 'Usage: scripts/debian.sh init | run COMMAND [ARGS...] | stop' ;;
 esac

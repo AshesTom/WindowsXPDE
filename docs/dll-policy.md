@@ -34,3 +34,20 @@ upstream Wine 10.0 の RegisterShellHookWindow / DeregisterShellHookWindow は s
 **判断: Wine に限定的な登録 shim、独立 bridge に配信を足す。** 実装制約は architecture.md に記載。
 
 未試験の DLL 選択は動作保証ではない。Luna/native uxtheme、COM 登録、フォルダ内部インターフェースは実測で追記する。
+
+## 調査 4: Debian 13 toolchain と Wine 10.0
+
+ソース版の初回 wineboot が `LdrResolveDelayLoadedAPI` の IAT 書き込みで access violation。
+Wine 自身の PE のセクションヘッダを確認し、binutils 2.44 が `.idata` を read-only にする変更と照合した。
+**判断: Wine に既知のビルド修正をバックポート。** 遅延 import の書換領域を writable data に配置する。
+[Debian Wine 修正](https://sources.debian.org/patches/wine/10.0~repack-12/fixes/binutils2.44.patch/) と
+[binutils の説明](https://sourceware.org/pipermail/binutils/2025-April/140559.html) を参照。
+MS バイナリではなく Wine 自身のソースと PE ヘッダのみを調査した。
+パッチは `0004-winebuild-binutils244-delay-imports.patch`。生ログは `.local/source-boot-debug.log`。
+この問題があるため、パッケージ Wine に自作 explorer モジュールだけを混ぜた途中試験は到達判定に使用しない。
+
+## Override の隔離
+
+XP explorer をローカルで `xp-explorer.exe` として配置し、AppDefaults でそのプロセスにだけ native shell family を適用する。
+Wine 自身の explorer/desktop manager は builtin のまま。セッション全体へ native shell32 を指定すると、
+管理プロセスや復旧経路まで XP の DLL に依存するため。元ファイルの内容は変更しない。

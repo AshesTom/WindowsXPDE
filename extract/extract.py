@@ -14,6 +14,9 @@ FILES = {
                      'comctl32.dll', 'uxtheme.dll', 'shellstyle.dll', 'explorer.exe.manifest'), 'system32'),
     **dict.fromkeys(('tahoma.ttf', 'tahomabd.ttf', 'msgothic.ttc'), 'fonts'),
     'luna.msstyles': 'themes/Luna', 'luna.theme': 'themes',
+    'blue_ss.dll': 'themes/Luna/Shell/NormalColor',
+    'home_ss.dll': 'themes/Luna/Shell/Homestead',
+    'metal_ss.dll': 'themes/Luna/Shell/Metallic',
 }
 
 def run(*args):
@@ -34,14 +37,15 @@ def extract(source, output):
         output.mkdir(parents=True)
         manifest = []
         for name, group in FILES.items():
-            compressed = name[:-1] + '_'
+            stem, extension = name.rsplit('.', 1)
+            compressed = stem + '.' + extension[:2] + '_'
             matches = [p for p in paths if p.name.lower() in (name, compressed)]
             # System32 controls v5 must not accidentally be replaced with SxS v6.
             matches.sort(key=lambda p: (any(s.lower() in ('winsxs', 'asms') for s in p.parts), len(p.parts)))
             if not matches:
                 continue
             original = matches[0]
-            target = output / group / name
+            target = output / group / ('shellstyle.dll' if name.endswith('_ss.dll') else name)
             target.parent.mkdir(parents=True, exist_ok=True)
             if original.name.lower() == compressed:
                 stage = root / 'expanded'
@@ -58,19 +62,43 @@ def extract(source, output):
             manifest.append({'name': str(target.relative_to(output)),
                              'source': str(original.relative_to(media)),
                              'sha256': hashlib.sha256(target.read_bytes()).hexdigest()})
+        for original in paths:
+            if original.name.lower() != 'shellstyle.dll':
+                continue
+            parent = original.parent.name.lower()
+            if parent not in ('normalcolor', 'homestead', 'metallic'):
+                continue
+            target = output / 'themes/Luna/Shell' / parent / 'shellstyle.dll'
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(original, target)
+            manifest.append({'name': str(target.relative_to(output)),
+                             'source': str(original.relative_to(media)),
+                             'sha256': hashlib.sha256(target.read_bytes()).hexdigest()})
         # Keep SxS material separate, including its assembly identity manifest.
         for p in paths:
-            if p.name.lower() not in ('comctl32.dll', 'controls.man'):
+            if p.name.lower() not in ('comctl32.dll', 'comctl32.dl_', 'controls.man'):
                 continue
             if not any(s.lower() in ('asms', 'winsxs') for s in p.parts):
                 continue
             dest = output / 'sxs' / str(p.relative_to(media)).lower()
+            if p.name.lower() == 'comctl32.dl_':
+                dest = dest.with_name('comctl32.dll')
+                stage = root / 'sxs-expanded'
+                if stage.exists():
+                    shutil.rmtree(stage)
+                stage.mkdir()
+                run('cabextract', '-q', '-d', str(stage), str(p))
+                source_file = next(stage.iterdir())
+            else:
+                source_file = p
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(p, dest)
+            shutil.copyfile(source_file, dest)
             manifest.append({'name': str(dest.relative_to(output)), 'source': str(p.relative_to(media)),
                              'sha256': hashlib.sha256(dest.read_bytes()).hexdigest()})
-        if not (output / 'windows/explorer.exe').exists():
-            raise SystemExit('No x86 XP explorer.exe found; destination is incomplete')
+        required = ['windows/explorer.exe'] + ['system32/' + n for n in ('shell32.dll', 'browseui.dll', 'shdocvw.dll', 'shlwapi.dll')]
+        missing = [n for n in required if not (output / n).is_file()]
+        if missing:
+            raise SystemExit('Incomplete XP assets: ' + ', '.join(missing))
         # Read PE header architecture; no disassembly.
         pe = (output / 'windows/explorer.exe').read_bytes()
         offset = int.from_bytes(pe[60:64], 'little')
