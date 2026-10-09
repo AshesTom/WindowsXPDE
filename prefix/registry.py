@@ -3,7 +3,7 @@ import os
 import pwd
 import struct
 
-VERSION = 19
+VERSION = 20
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -132,6 +132,13 @@ def install(run, exists):
         run('reg', 'add', r'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon',
             '/v', 'LogonType', '/t', 'REG_DWORD', '/d', '1', '/f')
         run('reg', 'add', marker, '/v', 'LogonType', '/t', 'REG_DWORD', '/d', '1', '/f')
+    # XP's default visual effects, UserPreferencesMask read on the reference
+    # machine: drop shadows under menus and tooltips, hot tracking and the
+    # fades. Seed once and keep the user's later choice.
+    if not exists(marker, 'UserPreferences'):
+        run('reg', 'add', r'HKCU\Control Panel\Desktop', '/v', 'UserPreferencesMask',
+            '/t', 'REG_BINARY', '/d', 'be3e0780', '/f')
+        run('reg', 'add', marker, '/v', 'UserPreferences', '/t', 'REG_DWORD', '/d', '1', '/f')
     for clsid, name, tip in NAMESPACE_STRINGS:
         key = 'HKCR\\CLSID\\' + clsid
         if name:
