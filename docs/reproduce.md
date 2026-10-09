@@ -261,3 +261,24 @@ WINEPREFIX=/path/to/dedicated-prefix WIN4WINE_EXTERNAL_SHELL=1 \
 ```
 
 準備前の抑止、一度だけの同期、一時非表示、Tray の破棄と再作成を公開 Win32 API の自作 fixture で検査する。実 shell の寸法・描画は別途確認する。
+
+作業領域の動的変更は次のrunnerで検査する。Xvfbと一時prefixを自動作成するため、
+現在のデスクトップやprefixの作業領域は変更しない。Microsoft資産は不要。
+
+```sh
+python3 tests/workarea.py --wine "$WINE"
+```
+
+実タスク文字と時計の診断は、96 DPI / Lunaの専用XP shell session上で実行する。
+profile version 7の移行と起動完了を待ち、対象sessionのDISPLAY/WINEPREFIXを指定する。
+taskbar-textは自作windowを開き、既存の同試験fixtureだけを閉じる。
+
+```sh
+WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/taskbar-text-test.exe \
+  'Z:\\path\\to\\taskbar-text.log' --isolated-session
+WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/clock-pixels-test.exe --isolated-session
+```
+
+taskbar-textの出力は公開theme字体と実文字の位置・画素数を記録する診断資料で、
+自動で実XPとの一致を判定しない。clock-pixelsは取得した現在文字列の白画素を
+公開themeと明示MS UI Gothic -12の描画と比較する。測定中の分切替は再試験する。
