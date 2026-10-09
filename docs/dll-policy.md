@@ -669,3 +669,9 @@ native comctl32 とその manifest は変更しない。全 ComboBox への適�
 **判断: 0061/0062 は実XPの画面に合わせて、テーマ画像の拡大を画素の繰り返し、glyph 中央寄せを（外形−glyph）/2、
 caption の背景を SM_CYCAPTION の全高にする。** いずれも外部 shell の opt-in 時だけ。
 
+**判断: 0063/0064 はテーマ画像と TransparentBlt の拡大縮小で、実XPで測った元画素の選び方を使う。**
+XP の uxtheme は画像を自前で拡大縮小し、GDI の StretchBlt・TransparentBlt とも結果が異なる。
+規則は自作の1行画像と公開テーマ part の描画結果から求めた数式だけで、XP の画素やコードは持ち込まない。
+
+**判断: 0065 は WM_SETICON の後にも外部 shell の Luna 枠を描き直す。** WM_SETTEXT と同じ扱い。
+
