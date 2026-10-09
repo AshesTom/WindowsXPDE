@@ -62,3 +62,4 @@
 0062-uxtheme-external-full-caption-height.patch
 0063-uxtheme-external-xp-image-resize.patch
 0064-win32u-external-transparent-blt-mapping.patch
+0065-user32-external-themed-frame-after-seticon.patch
