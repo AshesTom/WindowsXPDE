@@ -33,6 +33,8 @@ export WINEPREFIX=/work/.local/prefix-clean
 version 6 は `ClockFont`（96 DPI で MS UI Gothic -12 regular）を未存在時だけ追加する。
 外部シェルの日本語 Luna profile が有効かつテーマ選択が一致する場合に、TrayNotify の Clock 字体へ適用する。
 独自の ClockFont、無効な値、profile の無効化はそのまま保持し、値が欠落・不正なら Wine のテーマ字体へ戻る。
+version 12/13 は XP Explorer にだけ msgina を native で読ませ、`Logon User Name` に利用者名を入れる。
+（msgina.dll は再抽出で `C:\xp\native` に入る。無い既存 prefix ではシャットダウンは従来どおり使えない。）
 version 11 は日本語 XP のデスクトップアイコン横間隔78px（`IconSpacing=-1170`）を一度だけ設定する。
 version 10 は My Computer 等の LocalizedString/InfoTip を XP shell32 のリソース参照にする。
 version 9 は XP shdocvw の Explorer Band（`{EFA24E64-B078-11D0-89E4-00C04FC9E26E}`）を登録し、
@@ -81,7 +83,9 @@ XP_BRIDGE_DIR=/work/.local/ipc-clean python3 tests/wm_integration.py
   "wine": "/absolute/path/win4wine/.local/wine-install/bin/wine",
   "prefix": "/absolute/path/win4wine/.local/prefix",
   "debug": "+timestamp,+seh,+loaddll",
-  "locale": "ja_JP.UTF-8"
+  "locale": "ja_JP.UTF-8",
+  "shutdown_command": ["systemctl", "poweroff"],
+  "reboot_command": ["systemctl", "reboot"]
 }
 ```
 

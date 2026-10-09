@@ -616,3 +616,19 @@ SPI 値78px（Wine 既定75px では74px幅の「マイ コンピュータ」が
 **判断: 0051は外部 shell の caption 領域が広がったとき、新たに見える非クライアント部分を再描画させる。**
 最大化・拡大の直後は古い丸角領域が枠の描画を切り取り、その後の SetWindowRgn(..., FALSE) は再描画しない。
 caption は後で描き直されるが、メニューバーの右端が黒く残った。広がった差分だけを RDW_FRAME で無効化する。
+
+## 36. XP の終了ダイアログとセッション終了
+
+Start の「ログオフ」「シャットダウン」は XP Explorer が msgina の序数16（ShellShutdownDialog）を
+遅延読み込みし、Wine に msgina が無いため Explorer が異常終了していた。
+**判断: 利用者の XP メディアの msgina.dll を無改変で抽出し、xp-explorer にだけ native で使う。**
+XP 本来の「Windows のシャットダウン」ダイアログと暗転画面がそのまま使える。必要な Wine 側の補完は
+0052（wuaueng の WUCheckForUpdatesAtShutdown、引数1個、更新なし）と 0053（DestroyReasons）。
+0055 は背景ブラシのない popup の新規 buffer を root 画素で初期化し、灰色の暗転を表示する。
+WM は EWMH の ABOVE を公開し、Win32 の topmost window（暗転画面）とその transient をタスクバーより上に置く。
+
+**判断: 0054 と supervisor でログオフ等をセッション終了として扱う。**
+ExitWindowsEx は外部 shell の要求ファイル（WIN4WINE_SESSION_REQUEST）に logoff/shutdown/reboot を書き、
+supervisor は shell の終了を異常終了として再起動せず、セッションを終える。shutdown/reboot では
+session.json の `shutdown_command`/`reboot_command`（既定 `systemctl poweroff`/`reboot`）を実行する。
+ダイアログのログオフ項目の利用者名は registry profile 13 の `Logon User Name`。

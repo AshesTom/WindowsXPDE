@@ -49,3 +49,7 @@
 0049-win32u-external-default-cascade.patch
 0050-win32u-external-ui-state.patch
 0051-uxtheme-external-region-repaint.patch
+0052-wuaueng-shutdown-update-check.patch
+0053-user32-destroy-reasons.patch
+0054-user32-external-session-request.patch
+0055-winex11-external-unerased-popup.patch

@@ -49,6 +49,7 @@ class Manager:
                      '_NET_CLIENT_LIST_STACKING', '_NET_ACTIVE_WINDOW', '_NET_WORKAREA',
                      '_NET_NUMBER_OF_DESKTOPS', '_NET_CURRENT_DESKTOP', '_NET_WM_STATE',
                      '_NET_WM_STATE_HIDDEN', '_NET_WM_STATE_MAXIMIZED_VERT', '_NET_WM_STATE_MAXIMIZED_HORZ',
+                     '_NET_WM_STATE_ABOVE',
                      '_NET_WM_WINDOW_TYPE', '_NET_WM_WINDOW_TYPE_DESKTOP', '_NET_WM_WINDOW_TYPE_DOCK',
                      '_NET_WM_ICON', '_NET_FRAME_EXTENTS', '_NET_CLOSE_WINDOW', '_NET_WM_STRUT', '_NET_WM_STRUT_PARTIAL']
         self.setprop(self.root, '_NET_SUPPORTED', Xatom.ATOM, [self.atom(a) for a in supported])
@@ -262,10 +263,28 @@ class Manager:
         for c in self.clients.values():
             if c['kind'] == 'desktop':
                 c['w'].configure(stack_mode=X.Below)
-        for kind in ('dock', 'popup'):
-            for c in self.clients.values():
-                if c['kind'] == kind and not c['hidden']:
+        for c in self.clients.values():
+            if c['kind'] == 'dock' and not c['hidden']:
+                c['w'].configure(stack_mode=X.Above)
+        # Win32 topmost windows (EWMH above), such as XP's dimmed shut down
+        # screen, cover the topmost taskbar; keep their transients above them.
+        above = self.atom('_NET_WM_STATE_ABOVE')
+        raised = set()
+        for c in list(self.clients.values()):
+            if c['kind'] == 'normal' and not c['hidden'] and above in self.prop(c['w'], '_NET_WM_STATE'):
+                c['w'].configure(stack_mode=X.Above)
+                raised.add(c['w'].id)
+        for i, c in list(self.clients.items()):
+            if c['kind'] == 'normal' and not c['hidden'] and i not in raised:
+                try:
+                    owner = c['w'].get_wm_transient_for()
+                except error.XError:
+                    owner = None
+                if owner and owner.id in raised:
                     c['w'].configure(stack_mode=X.Above)
+        for c in self.clients.values():
+            if c['kind'] == 'popup' and not c['hidden']:
+                c['w'].configure(stack_mode=X.Above)
         ids = [i for i, c in self.clients.items() if c['kind'] != 'proxy']
         self.setprop(self.root, '_NET_CLIENT_LIST', Xatom.WINDOW, ids)
         stack = [self.frames.get(w.id, w.id) for w in self.root.query_tree().children if w.id in ids or w.id in self.frames]
@@ -599,13 +618,17 @@ class Manager:
                     else:
                         states.discard(atom)
                 self.setprop(e.window, '_NET_WM_STATE', Xatom.ATOM, list(states))
-                maximized = self.atom('_NET_WM_STATE_MAXIMIZED_VERT') in states or self.atom('_NET_WM_STATE_MAXIMIZED_HORZ') in states
-                if self.clients[e.window.id]['kind'] == 'proxy':
-                    native = self.clients.get(self.frames.get(e.window.id))
-                    if native and (native['restore'] is not None) != maximized:
-                        self.maximize(native['w'], restore=not maximized)
-                else:
-                    self.maximize(e.window, restore=not maximized)
+                if self.atom('_NET_WM_STATE_ABOVE') in values[1:3]:
+                    self.restack()
+                maximize_atoms = {self.atom('_NET_WM_STATE_MAXIMIZED_VERT'), self.atom('_NET_WM_STATE_MAXIMIZED_HORZ')}
+                if maximize_atoms & set(values[1:3]):
+                    maximized = self.atom('_NET_WM_STATE_MAXIMIZED_VERT') in states or self.atom('_NET_WM_STATE_MAXIMIZED_HORZ') in states
+                    if self.clients[e.window.id]['kind'] == 'proxy':
+                        native = self.clients.get(self.frames.get(e.window.id))
+                        if native and (native['restore'] is not None) != maximized:
+                            self.maximize(native['w'], restore=not maximized)
+                    else:
+                        self.maximize(e.window, restore=not maximized)
 
     def run(self):
         while self.running:

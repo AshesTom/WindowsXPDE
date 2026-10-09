@@ -1,7 +1,9 @@
 """Minimal native shell COM registrations absent from Wine's generated prefix."""
+import os
+import pwd
 import struct
 
-VERSION = 11
+VERSION = 13
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -153,6 +155,13 @@ def install(run, exists):
         run('reg', 'add', r'HKCU\Software\Wine\DllOverrides', '/v', dll, '/d', 'builtin', '/f')
         run('reg', 'add', r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides',
             '/v', dll, '/d', 'native', '/f')
+    # XP's own shut down dialog. Only XP Explorer loads it; Wine has no
+    # builtin module of that name. Its log off entry names the user that
+    # Winlogon records at logon.
+    run('reg', 'add', r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides',
+        '/v', 'msgina', '/d', 'native', '/f')
+    run('reg', 'add', r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer',
+        '/v', 'Logon User Name', '/t', 'REG_SZ', '/d', pwd.getpwuid(os.getuid()).pw_name, '/f')
 
     # Wine's builtin ShellExecute handles executable extensions directly;
     # native XP ShellExecute requires their explicit association.

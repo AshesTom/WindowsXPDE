@@ -37,6 +37,12 @@ class Session:
         # when the Linux session itself runs in another locale.
         if config.get('locale'):
             self.env.update(LANG=config['locale'], LC_ALL=config['locale'])
+        # Wine's ExitWindowsEx records log off / shut down / restart here,
+        # so that the shell's exit ends the session instead of restarting it.
+        self.request = self.state / 'session-request'
+        self.env['WIN4WINE_SESSION_REQUEST'] = 'Z:' + str(self.request.resolve()).replace('/', '\\')
+        self.power_commands = {'shutdown': config.get('shutdown_command', ['systemctl', 'poweroff']),
+                               'reboot': config.get('reboot_command', ['systemctl', 'reboot'])}
         self.processes = []
         self.wine_envs = [self.env]
         self.logs = []
@@ -107,6 +113,7 @@ class Session:
             if wm.poll() is not None:
                 raise RuntimeError('WM exited during session')
             attempt += 1
+            self.request.unlink(missing_ok=True)
             ipc_win = 'Z:' + str(self.ipc).replace('/', '\\')
             proxy = self.spawn([self.wine, str(self.proxy), ipc_win], 'proxy')
             shell = self.spawn([self.wine, r'C:\xp\xp-explorer.exe'], 'xp-shell')
@@ -128,6 +135,8 @@ class Session:
                 time.sleep(.25)
             if self.stopping:
                 break
+            if self.end_requested(shell):
+                return
             self.halt(shell)
             self.halt(proxy)
             # Release the prior desktop manager too; environment is inherited at its creation.
@@ -141,6 +150,26 @@ class Session:
                 self.fallback(wm)
                 return
             time.sleep(1)
+
+    def end_requested(self, shell):
+        """Finish the session after an XP log off, shut down or restart."""
+        try:
+            request = self.request.read_text().strip()
+        except OSError:
+            return False
+        if request not in ('logoff', 'shutdown', 'reboot'):
+            return False
+        try:
+            shell.wait(timeout=30)  # let wineboot end the applications first
+        except subprocess.TimeoutExpired:
+            pass
+        self.status('ending', request=request)
+        self.stopping = True
+        command = self.power_commands.get(request)
+        if command:
+            subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        return True
 
     def fallback(self, wm):
         env = dict(self.env)

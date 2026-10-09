@@ -62,9 +62,12 @@ def stage(prefix, wine=None):
                 os.replace(path, target)
             finally:
                 path.unlink(missing_ok=True)
-    for name in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'linkinfo', 'browselc', 'shdoclc'):
+    # msgina supplies XP's own shut down dialog; older extractions lack it.
+    for name in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'linkinfo', 'browselc', 'shdoclc', 'msgina'):
         source = prefix / f'drive_c/xp/native/{name}.dll'
         target = system / f'{name}.dll'
+        if name == 'msgina' and not source.is_file():
+            continue
         if target.is_file() and filecmp.cmp(source, target, shallow=False):
             continue
         # Never truncate an image that a running process may have mapped.
