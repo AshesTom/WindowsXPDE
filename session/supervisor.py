@@ -94,7 +94,8 @@ class Session:
         if wm.poll() is not None:
             raise RuntimeError('WM failed; see wm.log')
         # Install only the shell family in this dedicated prefix. Runtime overrides select them.
-        subprocess.run(['python3', str(ROOT / 'prefix/stage.py'), str(self.prefix)], check=True)
+        subprocess.run(['python3', str(ROOT / 'prefix/stage.py'), str(self.prefix),
+                        '--wine', self.wine], check=True)
         crashes = deque()
         attempt = 0
         while not self.stopping:

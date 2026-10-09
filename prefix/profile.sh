@@ -9,7 +9,7 @@ case "$profile" in
     *) echo 'Profile must be builtin or shell' >&2; exit 2 ;;
 esac
 if [[ $profile == shell ]]; then
-    python3 "$(dirname -- "$0")/stage.py" "$WINEPREFIX"
+    python3 "$(dirname -- "$0")/stage.py" "$WINEPREFIX" --wine "$(command -v "${WINE:-wine}")"
 fi
 export WINEDLLOVERRIDES=$overrides
 shift || true

@@ -4,6 +4,7 @@ Debian 13 上で、利用者の XP SP3 x86 メディアから取り出した Exp
 Wine のデスクトップシェルとして動かす実験環境です。Microsoft のファイルは同梱しません。
 
 - [再現手順](docs/reproduce.md)
+- [独立 VM / LightDM 試験](docs/vm.md)
 - [実装計画](docs/plan.md)
 - [現在の検証状況](docs/status.md)
 - [DLL 選択と障害調査](docs/dll-policy.md)

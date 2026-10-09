@@ -135,3 +135,22 @@ XP 用 HKCR を持つ prefix では builtin explorer も表示前に停止した
 クリーン prefix では Linux ホームのフォルダを表示できた。
 **判断: 復旧のレジストリも分離する。** 専用 prefix 内の `recovery/` を builtin のみで作成する。
 XP のファイルや COM 登録に依存せず、ネイティブ xterm も同時に開く。
+
+## 調査 12: Luna と HiDPI
+
+Wine builtin uxtheme は利用者の Luna msstyles を読み、IsThemeActive / IsAppThemed が TRUE、
+GetCurrentThemeName が該当パス、Taskbar のテーマ part size が成功することを確認した。
+`+uxtheme` ログにも Blue_TaskbarBackground 等の読込を記録。
+ただし native XP comctl と Wine 標準 Button の組では、背景・Start ボタンの描画が揃わない。
+**判断: 今回の基準はクラシック表示とし、Luna の完全な描画を保留する。**
+native uxtheme や XP の Themes サービスを追加して動作保証した扱いにはしない。
+クラシックの 144/192 DPI では Start / Programs の文字と配置、200% の Linux 起動を実測。
+DPI 非対応 XP アプリの拡大なので画質の改善は別の課題とする。
+
+## 調査 13: Wine 更新後の native profile
+
+Wine の prefix 自動更新は DLL と COM 登録を入れ替えるため、先に native DLL を配置するだけでは
+次の Wine ビルドで壊れる。**判断: 更新と native profile の再配置を順序付ける。**
+wine.inf と `.update-timestamp` を照合し、不一致時のみ builtin wineboot を完了させ、
+自前 COM 登録を再適用し、専用 wineserver を終了してから native DLL を atomic 配置する。
+VM で timestamp 不一致を作り、同じセッションから XP Shell / Start が再度動くことを確認した。

@@ -13,6 +13,7 @@ scripts/debian.sh run /bin/bash
 cd /work
 ./wine/build.sh > .local/wine-build.log 2>&1
 ./bridge-wm/build.sh
+./tests/build.sh
 ./extract/extract.py localres/WindowsXPSP3.iso .local/assets
 Xvfb :95 -screen 0 1280x800x24 -nolisten tcp > .local/xvfb.log 2>&1 &
 export DISPLAY=:95
@@ -88,3 +89,25 @@ git config core.hooksPath .githooks
 ```
 
 pre-commit はローカル専用領域、PE、ハイブ、メディア、フォント、NUL を含むバイナリを拒否する。`git add -f` でもこの検査を通す。ソースとパッチはリポジトリ、ISO・抽出結果・prefix・ビルド・生ログ・画像は `.local/` または `localres/`。
+
+## 復旧と表示の検証
+
+[独立 VM の手順](vm.md) で Debian の実カーネル / Xorg / LightDM を確認できる。
+復旧は `tests/recovery_integration.py CONFIG.json` を使う。このテストは専用の試験セッションで
+XP Shell を強制終了し、再起動回数と builtin ブラウザ / xterm の表示を検査する。
+復旧 prefix は XP 用 prefix 内の `recovery/` に作る。MS ファイルや native COM 登録は導入しない。
+
+表示設定は専用 prefix を指定して保存し、専用セッションを再起動する。
+
+```sh
+WINE="$WINE" WINEPREFIX="$WINEPREFIX" ./prefix/display.py --theme classic --dpi 144
+# 200% は --dpi 192。Luna の部分対応を試す場合は --theme luna。
+```
+
+`tests/build.sh` 後、`wine .local/bridge/display-test.exe 144 0` で実際の system DPI と
+classic を検査できる。第2引数 1 は Luna API / テーマファイルの読み込み検査であり、
+完全な見た目の合格判定ではない。DPI を戻すには `--theme classic --dpi 96`。
+
+Wine の更新時は `prefix/stage.py --wine WINE PREFIX` が wine.inf の timestamp を照合し、
+wineboot 更新 → XP COM 再登録 → 専用 wineserver 終了 → native DLL の atomic 配置を行う。
+supervisor / profile.sh から自動実行される。初回の更新には通常起動より時間がかかる。
