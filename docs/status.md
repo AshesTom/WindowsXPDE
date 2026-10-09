@@ -383,3 +383,36 @@ HFONTをmarshalしないためNULLになるが、自作の公開thread hookで�
 検証VMの既存prefixにはJapaneseXPClassic初期値keyがなかったため、試験用に明示生成して
 classic-initializeを実行した。再起動後もClassic6字体 MS UI Gothic -12とcaption18×18を確認。
 既存prefixのmigrationが字体を自動変更しない方針は維持している。
+
+
+## 利用者からの追加の実画面指摘（継続確認）
+
+2026-10-09の追加指摘。API値の一致だけで解決扱いにせず、同じ解像度・DPI・window位置の
+実XP画面と比較する。既存修正で改善している点も、現行画面で再確認する。
+
+- Classic: 最小化と最大化ボタンが接して見える、Start文字が右にはみ出す。
+- Luna: 左右上角が丸くない、タスクボタンのプログラム名字体が小さい。
+- Luna: タスクバー上端が二重に見える、Start右のグリップの点が少ない。
+- Luna: 右上3ボタンが大きい、Start下の青い余白が太い、時計の字体とサイズが違う。
+
+Start下の4px隙間は既知の未解決点。字体はowner側のLOGFONTも取得できたが、
+実描画の見た目を改めて比較する。丸い角はnormal/maximized/画面端配置を区別して検査する。
+
+
+### 未指定 caption icon の補完（0034）
+
+Lunaの描画がwindow-small/class-smallだけを取得し、window-bigと既定iconを取り落としていた。
+Classicと同じpublic small/big/class small/class bigの順を使い、未指定ならWine自身の
+共有stock IDI_WINLOGOを描く。modal no-iconは補完しない。Microsoft資源の追加・改変はない。
+no-icons/class-big/class-small/window-big/window-small優先/modal no-iconの6ケースは
+独立環境とDebianVMの画素比較で成功。日本語・省略・最大化・clipped WM_PRINTも再成功。
+`.local/vm-test/caption34.log`。
+
+クリーンsourceへの再現確認で0026の追加ファイルheaderに`new file mode`が欠けていたため、
+patch metadataを修正した。既存適用済みsourceの整合性とpatch-state6試験が成功し、
+別の完全clone/source/build/installで33までのfresh buildを実行中（未完了）。
+稼働中runtimeとは分離している。`.local/wine-verified33-build.log`。
+
+公開背景比較probe `tests/gradient-clip.c` では、実XPは12条件すべてclip前後の差0。
+Wineは最大化captionのclip時だけsample画素に差がある。この差は確認済みの調査対象で、
+caption文字の統合試験が通ることと、背景samplingの完全一致は区別する。

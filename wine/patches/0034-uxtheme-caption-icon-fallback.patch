@@ -1,0 +1,25 @@
+From: Win4Wine contributors
+Subject: [PATCH] uxtheme: match classic caption icon fallback for external windows
+
+Use the classic caption's public window-small/window-big/class-small/class-big
+order. If none exists, use Wine's shared stock IDI_WINLOGO at small-icon size,
+except for WS_EX_DLGMODALFRAME windows. This stays inside the existing external
+shell themed nonclient opt-in. No Microsoft icon or implementation is embedded.
+
+--- a/dlls/uxtheme/window.c
++++ b/dlls/uxtheme/window.c
+@@ -417,7 +417,14 @@
+     text.left += border_x + 2;
+     text.right -= border_x + 2;
+     icon = (HICON)SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0);
++    if (!icon) icon = (HICON)SendMessageW(hwnd, WM_GETICON, ICON_BIG, 0);
+     if (!icon) icon = (HICON)GetClassLongPtrW(hwnd, GCLP_HICONSM);
++    if (!icon) icon = (HICON)GetClassLongPtrW(hwnd, GCLP_HICON);
++    /* Match the classic caption's default icon, without adding one to modal dialogs. */
++    if (!icon && !(exstyle & WS_EX_DLGMODALFRAME))
++        icon = LoadImageW(NULL, (LPCWSTR)IDI_WINLOGO, IMAGE_ICON,
++                         GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
++                         LR_DEFAULTCOLOR | LR_SHARED);
+     if (icon && (style & WS_SYSMENU))
+     {
+         int width = GetSystemMetrics(SM_CXSMICON), height = GetSystemMetrics(SM_CYSMICON);

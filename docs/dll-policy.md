@@ -524,3 +524,12 @@ caption は公開 system caption text color を指定する。
 伸縮背景画像の元寸法を最小 window 寸法として扱わない。既存の画像 alignment/margin 処理は保持。
 実 XP の公開理想寸法112×26に一致するが、実 window 高さ30pxへの配置は別の残件。
 調査は公開 control message と Wine の自作ソースだけで行い、Microsoft 内部コードは解析しない。
+
+
+## 32. Luna caption の未指定アイコン
+
+WineのClassic描画はsmall/big/class small/class bigの順で読み、未指定かつ非modalなら
+Wine自身の共有stock IDI_WINLOGOを使う。外部shellのLuna描画だけ後半が欠けていた。
+**判断: 0034は既存Classicと同じ公開APIの取得・補完順を使用する。**
+アイコンの所有権は変えず、LR_SHAREDのstock iconも破棄しない。modal no-iconは補完しない。
+自作ウィンドウ6パターンを公開DrawIconExの結果と比較し、独立環境とVMで成功した。

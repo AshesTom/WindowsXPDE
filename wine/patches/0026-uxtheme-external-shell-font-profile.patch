@@ -86,6 +86,7 @@ diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
              UXTHEME_SaveSystemMetrics(&metrics, FALSE);
      }
 diff --git a/dlls/uxtheme/font-profile.c b/dlls/uxtheme/font-profile.c
+new file mode 100644
 --- /dev/null
 +++ b/dlls/uxtheme/font-profile.c
 @@ -0,0 +1,158 @@
