@@ -68,3 +68,4 @@
 0068-user32-external-themed-shell-controls.patch
 0069-comctl32-external-label-offsets.patch
 0070-uxtheme-external-premultiply.patch
+0071-win32u-external-xp-popup-menus.patch
