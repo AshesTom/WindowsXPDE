@@ -51,3 +51,15 @@ Wine 更新の再試験: timestamp 不一致を作り、更新・再登録後に
 公開 API 検査も VM で成功: `display-144-test.log` (144 / classic)、
 `recovery-integration.log` (192 / classic + 復旧)、`display-luna-144-test.log` (144 / Luna API)。
 パッチ9本は固定 upstream commit の別 worktree への順次適用も成功 (`.local/patch-series-check.log`)。
+
+## 最後の稼働状態
+
+VM を通常の classic / 96 DPI に戻して再起動し、LightDM から attempt 1 で起動。
+メニューから Wine メモ帳と Linux xterm、デスクトップから Linux ホームを開いた。
+最新画像 `.local/vm-test/final-desktop.png`、再起動ログ `reboot-result.log`。
+この作業環境では VM の VNC を `127.0.0.1:5905` で利用できる。ゲストの NIC は引き続きない。
+再起動用の実測コマンドは `.local/boot-guest.sh`。再作成は [VM 手順](vm.md) を参照。
+
+追加の制限: VM の std VGA で、サイズ変更・フォーカス変更後に xterm の表示内容が
+再描画まで黒く見えることを観測した。フォーカスを戻して入力すると再表示される。
+Xvfb と VM の描画経路の差は未解決で、日常利用の完成扱いにはしない。
