@@ -17,7 +17,7 @@ compile() {
 }
 # The reference probe can stay open while a new version is built.
 # Publish a new inode instead of truncating a PE mapped by Wine.
-for name in shellhook shell-activation shell-layout-sync wine-maximize workarea no-redraw button-size system-menu rebar print-window foreign-icons mono-advance text-vcenter taskbar-fonts nc-context-menu marlett-caption frame-control default-position; do
+for name in shellhook shell-activation shell-layout-sync wine-maximize workarea no-redraw button-size system-menu rebar print-window foreign-icons mono-advance text-vcenter taskbar-fonts nc-context-menu marlett-caption frame-control default-position ui-state; do
     compile "$root/.local/bridge/$name-test.exe" -municode "$root/tests/$name.c" -luser32 -lgdi32
 done
 compile "$root/.local/bridge/class-probe.exe" -municode "$root/prefix/class-probe.c" -lole32 -luuid
@@ -28,6 +28,9 @@ for name in start-button start-sizing start-metrics theme-font theme-text-shadow
     compile "$root/.local/bridge/$name-test.exe" -municode "$root/tests/$name.c" -luxtheme -lgdi32
 done
 
+compile "$root/.local/bridge/shell-names-test.exe" -municode "$root/tests/shell-names.c" -ladvapi32
+compile "$root/.local/bridge/desktop-icons.exe" -municode "$root/tests/desktop-icons.c" -ladvapi32 -lshell32
+compile "$root/.local/bridge/text-widths-test.exe" -municode "$root/tests/text-widths.c" -lgdi32 -luser32
 compile "$root/.local/bridge/transparent-shrink-test.exe" -municode "$root/tests/transparent-shrink.c" -lmsimg32 -lgdi32
 
 compile "$root/.local/bridge/nonclient-theme-test.exe" -municode "$root/tests/nonclient-theme.c" -luxtheme -lgdi32

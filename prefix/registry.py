@@ -1,7 +1,7 @@
 """Minimal native shell COM registrations absent from Wine's generated prefix."""
 import struct
 
-VERSION = 9
+VERSION = 11
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -71,6 +71,23 @@ BROWSEUI_CLASSES = (
 )
 
 
+# XP's own resource references for namespace display names and tips, read with
+# tests/shell-names.c on the reference XP machine. Only the references are
+# stored here; the strings stay in the user's local XP DLLs in system32.
+XP_SHELL32 = r'@%SystemRoot%\system32\SHELL32.dll,'
+NAMESPACE_STRINGS = (
+    ('{20D04FE0-3AEA-1069-A2D8-08002B30309D}', XP_SHELL32 + '-9216', XP_SHELL32 + '-22913'),
+    ('{208D2C60-3AEA-1069-A2D7-08002B30309D}', XP_SHELL32 + '-9217', XP_SHELL32 + '-22912'),
+    ('{645FF040-5081-101B-9F08-00AA002F954E}', XP_SHELL32 + '-8964', XP_SHELL32 + '-22915'),
+    ('{450D8FBA-AD25-11D0-98A8-0800361B1103}', XP_SHELL32 + '-9227', XP_SHELL32 + '-22914'),
+    ('{2227A280-3AEA-1069-A2DE-08002B30309D}', XP_SHELL32 + '-9319', XP_SHELL32 + '-12696'),
+    ('{871C5380-42A0-1069-A2EA-08002B30309D}', '@shdoclc.dll,-880', '@shdoclc.dll,-881'),
+    # XP names Control Panel from shell32 itself; Wine's reference would
+    # select an unrelated string from the XP DLL.
+    ('{21EC2020-3AEA-1069-A2DD-08002B30309D}', None, XP_SHELL32 + '-31361'),
+)
+
+
 def install(run, exists):
     # Seed defaults once. Migrations preserve disabled profiles, custom fonts,
     # and even unrecognized values: the builtin reader validates or falls back.
@@ -83,6 +100,21 @@ def install(run, exists):
     advanced = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
     if not exists(advanced, 'TaskbarSizeMove'):
         run('reg', 'add', advanced, '/v', 'TaskbarSizeMove', '/t', 'REG_DWORD', '/d', '0', '/f')
+    # Japanese XP lays desktop icons out 78px apart (SPI_GETICONMETRICS on the
+    # reference machine); Wine's 75px default wraps labels such as My Computer
+    # that are 74px wide in MS UI Gothic. Seed once, then keep user changes.
+    marker = r'HKCU\Software\Win4Wine\Profile'
+    if not exists(marker, 'IconSpacing'):
+        run('reg', 'add', r'HKCU\Control Panel\Desktop\WindowMetrics', '/v', 'IconSpacing',
+            '/t', 'REG_SZ', '/d', '-1170', '/f')
+        run('reg', 'add', marker, '/v', 'IconSpacing', '/t', 'REG_DWORD', '/d', '1', '/f')
+    for clsid, name, tip in NAMESPACE_STRINGS:
+        key = 'HKCR\\CLSID\\' + clsid
+        if name:
+            run('reg', 'add', key, '/v', 'LocalizedString', '/t', 'REG_EXPAND_SZ', '/d', name, '/f')
+        elif exists(key, 'LocalizedString'):
+            run('reg', 'delete', key, '/v', 'LocalizedString', '/f')
+        run('reg', 'add', key, '/v', 'InfoTip', '/t', 'REG_EXPAND_SZ', '/d', tip, '/f')
     # Native My Computer defaults to explorer.exe's first icon. Our XP Explorer
     # has a separate name so Wine's explorer.exe can remain the desktop manager.
     run('reg', 'add', r'HKCR\CLSID\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\DefaultIcon',

@@ -602,3 +602,13 @@ Wine は em=正方形の辺−2 を text extent で中央寄せし、16×14の�
 作業領域の1/4を超えると先頭へ戻り、既定寸法は幅3/4×(高さ3/4−23px) と測った。番号は desktop window の
 property で全 process 共有する。STARTF_USEPOSITION/USESIZE を優先する。WM も位置指定のない Linux
 ウィンドウを同じ規則で重ねる（枠の上端−1を縦の間隔に使う）。Win32 と Linux の番号は別々に進む。
+
+**判断: 0050は外部 shell の DefWindowProc に WM_QUERYUISTATE/CHANGEUISTATE/UPDATEUISTATE を実装する。**
+Wine は3つとも未処理で、XP の native control は常に全手がかりを描いた。実XPで自作公開API試験を
+手がかりオン/オフで実行し、初期状態0、最上位で変化時だけ子へ伝播、オン時は隠す要求を無視することを
+確認した。既定はオン（実XP参照機と同じ）なので通常の見た目は変わらず、オフにした利用者で効く。
+
+**判断: registry profile 10/11 は XP の名前空間名の参照と日本語 XP のアイコン間隔を入れる。**
+My Computer などの LocalizedString/InfoTip を、実XPで読んだ値（XP shell32 のリソース番号）にする。
+文字列そのものは利用者の XP DLL に残し、リポジトリには番号だけを置く。デスクトップの横間隔は実XPの
+SPI 値78px（Wine 既定75px では74px幅の「マイ コンピュータ」が折り返す）を一度だけ設定する。

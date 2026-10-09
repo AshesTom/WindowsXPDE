@@ -47,3 +47,4 @@
 0047-win32u-nc-right-click-hit-test.patch
 0048-user32-external-classic-caption-glyphs.patch
 0049-win32u-external-default-cascade.patch
+0050-win32u-external-ui-state.patch

@@ -32,6 +32,11 @@ class Session:
         self.env = dict(os.environ, WINEPREFIX=str(self.prefix), WINEARCH='win32',
                         WIN4WINE_EXTERNAL_SHELL='1', WINEDEBUG=config.get('debug', '+timestamp,+seh,+loaddll'),
                         WINEDLLOVERRIDES='explorer=b;xp-explorer=n;mscoree,mshtml=;uxtheme=b')
+        # Wine derives its user locale and ANSI code page from the Unix locale.
+        # A Japanese XP shell expects Japanese formats and code page 932 even
+        # when the Linux session itself runs in another locale.
+        if config.get('locale'):
+            self.env.update(LANG=config['locale'], LC_ALL=config['locale'])
         self.processes = []
         self.wine_envs = [self.env]
         self.logs = []
