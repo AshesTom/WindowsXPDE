@@ -1,5 +1,51 @@
 """Minimal native shell COM registrations absent from Wine's generated prefix."""
-VERSION = 4
+import struct
+
+VERSION = 5
+FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
+CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
+
+
+def font_profile_defaults():
+    """Our opt-in profile, measured with public APIs on the user's Japanese XP.
+
+    LOGFONTW has a documented 92-byte layout; heights are nominal 96 DPI pixels.
+    These settings contain no font resources or Microsoft implementation code.
+    """
+    values = {
+        'Enabled': ('REG_DWORD', '1'),
+        'Version': ('REG_DWORD', '1'),
+        'ThemePath': ('REG_SZ', r'C:\windows\Resources\Themes\Luna\luna.msstyles'),
+        'ColorName': ('REG_SZ', 'NormalColor'),
+        'SizeName': ('REG_SZ', 'NormalSize'),
+    }
+    face = 'MS UI Gothic'.encode('utf-16le').ljust(64, b'\0')
+    for name, height, weight, italic in (
+        ('CaptionFont', -13, 700, 0),
+        ('SmallCaptionFont', -12, 700, 0),
+        ('MenuFont', -12, 400, 0),
+        ('StatusFont', -12, 400, 0),
+        ('MessageFont', -12, 400, 0),
+        ('IconFont', -12, 400, 0),
+        ('StartFont', -16, 700, 1),
+    ):
+        data = struct.pack('<5l8B64s', height, 0, 0, 0, weight,
+                           italic, 0, 0, 1, 0, 0, 0, 0, face)
+        values[name] = ('REG_BINARY', data.hex())
+    return values
+
+
+def install_classic_fonts(run, exists):
+    """Fresh-prefix baseline only; existing-prefix migrations never call this."""
+    face = 'MS UI Gothic'.encode('utf-16le').ljust(64, b'\0')
+    for name, weight in (('CaptionFont', 700), ('SmallCaptionFont', 700),
+                         ('MenuFont', 400), ('StatusFont', 400),
+                         ('MessageFont', 400), ('IconFont', 400)):
+        if not exists(CLASSIC_FONT_PROFILE, name):
+            data = struct.pack('<5l8B64s', -12, 0, 0, 0, weight,
+                               0, 0, 0, 1, 0, 0, 0, 0, face)
+            run('reg', 'add', CLASSIC_FONT_PROFILE, '/v', name,
+                '/t', 'REG_BINARY', '/d', data.hex(), '/f')
 
 # Public class identifiers, cross-checked against the browseui assembly manifest:
 # https://lists.reactos.org/hyperkitty/list/ros-diffs%40reactos.org/thread/ENB6UBPTHQSRZOG7GFIV2V4BJLWBTKYT/
@@ -23,7 +69,12 @@ BROWSEUI_CLASSES = (
 )
 
 
-def install(run):
+def install(run, exists):
+    # Seed defaults once. Migrations preserve disabled profiles, custom fonts,
+    # and even unrecognized values: the builtin reader validates or falls back.
+    for name, (kind, data) in font_profile_defaults().items():
+        if not exists(FONT_PROFILE, name):
+            run('reg', 'add', FONT_PROFILE, '/v', name, '/t', kind, '/d', data, '/f')
     # Native My Computer defaults to explorer.exe's first icon. Our XP Explorer
     # has a separate name so Wine's explorer.exe can remain the desktop manager.
     run('reg', 'add', r'HKCR\CLSID\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\DefaultIcon',

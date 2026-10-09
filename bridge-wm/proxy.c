@@ -64,8 +64,8 @@ static void geometry_command(HWND hwnd, unsigned long xid)
     write_command(data);
 }
 
-/* Wine10 cannot marshal WM_GETICON between processes. This read-only scalar
- * query performs the public icon/readback APIs in their owning process. */
+/* Keep diagnostic readback usable with unpatched Wine10 too. This read-only
+ * scalar query performs public icon/readback APIs in their owning process. */
 static LRESULT icon_readback(HWND hwnd, WPARAM field)
 {
     HICON icon = (HICON)SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0);

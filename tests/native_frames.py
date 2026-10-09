@@ -79,10 +79,8 @@ def expect_icon(width, height, pixels, message):
                 (actual.get('width'), actual.get('height'), actual.get('hash')) ==
                 (width, height, icon_hash(pixels)), message)
 
-def caption_image():
-    f, n = frame.get_geometry(), native.get_geometry()
-    width, height = min(64, f.width), n.y-f.y
-    image = root.get_image(f.x, f.y, width, height, X.ZPixmap, 0xffffffff)
+def root_image(left, top, width, height):
+    image = root.get_image(left, top, width, height, X.ZPixmap, 0xffffffff)
     fmt = next(fmt for fmt in d.display.info.pixmap_formats if fmt.depth == root.get_geometry().depth)
     visual = next(v for level in d.screen().allowed_depths for v in level.visuals
                   if v.visual_id == d.screen().root_visual)
@@ -101,6 +99,34 @@ def caption_image():
             row.append(rgb)
         result.append(row)
     return result
+
+def caption_image():
+    f, n = frame.get_geometry(), native.get_geometry()
+    return root_image(f.x, f.y, min(64, f.width), n.y-f.y)
+
+def visible_task_icon(pixels):
+    for child in root.query_tree().children:
+        cls = child.get_full_property(atom('_WIN4WINE_CLASS'), X.AnyPropertyType)
+        if not cls or bytes(cls.value).rstrip(b'\0').lower() != b'shell_traywnd' or hidden(child):
+            continue
+        g, screen = child.get_geometry(), root.get_geometry()
+        origin_x, origin_y = max(0, g.x), max(0, g.y)
+        width = min(screen.width, g.x + g.width) - origin_x
+        height = min(screen.height, g.y + g.height) - origin_y
+        if width < 16 or height < 16:
+            continue
+        image = root_image(origin_x, origin_y, width, height)
+        def matches(actual, expected):
+            return all(abs(((actual >> shift) & 255) - ((expected >> shift) & 255)) <= 1
+                       for shift in (16, 8, 0))
+        for top in range(len(image)-15):
+            for left in range(len(image[0])-15):
+                if not matches(image[top][left+1], pixels[1]):
+                    continue
+                if all(matches(image[top+y][left+x], pixels[y*16+x])
+                       for y in range(16) for x in range(16) if pixels[y*16+x] >> 24 == 255):
+                    return left + origin_x, top + origin_y
+    return None
 
 def visible_icon(pixels):
     image = caption_image()
@@ -145,6 +171,8 @@ try:
     d.flush()
     expect_icon(16, 16, pixels, 'EWMH ARGB, transparent mask and colors reach genuine Wine HICON')
     icon_position = wait(lambda: visible_icon(pixels), 'actual visible caption pixels show native EWMH icon')
+    if os.environ.get('XP_FRAME_TASKBAR_ICONS'):
+        wait(lambda: visible_task_icon(pixels), 'actual XP taskbar pixels show the native icon after asynchronous WM_GETICON')
     if os.environ.get('XP_FRAME_ICON_SCREENSHOT'):
         subprocess.run(['import', '-window', 'root', os.environ['XP_FRAME_ICON_SCREENSHOT']], check=True)
     sidecar = ipc / f'icon-{native.id:x}.argb'
@@ -181,6 +209,9 @@ try:
                            [16, 16] + pixels + [32, 32] + large)
     d.flush()
     expect_icon(32, 32, large, 'updated EWMH icon chooses suitable32px image and replaces HICON')
+    if os.environ.get('XP_FRAME_TASKBAR_ICONS'):
+        wait(lambda: visible_task_icon([large[0]] * 256), 'actual XP taskbar replaces its icon after native property update')
+        print('PASS: actual XP taskbar pixels show initial and updated native icons')
     pixmap = root.create_pixmap(16, 16, root.get_geometry().depth)
     mask = root.create_pixmap(16, 16, 1)
     gc = pixmap.create_gc(foreground=0x112233)

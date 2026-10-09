@@ -520,8 +520,8 @@ diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
 +    free( data );
 +}
 +
-+/* The regular owner object and USER table are never replaced with imported
-+ * objects. All calls here hold user_lock; every borrowed pointer is pinned. */
++/* Owner USER objects stay untouched. Cache/list/ref operations hold USER lock;
++ * unpublished bitmap imports and cleanup can run outside it. */
 +static void destroy_foreign_icon( struct cursoricon_object *obj )
 +{
 +    assert( obj->is_foreign && !obj->refs );

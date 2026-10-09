@@ -27,11 +27,17 @@ def create(assets, dest, home, wine):
     for name in ('browselc.dll', 'shdoclc.dll'):
         if not (assets / 'system32' / name).is_file():
             raise SystemExit(f'Missing {name}: re-extract your local XP media')
+    for name in ('fonts/msgothic.ttc', 'themes/Luna/luna.msstyles'):
+        if not (assets / name).is_file():
+            raise SystemExit(f'Missing {name}: re-extract local media for the Japanese classic baseline')
     dest.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, WINEPREFIX=str(dest), WINEARCH='win32',
                WINEDLLOVERRIDES='mscoree,mshtml=;uxtheme=b', WINEDEBUG=os.environ.get('WINEDEBUG', '-all'))
     def run(*args):
         subprocess.run([wine, *args], env=env, check=True)
+    def exists(key, name):
+        return subprocess.run([wine, 'reg', 'query', key, '/v', name], env=env,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
     # Disable optional runtime installers: never obtain Microsoft binaries.
     run('wineboot', '-u')
     system = dest / 'drive_c/windows/system32'
@@ -80,7 +86,8 @@ def create(assets, dest, home, wine):
         reg(r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides', dll, 'native')
         shutil.copyfile(native / (dll + '.dll'), system / (dll + '.dll'))
     reg(r'HKCU\Software\Wine\DllOverrides', 'win4wine-controls', 'builtin')
-    registry.install(run)
+    registry.install(run, exists)
+    registry.install_classic_fonts(run, exists)
     reg(r'HKCU\Software\Wine\X11 Driver', 'Managed', 'Y')
     reg(r'HKCU\Software\Wine\X11 Driver', 'Decorated', 'N')
     for suffix in ('Shell Folders', 'User Shell Folders'):
@@ -88,7 +95,8 @@ def create(assets, dest, home, wine):
             'Personal', 'H:\\')
     # Restore Wine's saved classic metrics too; ThemeActive alone leaves Luna's
     # taller caption metrics installed after wineboot's default theme.
-    run(str(theme_helper), 'classic')
+    subprocess.run([wine, str(theme_helper), 'classic-initialize'],
+                   env=dict(env, WIN4WINE_EXTERNAL_SHELL='1'), check=True)
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoSimpleStartMenu', '1', 'REG_DWORD')
     reg(r'HKCU\Control Panel\Desktop', 'LogPixels', '96', 'REG_DWORD')
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced', 'WebView', '0', 'REG_DWORD')

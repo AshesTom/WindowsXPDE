@@ -171,7 +171,7 @@ Microsoft バイナリを変更・解析・配布する修正はない。
 - 非アクティブ時にキャプションボタンが濃いまま残る。
 - 左上のアイコンがないウィンドウの見せ方。Linux アプリのアイコン取得・適切な既定値も検討する。
 
-これらの実 XP 比較と修正は未完了。
+実 XP 比較と修正の進捗は以下の追補を参照。配置・余白などの完全一致は未完了。
 
 ## 時計・グリップ・アイコンの追加検証
 
@@ -208,7 +208,7 @@ Microsoft バイナリを変更・解析・配布する修正はない。
   `.local/font-parser-regression.log`、`shell-font-probe-after0024.log`。
 - Linux アプリの EWMH / ICCCM アイコンを代理 HWND の本物の HICON に反映する。
   画像のサイズを制限し、更新・削除・不正な画像・既定アイコン・半透明を検証。
-  classic / Luna の実キャプション画像でも確認。タスクバーの別プロセス HICON 参照は未対応。
+  classic / Luna の実キャプション画像でも確認。この時点ではタスクバーの別プロセス HICON 参照は未対応だった（0025で対応）。
   `.local/native-icons-final-test.log`、`native-icons-classic-final-test.log`。
 - 独立 Debian VM の24パッチで、8種類の公開 API 試験と Linux 枠の操作・アイコン更新、
   入力なしの xterm 再描画試験が成功。
@@ -222,8 +222,8 @@ VNC は `127.0.0.1:5906`。手順は [実 XP の比較](xp-reference.md)。
 
 自作 `tests/reference-metrics.c` を実 XP で実行し、96 DPI の公開 API を測定した。
 実 XP の本文・メニュー・アイコンは MS UI Gothic -12、caption は同 -13 bold、
-taskbar Button は同 -13 bold。一方、現在の Wine では本文 Tahoma -11、caption Trebuchet MS -13 bold。
-日本語の書体と文字サイズの差は未修正で、利用者の指摘と対応する具体的な残件。
+Shell_TrayWnd 子 Button は同 -13 bold（Start の可能性があり、アプリのタスク字体とは断定しない）。一方、現在の Wine では本文 Tahoma -11、caption Trebuchet MS -13 bold。
+この初回比較時点の日本語字体差は、下記0026の明示 profile で改善した。
 close のテーマ画像は両環境とも21×21・8状態。実際の配置とクリック領域には差があるため、
 画像寸法だけでボタンの見た目が一致したとは判断しない。
 生ログは `.local/xp-reference/serial.log`、Wine 側は `.local/reference-wine-24.txt`。
@@ -239,9 +239,9 @@ close のテーマ画像は両環境とも21×21・8状態。実際の配置と�
 - 別ディレクトリへの完全 build/install と native 枠の操作試験は成功。
   server protocol を変更するため、wineserver / ntdll / win32u を一組で更新する。
   24パッチの既存 Debian VM はこの追補時点ではまだ切り替えていない。
-- Wine 上の XP タスクバーは公開 API で実際のアイコンを取得できるようになったが、
-  settled screenshot のタスクボタンには既定アイコンが残る。画面側の更新経路は調査中。
-  API 試験の成功をタスクバー表示の一致とはしない。
+- Wine 上の XP タスクバーでも、非同期 callback 後の実画素が固有アイコンと一致した。
+  初期の赤16×16と更新後の緑16×16を bounded wait で確認。Luna / classic とも成功。
+  `.local/native-icons-taskbar-0025-pixels.log` と `native-icons-taskbar-0025-classic.png`。
 - 実 XP のインストール済み Luna と抽出済み Luna の SHA256 は一致した。
   自作多言語 fixture の言語選択、SPI 変更時のテーマ字体保持、公開 property origin も両環境で一致。
   真の日本語 locale と、Wine のテーマ読込みを日本語優先にする限定実験でも字体差は解消しなかった。
@@ -253,3 +253,28 @@ close のテーマ画像は両環境とも21×21・8状態。実際の配置と�
   初期化・画像 import を lock 外へ移し、再取得時の owner/generation を検証する。
   callback-first・SendMessageTimeout/Callback・並行読み取りと native XP ImageList の公開 API 試験が成功。
   `.local/foreign-icons-native-comctl.log`。この修正前の25版は Debian VM へ配置していない。
+
+
+## 日本語フォント profile と最終26パッチの検証
+
+- 0026 は利用者の日本語 XP の公開 API 実測値を prefix の明示設定として使用する。
+  Luna の caption は MS UI Gothic -13 bold、本文・メニュー・アイコンは同 -12、
+  Start は同 -16 bold italic（96 DPI）。Microsoft 資源やコードの改変はない。
+- registry version 5 の移行は既存の profile 値を上書きせず、Classic baseline も変更しない。
+  新規 prefix だけ Classic の6字体を実 XP の MS UI Gothic -12 に初期化する。
+  新規・既存独自字体の別プロセスでの読み取りと Luna 往復、移行 no-op は成功。
+  `.local/fresh-japanese-classic-public-test.log`、`existing-classic-custom-preservation-test.log`、
+  `registry-v5-preservation-test.log`。profile の96/144/192 DPI 試験も成功。
+- 独立 Debian VM は完全な26パッチの runtime に切り替えた。
+  テーマ字体・キャプション・タスクバー背景・時計・矢印・ReBar・WM_PRINT・display・字体往復は成功。
+  Luna 再適用・LightDM 再起動後の公開測定でも上記7字体が一致した。
+  VM 内の `/work/.local/vm-reference-26-live.txt` に記録。
+- VM の実 Linux 枠操作・タスクバーのアイコン更新、入力なしの xterm 再描画、
+  通常 Start の実クリック5往復が成功。フォルダのメニュー・ツールバー・アドレス欄も実表示。
+  `.local/vm-test/final-26-start.png`、`final-26-folder.png`。
+- 検証 VM の ext4 整合性エラーは停止状態で e2fsck により修復し、再検査も正常だった。
+  ホストと実 XP のディスクは対象にしていない。`.local/vm-test/fsck-26.log`。
+
+残件: Luna ボタンの配置・余白・クリック領域には実 XP との差がある。
+Start/通知領域脇の細い区切りも完全一致ではない。実 XP の144/192 DPI は未測定で、
+高 DPI の profile 試験は96 DPI 実測値からの拡大規則の検査である。

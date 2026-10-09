@@ -207,6 +207,8 @@ Start popup の除外、タイトルバー移動、角リサイズ、最大化�
 同時に EWMH / ICCCM のアイコン取得、更新・削除、Wine 既定アイコン、実 HICON と可視 caption の画素、
 half alpha を検査する。Wine / prefix は proxy と同じものを指定し、build 済み inspect.exe を使う。
 `XP_FRAME_ICON_SCREENSHOT=/absolute/local/output.png` を指定すれば実アイコン表示中の画面も保存できる。
+native XP タスクバーも起動している場合は `XP_FRAME_TASKBAR_ICONS=1` を加え、非同期 `WM_GETICON`
+callback 後の task button 内の実画素と icon 更新後の画素も検査できる。
 classic と Luna は表示設定を保存して専用 Wine セッションを再起動し、それぞれ実行する。
 これは proxy と native の組の操作試験であり、スタートメニュー全体、Wine アプリ全体のテーマ、
 native アプリとの clipboard 相互運用の合格を代用しない。

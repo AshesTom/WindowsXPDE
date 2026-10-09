@@ -31,5 +31,6 @@ if args.menu:
     menu_env = dict(env, WINEDLLOVERRIDES='shell32,shlwapi=n;explorer=b;mscoree,mshtml=')
     subprocess.run([wine, str(helper), args.menu], env=menu_env, check=True)
 reg(r'HKCU\Control Panel\Desktop', 'LogPixels', args.dpi, 'REG_DWORD')
-subprocess.run([wine, str(theme_helper), args.theme], env=env, check=True)
+subprocess.run([wine, str(theme_helper), args.theme],
+               env=dict(env, WIN4WINE_EXTERNAL_SHELL='1'), check=True)
 print('Display settings saved. Restart the dedicated Wine session to apply.')

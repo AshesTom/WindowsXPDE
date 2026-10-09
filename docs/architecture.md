@@ -39,10 +39,12 @@ Wine 0025 は外部シェル opt-in 時だけ、別プロセス間の公開 `WM_
 所有者が初期化した static icon の画素・resource metadata を wineserver に不変 snapshot として登録する。
 画像は256×256、metadata は各2048 bytes、所有プロセスは16 MiB、server 全体は64 MiBまで。
 読み手は毎回 handle generation と生存を照合し、最大64個のローカル bitmap コピーを保持する。
-参照中のコピーは pin し、所有者の破棄・終了後は次の読み取りを拒否する。`CopyIcon` の結果は読み手が所有する。
+GDI driver の初回初期化と bitmap import は USER lock の外で行い、cache 登録前に owner / generation を再確認する。
+同時に登録されたコピーを重複保持せず、参照中のコピーは pin し、所有者の破棄・終了後は次の読み取りを拒否する。`CopyIcon` の結果は読み手が所有する。
 foreign HICON の破棄・変更、別プロセスの `WM_SETICON`、他の GDI handle message は許可しない。
 opt-in がない通常 Wine の挙動は維持する。上限を超える画像と animated icon は foreign snapshot の対象外。
 検証用の読み取り専用 WM_APP query は引き続き proxy 内で寸法・画素 checksum を返し、実 caption は X image でも検査する。
+XP タスクバーは非同期 `WM_GETICON` の callback 後に固有 icon を描く。初期の既定画像からの切り替えと icon 更新後の表示は、taskbar の実 X 画素で検査する。
 0025 は server protocol を変更するため、wineserver / ntdll / win32u を揃えて配備し、既存 prefix server を停止して切り替える。
 
 代理 XID への EWMH activate も native のフォーカスに変換するので、タスクが二重にならない。

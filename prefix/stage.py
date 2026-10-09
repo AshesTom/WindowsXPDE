@@ -23,13 +23,17 @@ def prepare(prefix, wine):
     def run(*args):
         subprocess.run([str(wine), *args], env=env, check=True, timeout=120,
                        stdout=subprocess.DEVNULL)
+    def exists(key, name):
+        return subprocess.run([str(wine), 'reg', 'query', key, '/v', name], env=env,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              timeout=120).returncode == 0
     # Wine upgrades may replace both DLL images and shell COM registrations.
     # Complete that update before restoring the native shell profile.
     print('Updating dedicated prefix Wine/XP registry profile', flush=True)
     try:
         if not wine_current:
             run('wineboot', '-u')
-        registry.install(run)
+        registry.install(run, exists)
         temp = version.with_suffix('.tmp')
         temp.write_text(str(registry.VERSION) + '\n')
         temp.replace(version)

@@ -106,8 +106,8 @@ int wmain(int argc, WCHAR **argv)
     {
         LRESULT values[6];
         unsigned i;
-        /* The bridge executes public HICON APIs in its owning process because
-         * Wine10 does not marshal interprocess WM_GETICON. No pointers cross. */
+        /* Owner-side diagnostic readback also works with unpatched Wine10.
+         * Public HICON APIs execute in the bridge; no pointers cross. */
         for (i = 0; i < 6; ++i) values[i] = SendMessageW(hwnd, WM_APP + 0x574, i, 0x57344931);
         if (!values[0]) return 4;
         printf("icon=%lx width=%u height=%u hash=%08lx first=%06lx center=%06lx last=%06lx\n",

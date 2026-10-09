@@ -122,7 +122,9 @@ static void check_image_list(HICON foreign, HICON local)
     typedef BOOL (WINAPI *destroy_fn)(HANDLE);
     WCHAR path[MAX_PATH] = L"comctl32.dll";
     HMODULE module;
-    GetEnvironmentVariableW(L"XP_ICON_COMCTL", path, MAX_PATH);
+    DWORD length = GetEnvironmentVariableW(L"XP_ICON_COMCTL", path, MAX_PATH);
+    if (!length) lstrcpyW(path, L"comctl32.dll");
+    if (length >= MAX_PATH) { check(FALSE, "common controls test path fits buffer"); return; }
     module = LoadLibraryW(path);
     create_fn create;
     replace_fn replace;
@@ -221,7 +223,7 @@ int wmain(int argc, WCHAR **argv)
                              0, 0, 100, 100, NULL, NULL, NULL, NULL);
         SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)icons[0]);
         while (GetMessageW(&message, NULL, 0, 0) > 0) DispatchMessageW(&message);
-        for (i = 0; i < 80; ++i) if (icons[i]) DestroyIcon(icons[i]);
+        for (i = 0; i < 80; ++i) if (icons[i] && i != 77) DestroyIcon(icons[i]);
         return 0;
     }
     startup.cb = sizeof(startup);
@@ -267,6 +269,11 @@ int wmain(int argc, WCHAR **argv)
         check(inspect_icon(borrowed), "GetIconInfo creates usable caller-owned bitmaps");
         check(expected && draw_hash(borrowed) == expected, "DrawIconEx matches local pixels including half alpha");
         check_image_list(borrowed, local);
+        {
+            HICON scaled = CopyImage(borrowed, IMAGE_ICON, 16, 16, LR_COPYFROMRESOURCE | LR_COPYRETURNORG);
+            check(scaled && draw_hash(scaled) == expected, "taskbar-style CopyImage preserves foreign pixels");
+            if (scaled && scaled != borrowed) DestroyIcon(scaled);
+        }
         copy = CopyIcon(borrowed);
         check(copy && copy != borrowed && draw_hash(copy) == expected, "CopyIcon produces independent owned icon");
         check(!DestroyIcon(borrowed), "foreign borrowed handle cannot be destroyed");
@@ -283,7 +290,7 @@ int wmain(int argc, WCHAR **argv)
             HICON other = (HICON)SendMessageW(hwnd, WM_APP + 1, i, 0);
             HICON reference = make_icon(i);
             check(inspect_icon(other) && draw_hash(other) == draw_hash(reference), "bounded cache pressure preserves pixels");
-            DestroyIcon(reference);
+            if (i != 77) DestroyIcon(reference);
         }
         for (i = 0; i < 2; ++i)
             if (readers[i])

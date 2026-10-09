@@ -423,3 +423,59 @@ opt-in がない通常 Wine では従来どおり foreign message / icon 読み�
 0025 は Wine server protocol を変更する。wineserver、ntdll、win32u が混在しない完全 build を使い、
 利用中の prefix server を停止してから切り替える。検証では独立した source / build / install を使用し、
 元の共有 Wine install を上書きしていない。これにより Microsoft DLL の修正・再配布は発生しない。
+
+追加の callback-first fixture は、読み手が GDI を使う前に `GetIconInfo` を呼んだときの
+Wine の初回 display driver 初期化を検査する。既存 `copy_bitmap` が USER lock 中に最初の
+compatible DC を作って assertion になる経路を確認したため、cache miss 時の初回 DC 作成と
+bitmap import を lock 外で行い、その後 owner / generation と cache の競合登録を再確認する。
+`SendMessageTimeout` / `SendMessageCallback`、同時2 thread の cache 読み取り・退避も成功した。
+専用 XP prefix ではローカルの元の native `comctl32.dll` を明示して公開 `ImageList_ReplaceIcon` /
+`ImageList_GetIcon` を実行し、foreign と local の描画一致を確認した
+（`.local/foreign-icons-native-comctl.log`）。Microsoft DLL の内部解析はしていない。
+実 XP タスクバーは非同期 callback 後に固有 icon を表示した。settled screenshot の task button 内に
+16×16の赤色256画素があり、property 更新後は16×16の緑色256画素に変わった
+（`.local/native-icons-taskbar-0025-settled.png` / `native-icons-taskbar-update-0025.png`）。
+callback 前の瞬間的な既定画像と混同しないよう、`XP_FRAME_TASKBAR_ICONS=1` の native frame 試験は
+公開画面の taskbar 内に初期 icon と更新 icon の画素が現れるまで bounded wait で検査する。
+
+## 28. 公開 API で実測した日本語 XP 字体の prefix profile
+
+ユーザーの実 XP と同一 SHA256 のローカル Luna を公開 API で比較したところ、Wine の
+一般的な言語 resource 選択試験、UI language、SPI 変更時の挙動を合わせても字体差が残った。
+Microsoft 実装の解析やテーマ資産の改変で原因を推定せず、実 XP の公開 `GetThemeSysFont` /
+`GetThemeFont` / SPI 測定値を、自作の明示的な prefix 設定として保存する。
+Luna は MS UI Gothic、96 DPI で caption -13 bold、small caption -12 bold、
+menu/status/message/icon -12 regular、Start の themed font -16 bold italic だった。
+`reference-metrics.c` の Shell_TrayWnd 子 Button の `WM_GETFONT` は Start ボタンの可能性があり、
+これをアプリケーション task button の字体と断定しない。
+
+registry profile version 5 は `HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna` に
+Enabled/Version、ThemePath/ColorName/SizeName と7個の自作 LOGFONTW データを、値がない場合だけ追加する。
+既存の Enabled=0、独自字体、不正値も上書きしない。0026 の Wine builtin uxtheme が
+`WIN4WINE_EXTERNAL_SHELL=1`、active theme と path/color/size の一致、正常な既存 API query、
+有効な profile データを満たす場合だけ使う。DLL に固定字体は埋め込まない。
+NULL theme の `GetThemeSysFont` は従来の SPI のままで、ユーザーが変更した SPI も維持する。
+通常アプリ、別テーマ、Classic、無効化した profile は対象外である。
+`create.py` / `display.py` は自作 theme-settings helper の呼び出しにだけ opt-in を追加する。
+
+実 XP Classic の公開 SPI は6字体とも MS UI Gothic -12、caption/small のみ bold だった。
+新規 prefix 作成時だけ別の `JapaneseXPClassic` key に6字体を生成し、helper の
+`classic-initialize` が Apply(NULL) → 公開 SPI で字体設定 → Luna apply → Apply(NULL) を
+同一プロセスで実行する。Wine 自身に新しい Classic baseline を保存・復元させ、非公開の
+ThemeManager 保存値は直接編集しない。通常の `classic` / `luna` 切替は従来の Apply(NULL) を維持し、
+既存 prefix の migration は Classic 字体を初期化しない。新規作成前に必要なローカル
+msgothic.ttc と Luna msstyles の存在を検証する。これらの資産は従来どおり `.local/` 内だけに置く。
+
+`tests/font-profile.c` は96/144/192 DPI、opt-in 有無、profile 無効化・独自字体・欠落・不正型・
+不正 LOGFONT、path/color/size/version 不一致、普通の Button、NULL/無効 theme handle、
+一時的な SPI 上書きを検査し、すべて成功した（`.local/font-profile-final-public-tests.log`）。
+実 migration は独自設定を保持し、繰り返し stage は registry の hash/mtime も変更しなかった。
+新規 prefix はサーバー停止後の別プロセスでも Classic6字体と caption18×18 を読み取り、
+Luna 往復後も維持した（`.local/fresh-japanese-classic-public-test.log`）。
+既存の独自 Classic6字体も別プロセス、Luna 往復、v4→v5 migration を通して維持した
+（`.local/existing-classic-custom-preservation-test.log`）。`tests/theme-metrics.c` は
+テーマ適用字体に加えて Classic6字体の往復前後の意味的な一致も検査する。
+
+この実画素検査と全 frame gesture 試験は Luna / classic の両方で成功した
+（`.local/native-icons-taskbar-0025-pixels.log` / `native-icons-taskbar-0025-classic.log`）。
+classic の taskbar 外枠は root の外へはみ出すため、画面に見える範囲へ clip して取得する。
