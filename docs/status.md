@@ -744,3 +744,11 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
   WS_EX_CONTEXTHELP にせず、ボタンの描画・押下・ヘルプモードも持たない。0067 で Luna のヘルプボタンを
   最大化ボタンの位置に描き（実XPと角の半透明画素の丸め以外一致）、押すとヘルプカーソルになり、次にクリックした
   コントロールへ WM_HELP を送る。説明の表示は各アプリの WinHelp（XP の .hlp）次第で、Wine では表示されない。
+- XP シェルのダイアログ（ファイル名を指定して実行、フォルダ オプション、プロパティ）のボタン・入力欄・コンボが
+  クラシック表示だった。native comctl32 を SxS なしで使うため user32 のコントロールになっていた。0068 で、
+  native comctl32 のプロセスに限り Button/ComboBox/Edit/ListBox/Static を別名モジュールのテーマ付き実装で作る
+  （クラス名は "win4wine!" を版として登録し、GetClassName は従来どおり Button などを返す）。0060 のアドレスバー
+  専用の別名はこれに統合し、`tests/toolbar-layout.c` とドロップダウンボタンの画素は引き続き実XPと一致。
+- フォルダ オプションに「全般」「表示」タブが無かった。XP のレジストリでは {6D5313C0-8C62-11D1-B2CD-006097DF8C11}
+  の提供元が shell32 で、利用者の XP shell32 の DllGetClassObject でも確認できたため、registry profile 19 で登録した。
+  「オフライン ファイル」タブ（cscui.dll）は対象外。

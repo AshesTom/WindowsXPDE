@@ -34,6 +34,7 @@ version 6 は `ClockFont`（96 DPI で MS UI Gothic -12 regular）を未存在�
 外部シェルの日本語 Luna profile が有効かつテーマ選択が一致する場合に、TrayNotify の Clock 字体へ適用する。
 独自の ClockFont、無効な値、profile の無効化はそのまま保持し、値が欠落・不正なら Wine のテーマ字体へ戻る。
 version 18 は XP 既定の `ListviewShadow=1`（壁紙上のアイコン名に影）を未存在時だけ入れる。
+version 19 はフォルダ オプションの「全般」「表示」ページ（XP shell32 の {6D5313C0-…}）を登録する。
 version 17 は日本語 Luna profile に Start のユーザー名と「すべてのプログラム」の字体を加える。
 version 15/16 は壁紙（Bliss を XP と同じく Wallpaper1.bmp に変換、拡大表示）と `LogonType=1` を一度だけ設定する。
 画像は再抽出（30ファイル）で入り、session 開始時の stage で `C:\windows\Web\Wallpaper` とユーザー画像へ置く。

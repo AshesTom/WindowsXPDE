@@ -3,7 +3,7 @@ import os
 import pwd
 import struct
 
-VERSION = 18
+VERSION = 19
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -167,6 +167,8 @@ def install(run, exists):
         ('{7849596A-48EA-486E-8937-A2A3009F31A9}', 'shell32.dll'),
         ('{D912F8CF-0396-4915-884E-FB425D32943B}', 'shell32.dll'),
         ('{3F6953F0-5359-47FC-BD99-9F2CB95A62FD}', 'shell32.dll'),
+        # Folder Options' General and View pages; XP's registry names shell32.
+        ('{6D5313C0-8C62-11D1-B2CD-006097DF8C11}', 'shell32.dll'),
     ))
     for clsid, dll in servers:
         key = 'HKCR\\CLSID\\' + clsid + '\\InprocServer32'

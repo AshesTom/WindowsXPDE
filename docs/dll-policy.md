@@ -678,3 +678,7 @@ XP の uxtheme は画像を自前で拡大縮小し、GDI の StretchBlt・Trans
 **判断: 0066 は日本語 ANSI コードページの外部 shell で、DrawText の折り返しを実XPで測った規則にする。**
 禁則文字の一覧と戻し方は自作文字列の折り返し位置の測定値から決めた。usp10 の UAX#14 とは結果が異なる。
 
+**判断: 0068 は native comctl32 を読み込んだプロセスだけ、標準コントロールを Wine のテーマ付き実装で作る。**
+調査7の「Button は Wine 標準のままクラシック表示」を改める。native v6 の Button は使わず（access violation のため）、
+Start ボタンと同じ別名モジュールの Wine 実装を使う。Wine の comctl32 を使う通常のアプリには影響しない。
+

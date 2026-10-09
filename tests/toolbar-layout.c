@@ -42,9 +42,11 @@ static BOOL CALLBACK child(HWND hwnd, LPARAM param)
                       (long)SendMessageA(hwnd, TB_GETROWS, 0, 0));
     }
     else if (strstr(cls, "ComboBox") && !strstr(cls, "Ex"))
-        n += snprintf(line + n, sizeof(line) - n, " selection=%ld item=%ld",
+        n += snprintf(line + n, sizeof(line) - n, " selection=%ld item=%ld current=%ld count=%ld",
                       (long)SendMessageA(hwnd, CB_GETITEMHEIGHT, (WPARAM)-1, 0),
-                      (long)SendMessageA(hwnd, CB_GETITEMHEIGHT, 0, 0));
+                      (long)SendMessageA(hwnd, CB_GETITEMHEIGHT, 0, 0),
+                      (long)SendMessageA(hwnd, CB_GETCURSEL, 0, 0),
+                      (long)SendMessageA(hwnd, CB_GETCOUNT, 0, 0));
     else if (!strcmp(cls, "ReBarWindow32"))
     {
         long count = (long)SendMessageA(hwnd, RB_GETBANDCOUNT, 0, 0);
