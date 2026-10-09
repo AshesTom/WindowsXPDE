@@ -2,7 +2,9 @@
 """Restore native shell DLLs atomically after Wine prefix updates."""
 import filecmp
 import argparse
+import json
 import os
+import pwd
 from pathlib import Path
 import shutil
 import subprocess
@@ -79,6 +81,37 @@ def stage(prefix, wine=None):
         finally:
             path.unlink(missing_ok=True)
 
+def stage_media(prefix, wine=None):
+    """Copy XP's default wallpaper and user picture from the local extraction.
+
+    The files are copied unchanged to the places XP uses; existing files,
+    including a user's own picture, are never replaced.
+    """
+    try:
+        assets = Path(json.loads((prefix / 'xp-shell.json').read_text())['assets'])
+    except (OSError, ValueError, KeyError):
+        return
+    user = pwd.getpwuid(os.getuid()).pw_name
+    pictures = prefix / 'drive_c/ProgramData/Microsoft/User Account Pictures'
+    for source, target in ((assets / 'web/wallpaper/bliss.jpg', prefix / 'drive_c/windows/Web/Wallpaper/Bliss.jpg'),
+                           (assets / 'pictures/beach.bmp', pictures / 'Default Pictures/beach.bmp'),
+                           (assets / 'pictures/beach.bmp', pictures / f'{user}.bmp')):
+        if source.is_file() and not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+    # XP converts a JPEG wallpaper to Wallpaper1.bmp; without it, XP's desktop
+    # switches to the HTML Active Desktop that this shell does not provide.
+    jpeg = prefix / 'drive_c/windows/Web/Wallpaper/Bliss.jpg'
+    bitmap = prefix / f'drive_c/users/{user}/AppData/Local/Microsoft/Wallpaper1.bmp'
+    converter = Path(__file__).resolve().parents[1] / '.local/bridge/wallpaper-convert.exe'
+    if wine and jpeg.is_file() and converter.is_file() and not bitmap.exists():
+        bitmap.parent.mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ, WINEPREFIX=str(prefix), WINEARCH='win32', WINEDEBUG='-all')
+        subprocess.run([str(wine), str(converter), 'Z:' + str(jpeg).replace('/', '\\'),
+                        'Z:' + str(bitmap).replace('/', '\\')], env=env, check=False, timeout=120,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('prefix', type=Path)
@@ -90,3 +123,4 @@ if __name__ == '__main__':
     if args.wine:
         prepare(prefix, args.wine.resolve(strict=True))
     stage(prefix, args.wine.resolve(strict=True) if args.wine else None)
+    stage_media(prefix, args.wine.resolve(strict=True) if args.wine else None)

@@ -33,6 +33,8 @@ export WINEPREFIX=/work/.local/prefix-clean
 version 6 は `ClockFont`（96 DPI で MS UI Gothic -12 regular）を未存在時だけ追加する。
 外部シェルの日本語 Luna profile が有効かつテーマ選択が一致する場合に、TrayNotify の Clock 字体へ適用する。
 独自の ClockFont、無効な値、profile の無効化はそのまま保持し、値が欠落・不正なら Wine のテーマ字体へ戻る。
+version 15/16 は壁紙（Bliss を XP と同じく Wallpaper1.bmp に変換、拡大表示）と `LogonType=1` を一度だけ設定する。
+画像は再抽出（30ファイル）で入り、session 開始時の stage で `C:\windows\Web\Wallpaper` とユーザー画像へ置く。
 version 12/13 は XP Explorer にだけ msgina を native で読ませ、`Logon User Name` に利用者名を入れる。
 （msgina.dll は再抽出で `C:\xp\native` に入る。無い既存 prefix ではシャットダウンは従来どおり使えない。）
 version 11 は日本語 XP のデスクトップアイコン横間隔78px（`IconSpacing=-1170`）を一度だけ設定する。

@@ -16,6 +16,8 @@ FILES = {
     **dict.fromkeys(('tahoma.ttf', 'tahomabd.ttf', 'msgothic.ttc', 'marlett.ttf',
                      'trebuc.ttf', 'trebucbd.ttf', 'trebucit.ttf', 'trebucbi.ttf'), 'fonts'),
     'luna.msstyles': 'themes/Luna', 'luna.theme': 'themes',
+    # XP's default wallpaper and the user picture of the reference account.
+    'bliss.jpg': 'web/wallpaper', 'beach.bmp': 'pictures',
     'blue_ss.dll': 'themes/Luna/Shell/NormalColor',
     'home_ss.dll': 'themes/Luna/Shell/Homestead',
     'metal_ss.dll': 'themes/Luna/Shell/Metallic',

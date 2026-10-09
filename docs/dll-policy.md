@@ -632,3 +632,12 @@ ExitWindowsEx は外部 shell の要求ファイル（WIN4WINE_SESSION_REQUEST�
 supervisor は shell の終了を異常終了として再起動せず、セッションを終える。shutdown/reboot では
 session.json の `shutdown_command`/`reboot_command`（既定 `systemctl poweroff`/`reboot`）を実行する。
 ダイアログのログオフ項目の利用者名は registry profile 13 の `Logon User Name`。
+
+## 37. 壁紙・ユーザー画像・ようこそ画面の設定
+
+**判断: 利用者メディアの Bliss.jpg と beach.bmp を抽出し、XP と同じ場所へ無改変で置く。**
+XP は JPEG の壁紙を自分で Wallpaper1.bmp に変換して表示し、変換がないと HTML の Active Desktop に切り替わる
+（mshtml を無効にしているため白画面になった）。自作の `prefix/wallpaper-convert.c` が Wine の WIC で同じ変換を
+行い、0056 が XP Explorer の process での読み込みと WallpaperStyle 2（拡大）を描く。元の画像は変更しない。
+registry profile 15/16 は壁紙設定と `LogonType=1`（ようこそ画面）を一度だけ入れる。実XP参照機と同じく
+Start のユーザー画像と「終了オプション」、XP の「コンピュータの電源を切る」ダイアログになる。

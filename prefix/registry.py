@@ -3,7 +3,7 @@ import os
 import pwd
 import struct
 
-VERSION = 13
+VERSION = 16
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -110,6 +110,22 @@ def install(run, exists):
         run('reg', 'add', r'HKCU\Control Panel\Desktop\WindowMetrics', '/v', 'IconSpacing',
             '/t', 'REG_SZ', '/d', '-1170', '/f')
         run('reg', 'add', marker, '/v', 'IconSpacing', '/t', 'REG_DWORD', '/d', '1', '/f')
+    # XP's default user desktop: Bliss stretched over the screen. stage.py
+    # copies the user's extracted Bliss.jpg and converts it to Wallpaper1.bmp
+    # as XP does. Seed once and keep any later choice.
+    if not exists(marker, 'WallpaperBitmap'):
+        user = pwd.getpwuid(os.getuid()).pw_name
+        desktop = r'HKCU\Control Panel\Desktop'
+        for name, value in (('Wallpaper', rf'C:\users\{user}\AppData\Local\Microsoft\Wallpaper1.bmp'),
+                            ('WallpaperStyle', '2'), ('TileWallpaper', '0')):
+            run('reg', 'add', desktop, '/v', name, '/t', 'REG_SZ', '/d', value, '/f')
+        run('reg', 'add', marker, '/v', 'WallpaperBitmap', '/t', 'REG_DWORD', '/d', '1', '/f')
+    # XP's Welcome-screen logon type: the Start panel shows the account
+    # picture and offers "Turn Off Computer", as on the reference XP machine.
+    if not exists(marker, 'LogonType'):
+        run('reg', 'add', r'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon',
+            '/v', 'LogonType', '/t', 'REG_DWORD', '/d', '1', '/f')
+        run('reg', 'add', marker, '/v', 'LogonType', '/t', 'REG_DWORD', '/d', '1', '/f')
     for clsid, name, tip in NAMESPACE_STRINGS:
         key = 'HKCR\\CLSID\\' + clsid
         if name:
