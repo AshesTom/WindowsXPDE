@@ -30,7 +30,7 @@ EWMH の一覧、アクティブ ID、キーボードフォーカスは native X
 代理 XID への EWMH activate も native のフォーカスに変換するので、タスクが二重にならない。
 タイトルバーと角の操作は Win32 の通常の非クライアント処理を通し、移動・リサイズを
 `geometry` コマンドで native へ戻す。最小化では組を隠し、復元では proxy の非 iconic 応答を待って枠を戻す。
-withdraw / destroy 時は組を直ちに解除して残った枠を隠す。次の snapshot で代理 HWND も破棄される。
+withdraw / destroy 時は組を直ちに解除して残った枠を隠す。真の withdraw では WM_STATE property を削除して WithdrawnState を通知する。Wine X11 driver はこの応答を待って次の XMapWindow を発行するため、応答がないと Start の Win32 HWND は visible でも X のメニューが再表示されない。最小化された client と WM が隠した代理枠にはこの削除を行わない。次の snapshot で不要な代理 HWND も破棄される。
 
 最大化は native の復元位置を WM に保存し、枠を含めて workarea に合わせる。
 代理の `WS_MAXIMIZE` は Wine X11 driver の managed-window サイズ抑制を招くため変更せず、

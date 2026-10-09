@@ -144,3 +144,16 @@ VNC は引き続き `127.0.0.1:5905`、NIC はない。
 
 スクリーンショット・テーマ・DLL・フォントはすべて `.local/` にのみ保存する。
 Microsoft バイナリを変更・解析・配布する修正はない。
+
+## キャプション寸法と Start 再表示の追補
+
+- 新規 prefix は registry の ThemeActive だけを変更せず、Wine の classic 適用を呼ぶ。
+  旧手順では Luna の caption height 25 が残り、classic の枠ボタンまで縦長になっていた。
+  新規作成と Luna → classic の往復で caption が18×18、Tahoma -11 に戻ることを公開 SPI で確認。
+  Wine の classic 描画の内側は16×14。XP 実機での寸法測定とは区別する。
+  `.local/classic-fresh-caption-test.log`。既存 prefix の修復は再現手順を参照。
+- Start を閉じた際の ICCCM withdrawal 応答がなかったため、Wine は次の XMapWindow を保留した。
+  WM は真の withdraw で WM_STATE を削除し、最小化や代理枠の非表示と区別する。
+  `.local/frame-withdraw-ack-interaction.log` と VM の `luna-start-repeat-final.log` で
+  実 Start の反復開閉を確認（VM は5往復）。フォルダの起動・Alpha への移動・Alt+Left も成功。
+  native 枠の試験にも property 削除の検査を追加した。

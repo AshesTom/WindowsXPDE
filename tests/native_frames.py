@@ -139,8 +139,8 @@ try:
     wait(closed, 'close button sends WM_DELETE_WINDOW to native client')
     native.unmap()
     d.flush()
-    wait(lambda: native.id not in prop(root, '_NET_CLIENT_LIST') and hidden(frame),
-         'withdrawal removes native task and hides orphan frame')
+    wait(lambda: native.id not in prop(root, '_NET_CLIENT_LIST') and hidden(frame) and not prop(native, 'WM_STATE'),
+         'withdrawal deletes WM_STATE, removes task and hides orphan frame')
     root.send_event(protocol.event.ClientMessage(window=frame, client_type=atom('_NET_ACTIVE_WINDOW'),
                     data=(32, [1, 0, 0, 0, 0])), event_mask=X.SubstructureRedirectMask | X.SubstructureNotifyMask)
     native.map()

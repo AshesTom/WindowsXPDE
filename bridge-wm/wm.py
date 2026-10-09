@@ -443,6 +443,10 @@ class Manager:
         elif e.type == X.UnmapNotify:
             c = self.clients.get(e.window.id)
             if c and not c['hidden'] and c['kind'] != 'proxy':
+                # ICCCM withdrawal acknowledgement. Wine waits for PropertyDelete
+                # (WithdrawnState) before issuing a subsequent XMapWindow. Keep
+                # iconic clients and deliberately hidden proxy frames registered.
+                e.window.delete_property(self.atom('WM_STATE'))
                 self.unmanage(e.window.id)
         elif e.type == X.PropertyNotify:
             c = self.clients.get(e.window.id)

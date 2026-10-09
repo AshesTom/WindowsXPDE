@@ -18,6 +18,9 @@ def create(assets, dest, home, wine):
     controls = wine_path.parent.parent / 'lib/wine/i386-windows/win4wine-controls.dll'
     if not controls.is_file():
         raise SystemExit('Build the patched Wine first: missing self-built themed controls module')
+    theme_helper = Path(__file__).resolve().parents[1] / '.local/bridge/theme-settings.exe'
+    if not theme_helper.is_file():
+        raise SystemExit('Run bridge-wm/build.sh first: missing self-built theme settings helper')
     records = json.loads((assets / 'manifest.json').read_text())
     if not records or not (assets / 'windows/explorer.exe').is_file():
         raise SystemExit('Incomplete XP assets')
@@ -26,7 +29,7 @@ def create(assets, dest, home, wine):
             raise SystemExit(f'Missing {name}: re-extract your local XP media')
     dest.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, WINEPREFIX=str(dest), WINEARCH='win32',
-               WINEDLLOVERRIDES='mscoree,mshtml=', WINEDEBUG=os.environ.get('WINEDEBUG', '-all'))
+               WINEDLLOVERRIDES='mscoree,mshtml=;uxtheme=b', WINEDEBUG=os.environ.get('WINEDEBUG', '-all'))
     def run(*args):
         subprocess.run([wine, *args], env=env, check=True)
     # Disable optional runtime installers: never obtain Microsoft binaries.
@@ -83,7 +86,9 @@ def create(assets, dest, home, wine):
     for suffix in ('Shell Folders', 'User Shell Folders'):
         reg('HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\' + suffix,
             'Personal', 'H:\\')
-    reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\ThemeManager', 'ThemeActive', '0')
+    # Restore Wine's saved classic metrics too; ThemeActive alone leaves Luna's
+    # taller caption metrics installed after wineboot's default theme.
+    run(str(theme_helper), 'classic')
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoSimpleStartMenu', '1', 'REG_DWORD')
     reg(r'HKCU\Control Panel\Desktop', 'LogPixels', '96', 'REG_DWORD')
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced', 'WebView', '0', 'REG_DWORD')

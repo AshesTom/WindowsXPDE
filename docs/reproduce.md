@@ -24,6 +24,12 @@ export WINEPREFIX=/work/.local/prefix-clean
 
 出力先は既存ディレクトリを拒否する。やり直すときは別名で作る。既存 prefix を無条件で消す手順は用意しない。`.local/wine-build/config.log` には構成・依存の実測が残る。ビルドは 32-bit Unix ライブラリと i686 MinGW を使う。DirectX ヘルパーの版違いと Wine 回帰テストのビルドを省く。通常の Wine テストを追加する場合は別 build directory を使う。
 
+新規 prefix は自作 `theme-settings.exe` で Wine の保存済み classic metrics も復元する。
+旧手順の `ThemeActive=0` だけでは Luna の caption height が残り、クラシックのボタンが縦長になる。
+既存 prefix は `WINEPREFIX=... WINE=... python3 prefix/display.py --theme classic --dpi 96` で復元し、専用 session を再起動する。
+96 DPI の新規 prefix では公開 SPI が caption width/height とも18、caption font は -11 Tahoma を返した。
+これは Wine の classic 既定値の確認であり、実機 XP の寸法を検証したものではない。
+
 XP の実行ファイルは内容を変えず `C:\xp\xp-explorer.exe` に配置する。Wine 自身の `explorer.exe` と AppDefaults を分けるため。native DLL の override はそのファイル名に限定する。起動時には新しい desktop manager に外部 shell フラグを渡す必要があるため、単体試験の前にその専用 prefix の wineserver を終了する。
 
 ```sh
