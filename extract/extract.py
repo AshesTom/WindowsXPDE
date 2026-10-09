@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import xml.etree.ElementTree as ET
 
 FILES = {
     'explorer.exe': 'windows',
@@ -95,6 +96,30 @@ def extract(source, output):
             shutil.copyfile(source_file, dest)
             manifest.append({'name': str(dest.relative_to(output)), 'source': str(p.relative_to(media)),
                              'sha256': hashlib.sha256(dest.read_bytes()).hexdigest()})
+        # Installed XP keeps manifests in WinSxS/Manifests, separate from DLLs.
+        for original in paths:
+            if original.suffix.lower() != '.manifest' or original.parent.name.lower() != 'manifests':
+                continue
+            if not any(part.lower() == 'winsxs' for part in original.parts):
+                continue
+            try:
+                identity = ET.parse(original).getroot().find('{urn:schemas-microsoft-com:asm.v1}assemblyIdentity')
+            except ET.ParseError:
+                continue
+            if identity is None or identity.get('name', '').lower() != 'microsoft.windows.common-controls':
+                continue
+            # Match the actual sibling assembly folder without inferring its hash.
+            assembly_name = original.stem.lower()
+            siblings = [folder for folder in original.parent.parent.iterdir()
+                        if folder.is_dir() and folder.name.lower() == assembly_name]
+            if not siblings:
+                continue
+            target = output / 'sxs' / str(siblings[0].relative_to(media)).lower() / 'controls.man'
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(original, target)
+            manifest.append({'name': str(target.relative_to(output)),
+                             'source': str(original.relative_to(media)),
+                             'sha256': hashlib.sha256(target.read_bytes()).hexdigest()})
         required = ['windows/explorer.exe'] + ['system32/' + n for n in ('shell32.dll', 'browseui.dll', 'shdocvw.dll', 'shlwapi.dll')]
         missing = [n for n in required if not (output / n).is_file()]
         if missing:

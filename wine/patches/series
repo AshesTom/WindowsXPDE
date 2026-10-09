@@ -6,3 +6,4 @@
 0006-setupapi-no-dock-station.patch
 0007-kernelbase-xp-shell-module-alias.patch
 0008-user32-classic-button-ideal-size.patch
+0009-explorer-external-shell-endpoints.patch

@@ -33,6 +33,7 @@ class Session:
                         WIN4WINE_EXTERNAL_SHELL='1', WINEDEBUG=config.get('debug', '+timestamp,+seh,+loaddll'),
                         WINEDLLOVERRIDES='explorer=b;xp-explorer=n;mscoree,mshtml=;uxtheme=b')
         self.processes = []
+        self.wine_envs = [self.env]
         self.logs = []
         self.stopping = False
         self.readiness_timeout = float(config.get('readiness_timeout', 30))
@@ -63,7 +64,7 @@ class Session:
         for w in self.d.screen().root.query_tree().children:
             try:
                 p = w.get_full_property(self.class_atom, X.AnyPropertyType)
-                if p and bytes(p.value).rstrip(b'\0') == b'Shell_TrayWnd' and w.get_attributes().map_state == X.IsViewable:
+                if p and bytes(p.value).rstrip(b'\0').lower() == b'shell_traywnd' and w.get_attributes().map_state == X.IsViewable:
                     geometry = w.get_geometry()
                     return geometry.width >= 200 and geometry.height >= 20
             except error.XError:
@@ -83,8 +84,9 @@ class Session:
 
     def stop_wine(self):
         server = Path(self.wine).with_name('wineserver')
-        subprocess.run([str(server), '-k'], env=self.env, timeout=10, check=False)
-        subprocess.run([str(server), '-w'], env=self.env, timeout=10, check=False)
+        for env in self.wine_envs:
+            subprocess.run([str(server), '-k'], env=env, timeout=10, check=False)
+            subprocess.run([str(server), '-w'], env=env, timeout=10, check=False)
 
     def run(self):
         wm = self.spawn(['python3', str(ROOT / 'bridge-wm/wm.py'), '--ipc', str(self.ipc)], 'wm')
@@ -92,9 +94,7 @@ class Session:
         if wm.poll() is not None:
             raise RuntimeError('WM failed; see wm.log')
         # Install only the shell family in this dedicated prefix. Runtime overrides select them.
-        for dll in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'linkinfo'):
-            shutil.copyfile(self.prefix / f'drive_c/xp/native/{dll}.dll',
-                            self.prefix / f'drive_c/windows/system32/{dll}.dll')
+        subprocess.run(['python3', str(ROOT / 'prefix/stage.py'), str(self.prefix)], check=True)
         crashes = deque()
         attempt = 0
         while not self.stopping:
@@ -139,10 +139,15 @@ class Session:
     def fallback(self, wm):
         env = dict(self.env)
         env.pop('WIN4WINE_EXTERNAL_SHELL', None)
+        # Native shell COM registrations can also affect builtin explorer. Keep
+        # recovery independent of both the XP files and their registry entries.
+        env['WINEPREFIX'] = str(self.prefix / 'recovery')
         env['WINEDLLOVERRIDES'] = 'explorer,shell32,shdocvw,browseui,shlwapi,comctl32,uxtheme=b;mscoree,mshtml='
+        self.wine_envs.append(env)
         self.status('fallback')
         # A Wine desktop plus file browser and a native terminal gives an escape route.
-        fallback = self.spawn([self.wine, 'explorer', '/desktop=XPRecovery,1280x800', 'H:\\'], 'fallback', env)
+        home = 'Z:' + str(Path.home()).replace('/', '\\')
+        fallback = self.spawn([self.wine, 'explorer', home], 'fallback', env)
         terminal = self.spawn(['xterm', '-title', 'XP shell recovery'], 'recovery-terminal', env)
         while not self.stopping:
             if wm.poll() is not None:

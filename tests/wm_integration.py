@@ -38,7 +38,7 @@ def make(title, x, y, width, height, cls=None):
 windows = []
 try:
     g = root.get_geometry()
-    desktop = make('test desktop', 0, 0, g.width, g.height, 'Progman')
+    desktop = make('test desktop', 0, 0, g.width, g.height, 'PROGMAN')
     dock = make('test tray', 0, g.height-32, g.width, 32, 'Shell_TrayWnd')
     first = make('native first', 30, 40, 300, 200)
     second = make('native second', 360, 40, 300, 200)
@@ -74,6 +74,8 @@ try:
     windows.remove(second)
     d.flush()
     wait(lambda: f'{second.id:x}\t' not in (ipc / 'windows.tsv').read_text(), 'second removed')
+    d.set_input_focus(X.PointerRoot, X.RevertToPointerRoot, X.CurrentTime)
+    d.flush()
     (ipc / 'single.tmp').write_text(f'minimize {first.id:x}\n')
     (ipc / 'single.tmp').replace(ipc / 'single.cmd')
     wait(lambda: prop(first, 'WM_STATE')[:1] == [3], 'single window stays minimized')

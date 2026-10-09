@@ -7,7 +7,7 @@
 | shdocvw | native XP | browseui と同世代のフォルダホスト・内部インターフェースを使う |
 | shell32 | native XP | browseui/shdocvw と同じ XP の名前空間と内部 ordinal の組を保つ |
 | shlwapi | native XP | shell32/browseui の XP 固有 ordinal 依存を同世代で解決する |
-| comctl32 v5/v6 | builtin | クラシックの基準。SxS v6 は別に保持し、system32 に上書きしない |
+| comctl32 | XP shell のみ native v6 | SP3 の 6.0.2600.5512 を C:\xp に配置。Button は Wine 標準。通常アプリは builtin |
 | uxtheme | builtin | クラシックで開始。native のテーマサービス依存を初期経路に入れない |
 | kernel32, ntdll, user32, gdi32, ole32, advapi32 など | builtin | Linux/Wine の基盤。XP のカーネルやサービスを取り込まない |
 | mshtml, mscoree | disabled | IE/CLR は対象外。Mono/Gecko の自動取得を止める |
@@ -104,3 +104,34 @@ XP は子ウィンドウ MSTaskSwWClass で RegisterShellHookWindow する。
 bridge の EnumWindows のみの配信では届かないため、子孫も購読検索の対象にした。
 子ウィンドウ購読に変更した統合試験と、実 XP のメモ帳 / xterm のタスクボタン表示を確認。
 生ログ `.local/bridge-child-integration.log`。
+
+## 調査 9: フォルダの shell endpoint と実行関連付け
+
+native フォルダ生成は COM 登録追加だけではハングした。Wine の desktop manager が
+ShellDDE、ShellWindows、隠し Shell_TrayWnd を同時に所有していたため、外部シェル時だけ
+これらを作らないパッチ 0009 を追加した。**判断: Wine に opt-in shim を足す。**
+native XP が名前空間・フォルダの endpoint を所有し、Wine は X11/clipboard を維持する。
+新規 prefix で H: とサブフォルダの閲覧を確認した。
+
+native ShellExecuteEx は `.exe` の関連付けがないと ERROR_NO_ASSOCIATION (1155) を返した。
+**判断: 最小レジストリを自前生成する。** `.exe/.com` と exefile/open を専用 HKCR に登録。
+メモ帳のメニュー起動で確認した。
+
+## 調査 10: Linux の起動とフォーカス
+
+`start /unix /usr/bin/xterm` では Windows 形式の argv[0] が渡され、起動した xterm が
+WM_DELETE_WINDOW で終了しないケースを実測した。**判断: Linux 側の起動を仲介する。**
+ショートカットを `start /unix /usr/bin/env xterm` とし、終了要求への応答を確認した。
+Wine や Microsoft バイナリのコード解析は行わず、Wine と xterm の公開ソースを照合した。
+ログ `.local/xterm-wine-close-check.py`、`.local/final-m3-native-operations.log`。
+
+proxy が X11 の active 属性だけでフォーカスを取り返すと XP のメニュー操作を妨げた。
+WM は実際の X input focus の所有元も確認し、proxy は遷移時だけ Win32 foreground を更新する。
+PROGMAN のクラス名は大小文字を区別せず処理する。
+
+## 調査 11: 復旧の隔離
+
+XP 用 HKCR を持つ prefix では builtin explorer も表示前に停止した。一方、同じ Wine の
+クリーン prefix では Linux ホームのフォルダを表示できた。
+**判断: 復旧のレジストリも分離する。** 専用 prefix 内の `recovery/` を builtin のみで作成する。
+XP のファイルや COM 登録に依存せず、ネイティブ xterm も同時に開く。

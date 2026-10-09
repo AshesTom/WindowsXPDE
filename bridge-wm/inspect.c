@@ -59,6 +59,18 @@ int wmain(int argc, WCHAR **argv)
         CloseHandle(event);
         return 0;
     }
+    if (!wcscmp(argv[1], L"tasks"))
+    {
+        HWND tray = FindWindowW(L"Shell_TrayWnd", NULL);
+        HWND rebar = FindWindowExW(tray, NULL, L"ReBarWindow32", NULL);
+        HWND tasks = FindWindowExW(rebar, NULL, L"MSTaskSwWClass", NULL);
+        HWND toolbar = FindWindowExW(tasks, NULL, L"ToolbarWindow32", NULL);
+        if (!tray || !rebar || !tasks || !toolbar) return 3;
+        printf("task-count=%ld\n", (long)SendMessageW(toolbar, 0x418, 0, 0));
+        dump(toolbar, 0);
+        return 0;
+    }
+    if (!wcscmp(argv[1], L"foreground")) { dump(GetForegroundWindow(), 0); return 0; }
     if (!wcscmp(argv[1], L"tree")) { EnumWindows(dump, 1); return 0; }
     if (!wcscmp(argv[1], L"dump")) { EnumWindows(dump, 0); return 0; }
     if (!wcscmp(argv[1], L"shortcuts"))
@@ -66,20 +78,31 @@ int wmain(int argc, WCHAR **argv)
         HRESULT a, b;
         CoInitialize(NULL);
         a = shortcut(L"Windows Notepad", L"C:\\windows\\system32\\notepad.exe", L"");
-        b = shortcut(L"Linux Terminal", L"C:\\windows\\system32\\start.exe", L"/unix /usr/bin/xterm");
+        b = shortcut(L"Linux Terminal", L"C:\\windows\\system32\\start.exe", L"/unix /usr/bin/env xterm");
         CoUninitialize();
         return FAILED(a) || FAILED(b);
     }
     if (argc != 3) return 2;
+    if (!wcscmp(argv[1], L"launch"))
+    {
+        SHELLEXECUTEINFOW info = {0};
+        BOOL result;
+        info.cbSize = sizeof(info);
+        info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI;
+        info.lpFile = argv[2];
+        info.nShow = SW_SHOWNORMAL;
+        CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+        SetLastError(0);
+        result = ShellExecuteExW(&info);
+        printf("ShellExecuteEx=%d error=%lu instance=%ld process=%p\n", result, GetLastError(),
+               (long)(intptr_t)info.hInstApp, info.hProcess);
+        if (info.hProcess) CloseHandle(info.hProcess);
+        CoUninitialize();
+        return !result;
+    }
     hwnd = (HWND)(uintptr_t)wcstoul(argv[2], NULL, 16);
     if (!IsWindow(hwnd)) return 3;
-    if (!wcscmp(argv[1], L"measure"))
-    {
-        SIZE size = {0};
-        LRESULT result = SendMessageW(hwnd, 0x1601, 0, (LPARAM)&size);
-        printf("ideal result=%ld size=%ld,%ld\n", (long)result, size.cx, size.cy);
-    }
-    else if (!wcscmp(argv[1], L"minimize")) ShowWindow(hwnd, SW_MINIMIZE);
+    if (!wcscmp(argv[1], L"minimize")) ShowWindow(hwnd, SW_MINIMIZE);
     else if (!wcscmp(argv[1], L"restore")) { ShowWindow(hwnd, SW_RESTORE); SetForegroundWindow(hwnd); }
     else if (!wcscmp(argv[1], L"close")) PostMessageW(hwnd, WM_CLOSE, 0, 0);
     else return 2;

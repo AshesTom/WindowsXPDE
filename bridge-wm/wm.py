@@ -76,13 +76,13 @@ class Manager:
         w.change_property(self.atom(name), kind, 32, data)
 
     def kind(self, w):
-        cls = bytes(self.prop(w, '_WIN4WINE_CLASS')).decode('ascii', 'replace').strip('\0')
+        cls = bytes(self.prop(w, '_WIN4WINE_CLASS')).decode('ascii', 'replace').strip('\0').lower()
         types = self.prop(w, '_NET_WM_WINDOW_TYPE')
-        if cls == 'Win4WineProxy':
+        if cls == 'win4wineproxy':
             return 'proxy'
-        if cls in ('Progman', 'WorkerW') or self.atom('_NET_WM_WINDOW_TYPE_DESKTOP') in types:
+        if cls in ('progman', 'workerw') or self.atom('_NET_WM_WINDOW_TYPE_DESKTOP') in types:
             return 'desktop'
-        if cls == 'Shell_TrayWnd' or self.atom('_NET_WM_WINDOW_TYPE_DOCK') in types:
+        if cls == 'shell_traywnd' or self.atom('_NET_WM_WINDOW_TYPE_DOCK') in types:
             return 'dock'
         return 'normal'
 
@@ -199,6 +199,16 @@ class Manager:
 
     def snapshot(self):
         lines = []
+        focused = self.d.get_input_focus().focus
+        # An XP menu can take focus without changing the EWMH active client.
+        # Do not keep stealing Win32 foreground from that menu back to a proxy.
+        try:
+            while (hasattr(focused, 'id') and focused.id not in (X.NONE, X.PointerRoot, self.root.id)
+                   and focused.id not in self.clients):
+                focused = focused.query_tree().parent
+            focused_id = focused.id if hasattr(focused, 'id') else 0
+        except error.XError:
+            focused_id = 0
         for i, c in self.clients.items():
             w = c['w']
             if c['kind'] != 'normal' or len(self.prop(w, '_WIN4WINE_HWND')):
@@ -211,7 +221,7 @@ class Manager:
             else:
                 name = w.get_wm_name() or ''
             name = name.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')[:500]
-            lines.append(f'{i:x}\t{int(c["hidden"])}\t{int(i == self.active)}\t{name}\n')
+            lines.append(f'{i:x}\t{int(c["hidden"])}\t{int(i == self.active and i == focused_id)}\t{name}\n')
         text = ''.join(lines)
         if text != self.previous_snapshot:
             temp = self.ipc / 'windows.tmp'
@@ -233,6 +243,12 @@ class Manager:
     def event(self, e):
         if e.type == X.MapRequest:
             self.manage(e.window)
+        elif e.type == X.MapNotify:
+            c = self.clients.get(e.window.id)
+            if c and c['kind'] == 'normal' and self.active == e.window.id:
+                # Wine defers WM_TAKE_FOCUS while waiting for the initial map acknowledgement.
+                if self.atom('WM_TAKE_FOCUS') in self.prop(e.window, 'WM_PROTOCOLS'):
+                    self.message(e.window, 'WM_PROTOCOLS', [self.atom('WM_TAKE_FOCUS'), X.CurrentTime, 0, 0, 0])
         elif e.type == X.ConfigureRequest:
             values = {name: getattr(e, name) for bit, name in
                       ((X.CWX, 'x'), (X.CWY, 'y'), (X.CWWidth, 'width'), (X.CWHeight, 'height'),

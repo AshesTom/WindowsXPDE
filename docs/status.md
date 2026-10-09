@@ -7,9 +7,9 @@
 | 段階 | 状態 | 証拠 / 残件 |
 |---|---|---|
 | M0 | 基本経路を実測 | Debian 13 のソースビルド成功、ISO から20ファイル抽出、新規 prefix 生成成功。ログ `.local/prefix-m0-create.log` |
-| M1 | 調査用 prefix で表示・通知が動作 | XP デスクトップ、クラシック Start メニュー、Programs のショートカット、Wine メモ帳のタスクボタンを確認。最新登録一式での新規 prefix 再試験中 |
-| M2 | 調査中 | H: / Personal の設定済み。native フォルダを開く経路に不足 COM とハングが残る |
-| M3 | bridge 単体の往復試験成功 | 実 XP タスクバーにも xterm のボタンを確認。タスクバークリックを含む実 XP での全操作再試験が必要 |
+| M1 | 新規 prefix で実測 | XP デスクトップ、クラシック Start / Programs、メニューから起動した Wine メモ帳のタスクボタン。画像 `.local/final-m1.png` |
+| M2 | 新規 prefix で実測 | マイドキュメントから H: の Linux ホームを表示し、サブフォルダへ移動。画像 `.local/final-m2-home.png` / `final-m2-navigate.png`。メニュー・アドレス欄の描画に欠落あり |
+| M3 | 実 XP と Linux xterm で実測 | Start メニューから起動、Alt+Tab、タスクバー右クリックの最小化・閉じる、左クリック復元を確認。ログ `.local/final-m3-native-operations.log` / `final-m3-alt-tab.log` |
 | M4 | 骨格・復旧試験あり | セッション定義と supervisor 実装済み。ソース Wine と実 DM でのログイン・復旧検証は未完 |
 | M5 | 設定経路のみ | Luna 抽出・設定スクリプトあり。実表示と 150% / 200% は未検証 |
 
@@ -22,3 +22,9 @@
 
 試験用 PE は `tests/build.sh` で `.local/bridge/` に生成する。
 スクリーンショットや生ログは Microsoft のリソースを含み得るため `.local/` にのみ保存する。
+
+## 既知の制限
+
+- アクティブなタスクボタンの左クリックでの最小化は未達。右クリックメニューの最小化と左クリック復元は動く。
+- Linux ウィンドウの装飾は未実装。Alt+左ドラッグで移動、Alt+右ドラッグでサイズ変更。単一 X11 screen のみ検証。
+- 実 SOFTWARE/SYSTEM ハイブの変換、Ubuntu 24.04、Wayland/Xwayland は未検証。

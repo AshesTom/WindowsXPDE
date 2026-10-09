@@ -40,3 +40,8 @@ def install(run):
         key = 'HKCR\\CLSID\\' + clsid + '\\InprocServer32'
         run('reg', 'add', key, '/ve', '/t', 'REG_SZ', '/d', dll, '/f')
         run('reg', 'add', key, '/v', 'ThreadingModel', '/t', 'REG_SZ', '/d', 'Apartment', '/f')
+
+    # Wine's builtin ShellExecute handles executable extensions directly;
+    # native XP ShellExecute requires their explicit association.
+    for extension in ('.exe', '.com'):
+        run('reg', 'add', 'HKCR\\' + extension, '/ve', '/t', 'REG_SZ', '/d', 'exefile', '/f')

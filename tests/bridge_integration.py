@@ -59,6 +59,8 @@ try:
     inspect('restore', hwnd)
     wait(lambda: prop(d.screen().root, '_NET_ACTIVE_WINDOW') == [w.id] and w.get_attributes().map_state == X.IsViewable,
          'proxy restore -> X11 focus')
+    wait(lambda: 'class=Win4WineProxy title=Linux proxy integration' in inspect('foreground'),
+         'native focus mirrors Win32 foreground identity')
     w.set_wm_name('Linux renamed')
     d.flush()
     wait(lambda: 'class=Win4WineProxy title=Linux renamed' in inspect('dump'), 'title propagation')

@@ -9,9 +9,7 @@ case "$profile" in
     *) echo 'Profile must be builtin or shell' >&2; exit 2 ;;
 esac
 if [[ $profile == shell ]]; then
-    for dll in shell32 shdocvw browseui shlwapi linkinfo; do
-        cp -- "$WINEPREFIX/drive_c/xp/native/$dll.dll" "$WINEPREFIX/drive_c/windows/system32/$dll.dll"
-    done
+    python3 "$(dirname -- "$0")/stage.py" "$WINEPREFIX"
 fi
 export WINEDLLOVERRIDES=$overrides
 shift || true

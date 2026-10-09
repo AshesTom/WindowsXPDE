@@ -18,10 +18,10 @@ WM → proxy: `windows.tsv` を同一ディレクトリで atomic rename。行�
 
 proxy → WM: `PID-SEQUENCE.cmd` を atomic rename。内容は `activate|minimize|close XID(hex)`。WM は現在管理する Linux の通常ウィンドウだけを操作し、処理後削除する。proxy は最大 2048 ウィンドウまで。
 
-タイトル変更、破棄、生成、アクティブ変更は SHELLHOOK に変換する。短命ウィンドウはポーリング間で消えることがある。`WH_SHELL` DLL injection は実装しない。native shell が使う hook 経路は実行して検証する必要がある。
+タイトル変更、破棄、生成、アクティブ変更は SHELLHOOK に変換する。短命ウィンドウはポーリング間で消えることがある。`WH_SHELL` DLL injection は実装しない。購読先の子ウィンドウも検索し、実 XP の MSTaskSwWClass への通知を確認した。
 
 ## セッション
 
-ディスプレイマネージャが Xorg と認証を起動し、`session/supervisor.py` が WM → proxy → XP explorer を起動する。WM 所有権取得に失敗したらセッションを中断する。トレイの存在を監視し、起動失敗・消失・proxy 終了時に専用 wineserver を終了して再試行する。120 秒以内に 3 回失敗すると native override と外部 shell フラグを解除し、Wine builtin の仮想デスクトップとホームブラウザ、復旧用 xterm を起動する。セッション終了時に子プロセス・専用 wineserver・IPC を掃除する。
+ディスプレイマネージャが Xorg と認証を起動し、`session/supervisor.py` が WM → proxy → XP explorer を起動する。WM 所有権取得に失敗したらセッションを中断する。トレイの存在を監視し、起動失敗・消失・proxy 終了時に専用 wineserver を終了して再試行する。120 秒以内に 3 回失敗すると native override と外部 shell フラグを解除し、独立した recovery prefix の Wine builtin ホームブラウザと復旧用 xterm を起動する。セッション終了時に子プロセス・専用 wineserver・IPC を掃除する。
 
 Win7 対応時も WM と IPC を維持し、DLL profile、shell readiness class、必要な Wine shim を変更する方針。

@@ -11,7 +11,7 @@
 #include <string.h>
 
 #define MAX_CLIENTS 2048
-struct client { unsigned long xid; HWND hwnd; int seen; int hidden; };
+struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; };
 static struct client clients[MAX_CLIENTS];
 static HWND previous[MAX_CLIENTS];
 static unsigned previous_count;
@@ -92,7 +92,7 @@ static BOOL CALLBACK collect(HWND hwnd, LPARAM unused)
     if (!IsWindowVisible(hwnd) || ((ex & WS_EX_TOOLWINDOW) && !(ex & WS_EX_APPWINDOW))) return TRUE;
     if (GetWindow(hwnd, GW_OWNER) && !(ex & WS_EX_APPWINDOW)) return TRUE;
     GetClassNameW(hwnd, name, 80);
-    if (!wcscmp(name, L"Progman") || !wcscmp(name, L"Shell_TrayWnd") || !wcscmp(name, L"WorkerW")) return TRUE;
+    if (!wcsicmp(name, L"Progman") || !wcsicmp(name, L"Shell_TrayWnd") || !wcsicmp(name, L"WorkerW")) return TRUE;
     if (current_count < MAX_CLIENTS) current[current_count++] = hwnd;
     return TRUE;
 }
@@ -150,7 +150,7 @@ static void snapshot(void)
         if (!c->xid)
         {
             c->xid = xid;
-            c->hwnd = CreateWindowExW(WS_EX_APPWINDOW | WS_EX_NOACTIVATE, L"Win4WineProxy", title,
+            c->hwnd = CreateWindowExW(WS_EX_APPWINDOW, L"Win4WineProxy", title,
                 WS_OVERLAPPEDWINDOW, -32000, -32000, 1, 1, NULL, NULL, GetModuleHandleW(NULL), (void *)(uintptr_t)xid);
             if (!c->hwnd) { c->xid = 0; continue; }
             ShowWindow(c->hwnd, SW_SHOWNOACTIVATE);
@@ -167,6 +167,11 @@ static void snapshot(void)
         c->hidden = hidden;
         if (hidden && !IsIconic(c->hwnd)) ShowWindow(c->hwnd, SW_SHOWMINNOACTIVE);
         else if (!hidden && IsIconic(c->hwnd)) ShowWindow(c->hwnd, SW_SHOWNOACTIVATE);
+        if (active && !c->active)
+        {
+            SetForegroundWindow(c->hwnd);
+        }
+        c->active = active;
         if (active) notify(HSHELL_WINDOWACTIVATED, c->hwnd);
     }
     fclose(file);
