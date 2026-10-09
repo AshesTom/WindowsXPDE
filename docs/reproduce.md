@@ -111,3 +111,50 @@ classic を検査できる。第2引数 1 は Luna API / テーマファイル�
 Wine の更新時は `prefix/stage.py --wine WINE PREFIX` が wine.inf の timestamp を照合し、
 wineboot 更新 → XP COM 再登録 → 専用 wineserver 終了 → native DLL の atomic 配置を行う。
 supervisor / profile.sh から自動実行される。初回の更新には通常起動より時間がかかる。
+
+## 表示修正後の既存 prefix の更新
+
+以前の抽出には `browselc.dll` / `shdoclc.dll` がないため、同じ利用者のローカルメディアを
+**新しい出力先**へ再抽出する。シェルセッションを終了してから以下を実行する。
+`WINEPREFIX` は更新する専用 XP prefix、`WINE` はソースビルド版の絶対パス。
+Microsoft のファイルは元の内容のままコピーする。
+
+```sh
+./extract/extract.py localres/WindowsXPSP3.iso .local/assets-display
+./wine/build.sh > .local/wine-display-build.log 2>&1
+./bridge-wm/build.sh
+./tests/build.sh
+WINEPREFIX="$WINEPREFIX" "$(dirname "$WINE")/wineserver" -k
+WINEPREFIX="$WINEPREFIX" "$(dirname "$WINE")/wineserver" -w
+cp .local/assets-display/system32/{browselc,shdoclc}.dll "$WINEPREFIX/drive_c/xp/native/"
+./prefix/stage.py --wine "$WINE" "$WINEPREFIX"
+```
+
+stage は資源 DLL も atomic 配置し、registry profile version の変更を Wine 更新と別に検出する。
+新規 prefix は `create.py` が資源不足を開始前に拒否する。全体の override は builtin、
+XP explorer の AppDefaults だけ native。復旧 prefix には導入しない。
+
+クラシックな外観とスタートメニューの形式は独立して指定できる。
+通常 XP Start は表示に黒い領域が残るため、既定はクラシック Start とする。
+
+```sh
+WINE="$WINE" WINEPREFIX="$WINEPREFIX" ./prefix/display.py --theme classic --dpi 96 --menu classic
+# 部分対応の通常 XP Start を調べる場合は --menu xp。その後専用セッションを再起動する。
+```
+
+`--menu` は専用 helper が native shell32 の公開 SHGetSetSettings / SSF_STARTPANELON を呼び、
+設定を読み戻す。レジストリの ShellState バイナリを手作業で書き換えない。
+
+表示 API 試験は同じ専用 prefix、独立 X display で行う。
+
+```sh
+WIN4WINE_EXTERNAL_SHELL=1 WINEDLLOVERRIDES='explorer=b;mscoree,mshtml=' \
+  "$WINE" .local/bridge/system-menu-test.exe
+WIN4WINE_EXTERNAL_SHELL=1 WINEDLLOVERRIDES='comctl32=n;explorer=b;mscoree,mshtml=' \
+  "$WINE" .local/bridge/rebar-test.exe
+XP_BRIDGE_DIR=/absolute/private/ipc python3 tests/xterm_redraw.py
+```
+
+最後の試験には起動済み WM が必要。xterm の画面だけを一度消して、フォーカス変更で
+文字が入力なしで戻ることを検査する。対象は試験自身が起動した xterm に限定する。
+実 XP の左クリック操作、フォルダ移動、残る通常 Start の描画は別途画面で確認する。

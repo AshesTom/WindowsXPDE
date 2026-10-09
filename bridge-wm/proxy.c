@@ -15,6 +15,8 @@ struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; 
 static struct client clients[MAX_CLIENTS];
 static HWND previous[MAX_CLIENTS];
 static unsigned previous_count;
+static WCHAR previous_titles[MAX_CLIENTS][512];
+static WCHAR current_titles[MAX_CLIENTS][512];
 static HWND current[MAX_CLIENTS];
 static unsigned current_count;
 static HWND last_foreground;
@@ -93,7 +95,12 @@ static BOOL CALLBACK collect(HWND hwnd, LPARAM unused)
     if (GetWindow(hwnd, GW_OWNER) && !(ex & WS_EX_APPWINDOW)) return TRUE;
     GetClassNameW(hwnd, name, 80);
     if (!wcsicmp(name, L"Progman") || !wcsicmp(name, L"Shell_TrayWnd") || !wcsicmp(name, L"WorkerW")) return TRUE;
-    if (current_count < MAX_CLIENTS) current[current_count++] = hwnd;
+    if (current_count < MAX_CLIENTS)
+    {
+        current[current_count] = hwnd;
+        GetWindowTextW(hwnd, current_titles[current_count], 512);
+        current_count++;
+    }
     return TRUE;
 }
 
@@ -111,7 +118,12 @@ static void shell_events(void)
     current_count = 0;
     EnumWindows(collect, 0);
     for (i = 0; i < current_count; ++i)
-        if (!contains(previous, previous_count, current[i])) notify(HSHELL_WINDOWCREATED, current[i]);
+    {
+        unsigned j;
+        for (j = 0; j < previous_count && previous[j] != current[i]; ++j) {}
+        if (j == previous_count) notify(HSHELL_WINDOWCREATED, current[i]);
+        else if (wcscmp(previous_titles[j], current_titles[i])) notify(HSHELL_REDRAW, current[i]);
+    }
     for (i = 0; i < previous_count; ++i)
         if (!contains(current, current_count, previous[i])) notify(HSHELL_WINDOWDESTROYED, previous[i]);
     foreground = GetForegroundWindow();
@@ -121,6 +133,7 @@ static void shell_events(void)
         last_foreground = foreground;
     }
     memcpy(previous, current, current_count * sizeof(HWND));
+    memcpy(previous_titles, current_titles, current_count * sizeof(current_titles[0]));
     previous_count = current_count;
 }
 

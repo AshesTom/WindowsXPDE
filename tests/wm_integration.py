@@ -26,7 +26,7 @@ def prop(w, name):
 
 def make(title, x, y, width, height, cls=None):
     w = root.create_window(x, y, width, height, 0, X.CopyFromParent, X.InputOutput, X.CopyFromParent,
-                           background_pixel=0x406080)
+                           background_pixel=0x406080, event_mask=X.StructureNotifyMask)
     w.set_wm_name(title)
     if cls:
         w.change_property(atom('_WIN4WINE_CLASS'), Xatom.STRING, 8, cls.encode())
@@ -48,6 +48,16 @@ try:
     wait(lambda: f'{first.id:x}\t' in (ipc / 'windows.tsv').read_text(), 'native snapshot')
     assert f'{dock.id:x}\t' not in (ipc / 'windows.tsv').read_text()
     wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [second.id], 'initial focus')
+    first.configure(x=70, y=80)
+    d.flush()
+    def configured():
+        found = False
+        while d.pending_events():
+            event = d.next_event()
+            if event.type == X.ConfigureNotify and event.window.id == first.id and event.send_event:
+                found |= (event.x, event.y, event.width, event.height) == (70, 80, 300, 200)
+        return found
+    wait(configured, 'synthetic ConfigureNotify has root coordinates')
     subprocess.run(['xdotool', 'key', 'alt+Tab'], check=True)
     wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [first.id], 'Alt+Tab cycles native windows')
     subprocess.run(['xdotool', 'key', 'alt+shift+Tab'], check=True)

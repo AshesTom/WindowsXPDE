@@ -13,7 +13,9 @@ def prepare(prefix, wine):
     inf = wine.parent.parent / 'share/wine/wine.inf'
     timestamp = prefix / '.update-timestamp'
     current = timestamp.read_text().strip() if timestamp.is_file() else ''
-    if inf.is_file() and current == str(int(inf.stat().st_mtime)):
+    version = prefix / '.xp-registry-version'
+    wine_current = inf.is_file() and current == str(int(inf.stat().st_mtime))
+    if wine_current and version.is_file() and version.read_text().strip() == str(registry.VERSION):
         return
     env = dict(os.environ, WINEPREFIX=str(prefix), WINEARCH='win32',
                WINEDLLOVERRIDES='explorer,shell32,shdocvw,browseui,shlwapi,comctl32,uxtheme=b;mscoree,mshtml=',
@@ -23,10 +25,14 @@ def prepare(prefix, wine):
                        stdout=subprocess.DEVNULL)
     # Wine upgrades may replace both DLL images and shell COM registrations.
     # Complete that update before restoring the native shell profile.
-    print('Updating dedicated prefix for the installed Wine', flush=True)
+    print('Updating dedicated prefix Wine/XP registry profile', flush=True)
     try:
-        run('wineboot', '-u')
+        if not wine_current:
+            run('wineboot', '-u')
         registry.install(run)
+        temp = version.with_suffix('.tmp')
+        temp.write_text(str(registry.VERSION) + '\n')
+        temp.replace(version)
     finally:
         server = str(wine.with_name('wineserver'))
         subprocess.run([server, '-k'], env=env, check=True, timeout=15)
@@ -35,8 +41,11 @@ def prepare(prefix, wine):
 def stage(prefix):
     if not (prefix / 'xp-shell.json').is_file():
         raise SystemExit('Not a dedicated XP prefix')
+    for name in ('browselc', 'shdoclc'):
+        if not (prefix / f'drive_c/xp/native/{name}.dll').is_file():
+            raise SystemExit(f'Missing {name}.dll: re-extract local XP media and add it to C:\\xp\\native')
     system = prefix / 'drive_c/windows/system32'
-    for name in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'linkinfo'):
+    for name in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'linkinfo', 'browselc', 'shdoclc'):
         source = prefix / f'drive_c/xp/native/{name}.dll'
         target = system / f'{name}.dll'
         if target.is_file() and filecmp.cmp(source, target, shallow=False):

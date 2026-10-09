@@ -6,6 +6,7 @@
 | browseui | native XP | builtin の ordinal 107 が起動直後に未実装中断。単純な成功応答ではフォルダ構築を代替できない |
 | shdocvw | native XP | browseui と同世代のフォルダホスト・内部インターフェースを使う |
 | shell32 | native XP | browseui/shdocvw と同じ XP の名前空間と内部 ordinal の組を保つ |
+| browselc, shdoclc | native XP の資源 | 同じ ISO の日本語メニュー・文字・アイコン。コードの追加取得や IE renderer 導入はしない |
 | shlwapi | native XP | shell32/browseui の XP 固有 ordinal 依存を同世代で解決する |
 | comctl32 | XP shell のみ native v6 | SP3 の 6.0.2600.5512 を C:\xp に配置。Button は Wine 標準。通常アプリは builtin |
 | uxtheme | builtin | クラシックで開始。native のテーマサービス依存を初期経路に入れない |
@@ -154,3 +155,47 @@ Wine の prefix 自動更新は DLL と COM 登録を入れ替えるため、先
 wine.inf と `.update-timestamp` を照合し、不一致時のみ builtin wineboot を完了させ、
 自前 COM 登録を再適用し、専用 wineserver を終了してから native DLL を atomic 配置する。
 VM で timestamp 不一致を作り、同じセッションから XP Shell / Start が再度動くことを確認した。
+
+## 調査 14: フォルダの資源と ReBar 配置
+
+公開 API trace の LoadMenuW / LoadStringW が資源用 module NULL のまま失敗していた。
+同じ ISO の `browselc.dll` / `shdoclc.dll` を無改変で加えると、日本語メニュー・
+ツールバーの文字・初期ウィンドウ名・アイコンが表示された。
+**判断: ローカル資源 DLL を抽出・専用 prefix へ配置する。**
+既存 prefix にも AppDefaults の native 選択と全体の builtin 選択を適用する。
+IE/CLR の disabled 方針は変えない。
+
+アドレス欄は別問題で、親 WorkerW の上端から ReBar が32pxずれていた。
+自作の公開 CreateWindowExW / GetWindowRect / MapWindowPoints probe では、
+native SP3 v6 の配置 bits=0 で初期高さ36px分移動し、明示 CCS_TOP では y=0 となる。
+その後の native browseui の SWP_NOMOVE がずれを保持する。
+**判断: 外部シェルの名前付き子 ReBar にだけ、未指定時の CCS_TOP を明示する（0011）。**
+明示した CCS_NOMOVEY 等は変えない。実フォルダと native バンドの試験で確認した。
+[公開 common-control styles](https://learn.microsoft.com/en-us/windows/win32/controls/common-control-styles) と
+Wine の ReBar ソースを参照。Microsoft の実装コードは解析していない。
+
+## 調査 15: タスクボタンの左クリック
+
+実 XP の WM_COMMAND 処理が、別プロセスへの GetSystemMenu の未対応で止まっていた。
+**判断: 外部シェル opt-in の標準システムメニュー snapshot（0010）。**
+Wine のメニューはプロセス内のデータなので、本物の他プロセスメニューを共有した扱いにはしない。
+最大2048個をロック付きで保持し、消失した HWND を回収する。
+WS_MINIMIZEBOX / WS_MAXIMIZEBOX を反映し、revert は呼出側のコピーだけを破棄する。
+アプリ独自の項目・無効化は未対応。通常の Wine には適用しない。
+VM のメモ帳と xterm の実ボタンで左クリック最小化・復元を実測した。
+
+## 調査 16: 通常 Start と再描画
+
+通常の XP Start のため、shell32 が公開 factory を提供する
+`{D912F8CF-0396-4915-884E-FB425D32943B}` を追加登録した。
+profile version を Wine の timestamp と別に保存し、既存 prefix の登録も更新する。
+`NoSimpleStartMenu=0` だけでは選択されず、公開
+[SSF_STARTPANELON](https://learn.microsoft.com/ja-jp/windows/win32/shell/ssf-constants) の設定・読戻しが必要だった。
+`prefix/menu-settings.c` が専用 helper の native shell32 だけを使って設定する。
+右側の一覧は表示するがユーザー欄・左側・下部は黒い。Luna でも未解決。
+SxS native Button は例外が再発し、v5 controls はアイコン等を欠くため採用しない。
+
+xterm の描画用子ウィンドウに Expose を配信することで、文字バッファを保った画面消失から
+入力なしで復帰することを Xvfb / VM で確認した。WM のフォーカス・サイズ変更に限定し、
+Wine の HWND があるウィンドウには適用しない。定期的な画面消去やキー入力で隠さない。
+VGA/Xorg の元のイベント不足の原因は未特定で、全 Linux アプリの描画保証ではない。

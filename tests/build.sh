@@ -2,7 +2,7 @@
 set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 mkdir -p "$root/.local/bridge"
-for name in shellhook button-size; do
+for name in shellhook button-size system-menu rebar; do
     "${MINGW_CC:-i686-w64-mingw32-gcc}" -std=c11 -Wall -Wextra -Werror -O2 -municode \
         "$root/tests/$name.c" -o "$root/.local/bridge/$name-test.exe" -luser32 -lgdi32
 done

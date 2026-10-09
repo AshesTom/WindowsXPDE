@@ -59,7 +59,8 @@ try:
             break
     assert status()['state'] == 'fallback'
     wait(visible_recovery, 'mapped builtin browser and native recovery terminal')
-    assert (prefix / 'recovery/user.reg').is_file()
+    # First-run Wine registry persistence can follow the initial mapped windows.
+    wait(lambda: (prefix / 'recovery/user.reg').is_file(), 'recovery registry persistence')
     assert not (prefix / 'recovery/drive_c/xp').exists()
     print('PASS: bounded shell restarts, independent builtin browser, native terminal')
 finally:

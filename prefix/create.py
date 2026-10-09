@@ -17,6 +17,9 @@ def create(assets, dest, home, wine):
     records = json.loads((assets / 'manifest.json').read_text())
     if not records or not (assets / 'windows/explorer.exe').is_file():
         raise SystemExit('Incomplete XP assets')
+    for name in ('browselc.dll', 'shdoclc.dll'):
+        if not (assets / 'system32' / name).is_file():
+            raise SystemExit(f'Missing {name}: re-extract your local XP media')
     dest.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, WINEPREFIX=str(dest), WINEARCH='win32',
                WINEDLLOVERRIDES='mscoree,mshtml=', WINEDEBUG=os.environ.get('WINEDEBUG', '-all'))
@@ -64,7 +67,7 @@ def create(assets, dest, home, wine):
     reg(r'HKCU\Software\Wine', 'Version', 'winxp')
     for dll in ('mscoree', 'mshtml'):
         reg(r'HKCU\Software\Wine\DllOverrides', dll, '')
-    for dll in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'comctl32', 'linkinfo'):
+    for dll in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'comctl32', 'linkinfo', 'browselc', 'shdoclc'):
         reg(r'HKCU\Software\Wine\DllOverrides', dll, 'builtin')
         reg(r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides', dll, 'native')
         shutil.copyfile(native / (dll + '.dll'), system / (dll + '.dll'))
@@ -78,6 +81,7 @@ def create(assets, dest, home, wine):
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoSimpleStartMenu', '1', 'REG_DWORD')
     reg(r'HKCU\Control Panel\Desktop', 'LogPixels', '96', 'REG_DWORD')
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced', 'WebView', '0', 'REG_DWORD')
+    (dest / '.xp-registry-version').write_text(str(registry.VERSION) + '\n')
     (dest / 'xp-shell.json').write_text(json.dumps({'assets': str(assets), 'home': str(home),
                                                    'wine': wine, 'profile': 'shell'}, indent=2) + '\n')
     print(f'Prefix ready: {dest}')

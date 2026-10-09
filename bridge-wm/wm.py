@@ -92,7 +92,7 @@ class Manager:
             w.map()
             return
         if w.id not in self.clients:
-            self.clients[w.id] = {'w': w, 'hidden': False, 'kind': self.kind(w), 'restore': None}
+            self.clients[w.id] = {'w': w, 'hidden': False, 'kind': self.kind(w), 'restore': None, 'geometry': None}
             w.change_attributes(event_mask=X.PropertyChangeMask | X.FocusChangeMask)
             w.grab_button(1, 0, True, X.ButtonPressMask, X.GrabModeSync, X.GrabModeAsync, X.NONE, X.NONE)
         client = self.clients[w.id]
@@ -107,6 +107,34 @@ class Manager:
             self.focus(w)
         self.restack()
         self.workarea()
+
+    def redraw_native(self, w):
+        # Wine keeps its own window surfaces. Native clients (notably xterm on
+        # the VM's VGA path) can retain stale pixels after resize/activation.
+        # Ask exposed descendants to repaint without clearing their contents or
+        # injecting input. A terminal's drawing window is a child of its client.
+        if len(self.prop(w, '_WIN4WINE_HWND')):
+            return
+        pending = [w]
+        for _ in range(2048):
+            if not pending:
+                break
+            child = pending.pop()
+            if child.get_attributes().map_state != X.IsViewable:
+                continue
+            r = child.get_geometry()
+            child.send_event(protocol.event.Expose(window=child, x=0, y=0,
+                             width=r.width, height=r.height, count=0), event_mask=X.ExposureMask)
+            pending.extend(child.query_tree().children)
+
+    def configure_notify(self, w):
+        # ICCCM: report root coordinates even when a move/stack request did not
+        # generate a size change for the client. This WM does not reparent.
+        r = w.get_geometry()
+        w.send_event(protocol.event.ConfigureNotify(event=w, window=w,
+                     above_sibling=X.NONE, x=r.x, y=r.y, width=r.width,
+                     height=r.height, border_width=r.border_width,
+                     override=False), event_mask=X.StructureNotifyMask)
 
     def focus(self, w):
         c = self.clients.get(w.id)
@@ -125,6 +153,7 @@ class Manager:
         self.active = w.id
         self.setprop(self.root, '_NET_ACTIVE_WINDOW', Xatom.WINDOW, [w.id])
         self.restack()
+        self.redraw_native(w)
 
     def message(self, w, name, values):
         w.send_event(protocol.event.ClientMessage(window=w, client_type=self.atom(name), data=(32, values)))
@@ -257,6 +286,8 @@ class Manager:
             e.window.configure(**values)
             self.restack()
             self.workarea()
+            if e.window.id in self.clients:
+                self.configure_notify(e.window)
         elif e.type == X.DestroyNotify:
             self.clients.pop(e.window.id, None)
             if self.active == e.window.id:
@@ -304,8 +335,16 @@ class Manager:
             if self.clients[e.window.id]['kind'] == 'normal':
                 self.active = e.window.id
                 self.setprop(self.root, '_NET_ACTIVE_WINDOW', Xatom.WINDOW, [self.active])
-        elif e.type == X.ConfigureNotify and e.window.id == self.root.id:
-            self.workarea()
+        elif e.type == X.ConfigureNotify:
+            if e.window.id == self.root.id:
+                self.workarea()
+            elif not e.send_event and e.window.id in self.clients:
+                c = self.clients[e.window.id]
+                size = (e.width, e.height)
+                if c['geometry'] != size:
+                    c['geometry'] = size
+                    if c['kind'] == 'normal' and not c['hidden']:
+                        self.redraw_native(e.window)
         elif e.type == X.ClientMessage:
             values = e.data[1]
             if e.client_type == self.atom('_NET_ACTIVE_WINDOW'):
