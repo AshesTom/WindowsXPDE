@@ -1,0 +1,32 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] win32u: hit-test the release of a caption right click with WM_NCHITTEST
+
+Purpose: open the taskbar menu when the unlocked XP taskbar is right
+clicked between its bands. That taskbar has no WS_CAPTION; its own
+WM_NCHITTEST returns HTCAPTION there so it can be dragged. DefWindowProc
+entered the WM_NCRBUTTONDOWN capture loop for HTCAPTION, but tested the
+button-up point with Wine's internal default hit test, which only knows
+WS_CAPTION windows. It returned HTCLIENT, so WM_CONTEXTMENU was never
+sent and nothing appeared. Windows sends WM_CONTEXTMENU for the right
+button release in the caption (documented for WM_NCRBUTTONUP); ask the
+window with WM_NCHITTEST, as the button-down test did.
+tests/nc-context-menu.c covers a captionless popup that returns HTCAPTION.
+No Microsoft binary is changed.
+Reference: https://learn.microsoft.com/en-us/windows/win32/menurc/wm-contextmenu
+
+diff --git a/dlls/win32u/defwnd.c b/dlls/win32u/defwnd.c
+index 84205fa..d0775ba 100644
+--- a/dlls/win32u/defwnd.c
++++ b/dlls/win32u/defwnd.c
+@@ -2294,7 +2294,10 @@ static LRESULT handle_nc_rbutton_down( HWND hwnd, WPARAM wparam, LPARAM lparam )
+             if (NtUserCallMsgFilter( &msg, MSGF_MAX )) continue;
+             if (msg.message == WM_RBUTTONUP)
+             {
+-                hittest = handle_nc_hit_test( hwnd, msg.pt );
++                /* Ask the window, as the button-down hit test did. A window
++                 * without WS_CAPTION may return HTCAPTION from its own
++                 * WM_NCHITTEST, as the unlocked XP taskbar does. */
++                hittest = send_message( hwnd, WM_NCHITTEST, 0, MAKELPARAM( msg.pt.x, msg.pt.y ));
+                 break;
+             }
+         }

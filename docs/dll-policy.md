@@ -585,3 +585,8 @@ Wine は元画像側の DC の伸縮 mode を変えていたが、StretchBlt は
 Luna の caption button は 9/13/19/23px の glyph を持つ。Wine は21×21の外形で選んで19px を使い、
 記号が大きく見えた。実XPは同寸法で13px を使い、2px の内容余白を除いた17×17での選択と一致する。
 144/192 DPI の32/42px button は従来どおり23px glyph。公開APIと画面の比較だけで判断した。
+
+**判断: 0047は caption の右クリックを離した位置を WM_NCHITTEST で判定する。**
+固定解除した XP タスクバーは WS_CAPTION を持たず、自身の WM_NCHITTEST で帯の間を HTCAPTION とする。
+Wine の DefWindowProc は押下時はその値で capture loop に入るが、離した位置は内部の既定判定で調べ、
+HTCLIENT となって WM_CONTEXTMENU を送らなかった。押下時と同じく window に問い合わせる。
