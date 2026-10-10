@@ -109,9 +109,36 @@ Microsoft の画像を Python で模写・再配布する方式ではなく、�
 通常の Wine HWND も前回のタイトルを比較し、生成後に付いたフォルダ名や移動後の名前を通知する。比較は WinEvent を受けた時に行うので、
 WinEvent の処理より先に生成から破棄まで終わる短命ウィンドウは通知しないことがある。`WH_SHELL` DLL injection は実装しない。購読先の子ウィンドウも検索し、実 XP の MSTaskSwWClass への通知を確認した。
 
+## Linux のトレイアイコン（段階 6）
+
+`bridge-wm/tray.py`（python3-gi の Gio と GdkPixbuf）は、セッションバスで `org.kde.StatusNotifierWatcher` を所有し、自身を
+host として登録する。登録された StatusNotifierItem ごとに番号を振り、アイコン・ツールチップ・メニューを IPC ディレクトリへ書く。
+すでに別の watcher（デスクトップ環境のトレイ）がいれば何もせずに終わる。D-Bus と IPC ディレクトリの変更（Gio の
+FileMonitor）でだけ起きる。XEmbed のトレイ（`_NET_SYSTEM_TRAY_S0`）は扱わない。
+
+- tray.py → proxy の `tray.tsv`: `ID TAB 状態 TAB ツールチップ`。状態は A（Active）か N（NeedsAttention）。Passive は載せない。
+- tray.py → proxy の `tray-ID.argb`: アイコン。`W4I1` 形式（WM のウィンドウアイコンと同じ）。大きさは proxy が `tray-size` に書く
+  `SM_CXSMICON`。IconPixmap があればそれを、なければ IconName をアイコンテーマ（IconThemePath、`~/.local/share/icons`、
+  `/usr/share/icons` 以下のすべてのテーマと pixmaps）から探して PNG / SVG を描く。NeedsAttention のときは Attention の画像を先に使う。
+- proxy → tray.py の `*.tray`: `activate ID X Y`（左クリック、ItemIsMenu ならメニュー）、`secondary ID X Y`（中クリック）、
+  `context ID X Y`（右クリック）、`event ID SEQ ITEM`（メニューの選択）。WM の `*.cmd` とは拡張子で分ける。
+- tray.py → proxy の `menu-ID.tsv`: 右クリックのたびに `com.canonical.dbusmenu` の AboutToShow と GetLayout を呼び、先頭の行に
+  連番、続けて `深さ TAB 項目 TAB 印 TAB ラベル`（印は s 区切り、d 無効、c チェック、r ラジオ）を書く。ラベルの `_` は `&` に直す。
+  proxy は自分が求めた連番より新しいものだけを TrackPopupMenu で出し、選んだ項目を `event` で返す。古い連番の選択は捨てる。
+
+proxy は `Win4WineTray` の隠しウィンドウで公開の `Shell_NotifyIconW` を呼び、XP の通知領域にアイコンを追加・更新・削除する。
+XP の Explorer が受け取れる形式で届くのは Wine パッチ 0054 による（Wine の builtin の形式は XP の Explorer が受け付けない）。
+`TaskbarCreated` を受けたら追加し直す。
+
 ## セッション
 
-ディスプレイマネージャが Xorg と認証を起動し、`session/supervisor.py` が WM → proxy → XP explorer を起動する。WM 所有権取得に失敗したらセッションを中断する。トレイの存在を監視し、起動失敗・消失・proxy 終了時に専用 wineserver を終了して再試行する。120 秒以内に 3 回失敗すると native override と外部 shell フラグを解除し、独立した recovery prefix の Wine builtin ホームブラウザと復旧用 xterm を起動する。セッション終了時に子プロセス・専用 wineserver・IPC を掃除する。
+ディスプレイマネージャが Xorg と認証を起動し、`session/supervisor.py` が WM → tray.py → 入力メソッド → proxy → XP explorer を起動する。WM 所有権取得に失敗したらセッションを中断する。トレイの存在を監視し、起動失敗・消失・proxy 終了時に専用 wineserver を終了して再試行する。120 秒以内に 3 回失敗すると native override と外部 shell フラグを解除し、独立した recovery prefix の Wine builtin ホームブラウザと復旧用 xterm を起動する。セッション終了時に子プロセス・専用 wineserver・IPC を掃除する。
+
+`session.json` の `input_method` が `fcitx5` なら、`XMODIFIERS=@im=fcitx`、`GTK_IM_MODULE`・`QT_IM_MODULE`・`SDL_IM_MODULE=fcitx` を
+Wine と Linux アプリの環境に入れ、fcitx5 を起動して見張る（120 秒に 3 回まで起動し直す）。ログイン側（im-config など）がすでに
+これらの変数を設定していればそれに従い、XIM サーバー `@server=fcitx` がすでにあれば起動しない。`linux_font`（既定 `MS UI Gothic`、
+`null` で無効）は、prefix の `windows/Fonts` を加え、sans-serif・Sans・system-ui にその字体を優先する fontconfig の設定を
+状態ディレクトリに作り、`FONTCONFIG_FILE` で渡す。システムと利用者の fontconfig の設定は include で引き続き効く。
 
 Win7 対応時も WM と IPC を維持し、DLL profile、shell readiness class、必要な Wine shim を変更する方針。
 

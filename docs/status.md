@@ -992,3 +992,62 @@ Wine のパッチは変えていない。
 - `prefix/create.py` で 11.0 の新規 prefix を作れた（registry profile 23、`win4wine-controls.dll` は comctl32_v6 の写し）。
 - 入れ替えの2回目では、セッションの stage より先に prefix が更新され、registry profile が入れ直されずにデスクトップの名前が
   英語になった。`wine.inf` の時刻を新しくして stage を走らせると直った。原因は未特定（`docs/reproduce.md` に手順を書いた）。
+
+## 日本語入力（2026-10-10、段階 6）
+
+fcitx5 と Mozc で、XP シェル上の Linux アプリと Wine のアプリの両方で日本語を変換・確定できるようにし、入力モードを XP の
+通知領域に出した。パッチは 55 本（0026・0027 を加え、0053 を広げた。対応は `docs/patches.md` の「段階 6」）。判断は
+`docs/dll-policy.md`、手順は `docs/reproduce.md`。
+
+- 試験 VM（Debian 13、ネットワークなし）に fcitx5 5.1.12、fcitx5-mozc 2.29、GTK3/4 のフロントエンド、fcitx5-config-qt、
+  locales、Chromium、fonts-ipafont-gothic、python3-gi と gdk-pixbuf・librsvg を入れた。.deb はホストで取得した。
+  VM には ja_JP.UTF-8 のロケールが生成されておらず、session.json の `locale` で Wine に渡していた `ja_JP.UTF-8` は
+  setlocale に失敗していた（XIM が C ロケールで開く）。ja_JP.UTF-8 と en_US.UTF-8 を生成した。
+- 入力の経路（upstream のまま）: 11.0 の winex11 は XIM の preedit/status のコールバックを求めるが、fcitx5 の XIM は
+  over-the-spot と root しか出さず、`preedit position, status area` が選ばれる。変換中の文字列と候補は fcitx5 の窓に出る。
+  Wine のメモ帳、「ファイル名を指定して実行」、フォルダウィンドウのアドレスバー（XP の browseui）、Chromium
+  （GTK の IM モジュール、on-the-spot）で、変換・候補の選択・確定ができた。
+- 53 本のパッチは XIM と IME の経路（xim.c、ime.c、imm32）に触れていない。見つかった次の問題は upstream（11.0 と master）と
+  同じ挙動だった:
+  - XIC は最初のキー入力やフォーカスで作られ、それより前にアプリが指定した変換位置は捨てられていた。ウィンドウの最初の変換だけ
+    文字列が窓の左上（メモ帳ではタイトルバーの上）に出た。0027 で覚えておき、XIC を作るときに渡すようにした。修正後は
+    最初の変換から編集領域のキャレットの位置に出る。
+- session（`session/supervisor.py`）: `input_method: "fcitx5"` で IM の環境変数を設定し、fcitx5 を起動・見張る。fcitx5 は
+  session.json の `locale` で動くので、初回に「キーボード - 英語 (US)」と「Mozc」の組が作られる。Ctrl+Space で切り替える。
+  LightDM は `/etc/X11/Xsession` を通すので、im-config を入れればそちらで設定・起動されるが、im-config は入れず supervisor で
+  管理する（利用者の判断）。ログインが先に変数を設定していれば従う。
+- Linux アプリの字体: `linux_font`（既定 MS UI Gothic）で prefix の `windows/Fonts` を fontconfig に加え、sans-serif に優先する。
+  fcitx5 の候補ウィンドウと Chromium の UI が MS UI Gothic になった。`FONTCONFIG_FILE` は Wine にも渡るが、XP シェルの
+  場面は下のとおり変わらない（同じファイルの字体は Wine が重ねて読まない）。
+- 通知領域（利用者の判断で StatusNotifierItem を XP のトレイへ）: `bridge-wm/tray.py` が SNI の watcher と host になり、proxy が
+  Shell_NotifyIconW で XP の通知領域に出す（`docs/architecture.md`）。fcitx5 は今の入力メソッドのテーマのアイコンを出すので、
+  Mozc（ひらがな）では橙の「あ」、直接入力ではキーボードのアイコンになり、フォーカスのある入力欄に合わせて変わる。
+  左クリックで切り替え、右クリックで fcitx5 のメニュー（入力メソッドの一覧、設定、再起動、閉じる）が XP のメニューで出る。
+  - Wine の builtin の Shell_NotifyIconW は Wine 独自の形式で送るため、XP の Explorer が受け付けず失敗していた（Wine の
+    Win32 アプリのアイコンも出ていなかった）。実XPでおとりの Shell_TrayWnd に XP の shell32 が送るデータを受け取らせて形式を
+    測り（署名 0x34753423、メッセージ、952 バイトの NOTIFYICONDATAW、`tests/` ではなく段階 6 のプローブ）、0026 で opt-in 時に
+    同じ形式で送るようにした（利用者の判断）。
+  - アイコンの背景が黒かった。通知領域のツールバー（TrayNotify のテーマ、ダブルバッファ）は、パーツ 0 の BgType が None の
+    とき親の背景で塗る。実XPの uxtheme はこのパーツを部分的に透明と答えるが、Wine は不透明と答えていた
+    （`tests/theme-part-pixels.c`、XP は partial=1、Wine は 0）。XP の comctl32 v6 のツールバーとページャ自体は Wine でも実XPと
+    同じく親に WM_PRINTCLIENT を送っていた（段階 6 のプローブ）。0053 で None を部分的に透明と答え、通知領域の子には
+    TrayNotify の背景を描くようにした（以前は通知領域の中にもタスクバーの濃い青を描いていた）。
+  - `tests/notify-icon.c` は透明なアイコンを追加し、そのボタンの画素を TrayNotify の背景と比べる。実XPと修正後の Wine の両方で
+    PASS し、ボタンは同じ位置 (19,6)-(37,24)、左上の色も同じ（ed9713）。opt-in なしの Wine では追加に失敗する。
+  - proxy は、タスクバーの準備中に NIM_ADD が失敗扱いになっても Explorer には登録されていることがあったので、NIM_ADD が失敗したら
+    NIM_MODIFY を試す。古いアイコンは NIM_MODIFY の後で破棄する。
+  - `tests/tray_host.py`（chroot、専用のセッションバス）で tray.py の画像・ツールチップ・状態・クリック・メニュー・後始末を確かめた。
+- 前後の比較（試験 VM、段階 6 より前の 11.0 と supervisor・proxy で撮った `localres/stage6/s6a-*` と、段階 6 の `s6f-*`）:
+  - デスクトップ、スタートメニュー、デスクトップの右クリックメニュー、「ファイル名を指定して実行」、全部閉じた後は、通知領域
+    （アイコンが増えた分と時計）以外は0画素差。Alt+Tab の切り替えウィンドウも0画素差。
+  - フォルダウィンドウは XP Explorer が覚えた位置が 29px ずつずれていた。位置を合わせると、マウスポインタとツールチップの周り
+    だけが違う。
+  - VM の非クライアント領域の試験は段階 5 と handle を除いて一致（既知の失敗も同じ）。
+  - chroot の Xvfb で `tests/wm_integration.py`、`tests/native_frames.py`（Luna と Classic）、`tests/xterm_redraw.py`、
+    `tests/bridge_integration.py` が成功し、数値も段階 5 と同じ（`.local/stage6-bridge-tests.log`）。最初の実行では、試験用の prefix が
+    新しい install で更新され、その途中の「Wine Mono Installer」の窓が試験の X 画面に出て3つ失敗した（段階 5 の install でも同じ）。
+    クラシックの試験用 prefix は更新の途中で Wine 11 の light テーマの色と寸法になったので、段階 5 と同じく 10.0 版の写しから作り直した
+    （`docs/reproduce.md`）。
+- 未改変の 11.0 に `wine/build.sh` で 55 本が当たり、当てたツリーは移植用ブランチと一致した。新しいソースとビルドディレクトリで
+  configure から全体をビルドし（`.local/wine-stage6-install`）、警告は upstream の bison の 14 件だけ。
+- Linux アプリを XP の「ファイル名を指定して実行」から Unix のパスで起動することはできない（段階 6 以前から。範囲外）。

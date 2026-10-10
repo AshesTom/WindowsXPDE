@@ -28,6 +28,7 @@ compile "$root/.local/bridge/text-underline-test.exe" -municode "$root/tests/tex
 compile "$root/.local/bridge/foreground-focus-test.exe" -mwindows "$root/tests/foreground-focus.c" -luser32
 compile "$root/.local/bridge/alpha-blend-test.exe" "$root/tests/alpha-blend.c" -lgdi32
 compile "$root/.local/bridge/part-black-test.exe" "$root/tests/part-black.c" -luxtheme -lgdi32 -luser32
+compile "$root/.local/bridge/notify-icon-test.exe" "$root/tests/notify-icon.c" -luxtheme -lshell32 -lgdi32 -luser32
 compile "$root/.local/bridge/theme-threads-test.exe" "$root/tests/theme-threads.c" -luxtheme -lgdi32 -luser32
 compile "$root/.local/bridge/menu-layout-test.exe" "$root/tests/menu-layout.c" -luser32 -lgdi32
 compile "$root/.local/bridge/class-probe.exe" -municode "$root/prefix/class-probe.c" -lole32 -luuid

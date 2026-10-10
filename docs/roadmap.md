@@ -149,6 +149,10 @@
 
 ## 段階 6: Mozc（日本語入力）
 
+状態: 2026-10-10 完了。fcitx5 と Mozc で Linux アプリ（Chromium）と Wine のアプリ（メモ帳、「ファイル名を指定して実行」、
+アドレスバー）の変換・確定ができ、入力モードを XP の通知領域に出した。パッチは 55 本。結果は `docs/status.md` の
+「日本語入力（2026-10-10、段階 6）」、判断は `docs/dll-policy.md`、手順は `docs/reproduce.md`。
+
 目的: XP シェル上の Linux アプリと Wine のアプリの両方で、Mozc で日本語を入力できるようにする。
 
 現状:
@@ -174,6 +178,8 @@
 現状:
 - Wine は純粋な 32bit ビルド（i386-unix と i386-windows、`wine/build.sh` は `gcc -m32 --without-wayland`）。
 - XP の explorer と DLL は 32bit。
+- 段階 6 の 0026 は、XP のタスクバーへ 32bit の handle を並べた形式で通知アイコンを送る。64bit のアプリからの
+  呼び出しでも同じ形式（handle を 32bit に詰める）になることを確かめる。
 
 やること:
 - Wine の新しい WoW64 方式でビルドする（i386 と x86_64 の PE）。
@@ -249,3 +255,9 @@
 - 段階 5 で見つけたこと（詳細は `docs/status.md` の段階 5）:
   - 試験 VM の install を入れ替えた2回目に、registry profile が入れ直されずデスクトップの名前が英語になった。stage より先に
     prefix が更新されたと見られるが、原因は未特定。
+- 段階 6 で見つけたこと・見送ったこと（詳細は `docs/status.md` の段階 6）:
+  - Linux のトレイは StatusNotifierItem だけに対応した。XEmbed のトレイ（`_NET_SYSTEM_TRAY_S0`）だけを使う古いアプリの
+    アイコンは出ない。
+  - 入力モードの表示は fcitx5（と fcitx5-mozc）のテーマのアイコンを通知領域に出す。実XPの MS-IME の言語バー（浮動または
+    タスクバーに格納）の見た目にはしていない。
+  - Qt アプリの日本語入力には fcitx5-frontend-qt5 / qt6 が要る（試験 VM には入れていない）。

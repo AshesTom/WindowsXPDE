@@ -98,10 +98,15 @@ XP_BRIDGE_DIR=/work/.local/ipc-clean python3 tests/wm_integration.py
   "prefix": "/absolute/path/win4wine/.local/prefix",
   "debug": "+timestamp,+seh,+loaddll",
   "locale": "ja_JP.UTF-8",
+  "input_method": "fcitx5",
+  "linux_font": "MS UI Gothic",
   "shutdown_command": ["systemctl", "poweroff"],
   "reboot_command": ["systemctl", "reboot"]
 }
 ```
+
+`input_method` と `linux_font` は段階 6 で加えた（日本語入力の節）。`input_method` を省くと入力メソッドを起動しない。
+`linux_font` の既定は `MS UI Gothic`、`null` にすると Linux アプリの字体の設定を変えない。
 
 ```sh
 ./session/install.sh
@@ -440,3 +445,54 @@ WINE_SOURCE=/work/.local/wine-upstream-11 WINE_BUILD=/work/.local/wine-build-11 
 `HKLM\System\CurrentControlSet\Control\Session Manager\KnownDLLs` が増える）。値は変えない。XP Explorer が `C:\xp` の
 comctl32 を使えるのは 0016 による。新規 prefix は `prefix/create.py` で 10.0 と同じ手順で作れる（段階 5 で確かめた）。
 bridge（WM・proxy）と registry profile は変更なし。
+
+## 日本語入力（段階 6）
+
+段階 6 でパッチは 55 本になり、0026 以降の番号が変わった（`docs/patches.md` の「段階 6」）。前の series を当てたソースツリーには
+重ねられないので、新しいソースとビルドディレクトリで configure からビルドする。
+
+```sh
+git clone --branch wine-11.0 <未改変の Wine 11.0 のリポジトリ> .local/wine-stage6-src
+./scripts/debian.sh run bash -c 'cd /work && WINE_SOURCE=/work/.local/wine-stage6-src \
+  WINE_BUILD=/work/.local/wine-stage6-build WINE_INSTALL=/work/.local/wine-stage6-install ./wine/build.sh'
+./scripts/debian.sh run bash -c 'cd /work && bridge-wm/build.sh && tests/build.sh'
+```
+
+実機（Debian 13）に入れるパッケージ:
+
+```sh
+sudo apt-get install --no-install-recommends fcitx5 fcitx5-mozc fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 \
+  fcitx5-config-qt locales python3-gi gir1.2-glib-2.0 gir1.2-gdkpixbuf-2.0 librsvg2-common
+# 任意: Linux のブラウザ、代わりの日本語の字体、Qt アプリの入力
+sudo apt-get install --no-install-recommends chromium fonts-ipafont-gothic fcitx5-frontend-qt5 fcitx5-frontend-qt6
+```
+
+`ja_JP.UTF-8` のロケールを作る（`/etc/locale.gen` の該当行を有効にして `locale-gen`）。session.json の `locale` に指定した
+ロケールが無いと、Wine の XIM が C ロケールで開き、確定した文字が化ける。im-config は入れない（入っていても supervisor は
+その設定に従う）。session.json に `"input_method": "fcitx5"` を加え、必要なら `linux_font` を変える（ログイン用 Xsession の節）。
+試験 VM はネットワークが無いので、VM の中で `apt-get install --print-uris -qq --no-install-recommends パッケージ…` で
+必要な .deb の一覧を出し、ホストで取得して VM の `/var/cache/apt/archives/` に写し（epoch のある版はファイル名の `:` を `%3a` に
+する）、`apt-get install --no-download` で入れた。
+
+既存の環境の更新:
+
+1. セッションを止め、wineserver が終わったことを確かめる。
+2. install を丸ごと入れ替える（`wine.inf` は段階 5 と同じ。prefix の更新は stage が行う）。試験 VM では
+   `.local/vm-stage6-install.sh`（ext4 のイメージを QMP で差し込み、段階 5 の install を `wine-final-install.stage5` として残す）。
+3. `./prefix/stage.py --wine "$WINE" "$WINEPREFIX"` を実行する。registry profile は version 23 のまま。
+4. bridge（`bridge-wm/tray.py` を新しく使う、`proxy.exe` を作り直す）と `session/supervisor.py` を入れ替え、セッションを起動する。
+
+Ctrl+Space（または全角/半角）で直接入力と Mozc を切り替える。通知領域のアイコンの左クリックでも切り替わり、右クリックで
+fcitx5 のメニューが出る。fcitx5 の設定は `~/.config/fcitx5/`。
+
+試験:
+
+```sh
+./scripts/debian.sh run bash -c 'cd /work && python3 tests/tray_host.py'   # 専用のセッションバスで tray.py を試す
+# XP シェルのセッションで（実XPでは A:\NI.EXE COM1）
+WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/notify-icon-test.exe
+```
+
+試験用の prefix を別の install で使うと、prefix の更新が走り、その途中の「Wine Mono Installer」の窓が bridge の試験の X 画面に出て
+フォーカスを奪う（段階 6 で `wm_integration.py` などが失敗した）。install を替えたら先に
+`WINEDLLOVERRIDES='mscoree,mshtml=' wine wineboot -u` で更新しておく。

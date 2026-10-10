@@ -8,12 +8,15 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
+from xml.sax.saxutils import escape
 from Xlib import X, display, error
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = Path.home() / '.config/win4wine/session.json'
+IM_VARIABLES = ('XMODIFIERS', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'SDL_IM_MODULE', 'CLUTTER_IM_MODULE')
 
 
 class Session:
@@ -37,6 +40,16 @@ class Session:
         # when the Linux session itself runs in another locale.
         if config.get('locale'):
             self.env.update(LANG=config['locale'], LC_ALL=config['locale'])
+        self.input_method = config.get('input_method')
+        if self.input_method not in (None, 'fcitx5'):
+            raise SystemExit('Unsupported input_method')
+        if self.input_method:
+            # An input method framework already chosen for this login (for
+            # example by im-config from Xsession) keeps its variables.
+            if not any(os.environ.get(name) for name in IM_VARIABLES):
+                self.env.update(XMODIFIERS='@im=fcitx', GTK_IM_MODULE='fcitx', QT_IM_MODULE='fcitx',
+                                SDL_IM_MODULE='fcitx')
+        self.linux_font = config.get('linux_font', 'MS UI Gothic')
         # Wine's ExitWindowsEx records log off / shut down / restart here,
         # so that the shell's exit ends the session instead of restarting it.
         self.request = self.state / 'session-request'
@@ -53,7 +66,42 @@ class Session:
             raise SystemExit('Invalid recovery limits')
         self.d = display.Display()
         self.class_atom = self.d.intern_atom('_WIN4WINE_CLASS')
+        if self.linux_font:
+            self.env['FONTCONFIG_FILE'] = str(self.font_config())
         self.status('starting')
+
+    def font_config(self):
+        """Prefer one family for Linux applications' sans-serif text.
+
+        The prefix's Fonts directory is added so that the XP shell's own
+        fonts, such as MS UI Gothic, serve Linux applications too. The
+        system configuration, and through it the user's, still applies."""
+        directory = self.state / 'fontconfig'
+        directory.mkdir(mode=0o700, exist_ok=True)
+        family = escape(self.linux_font)
+        aliases = ''.join(f'  <alias binding="strong"><family>{generic}</family>'
+                          f'<prefer><family>{family}</family></prefer></alias>\n'
+                          for generic in ('sans-serif', 'Sans', 'system-ui'))
+        text = ('<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n<fontconfig>\n'
+                '  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>\n'
+                f'  <dir>{escape(str(self.prefix / "drive_c/windows/Fonts"))}</dir>\n'
+                f'{aliases}</fontconfig>\n')
+        target = directory / 'fonts.conf'
+        tmp = directory / 'fonts.tmp'
+        tmp.write_text(text)
+        tmp.replace(target)
+        return target
+
+    def xim_server(self, name):
+        """Whether an XIM server of this name is already registered on the display."""
+        servers = self.d.screen().root.get_full_property(self.d.intern_atom('XIM_SERVERS'), X.AnyPropertyType)
+        wanted = '@server=' + name
+        return bool(servers) and any(self.d.get_atom_name(atom) == wanted for atom in servers.value)
+
+    def start_input_method(self):
+        if not self.input_method or self.xim_server('fcitx'):
+            return None  # Not configured, or started by the login already.
+        return self.spawn(['fcitx5'], 'fcitx5')
 
     def status(self, state, **extra):
         record = dict(state=state, time=time.time(), **extra)
@@ -104,6 +152,11 @@ class Session:
         time.sleep(.5)
         if wm.poll() is not None:
             raise RuntimeError('WM failed; see wm.log')
+        # Linux tray icons (StatusNotifierItem) reach the XP notification
+        # area through the proxy; the input method shows its mode there.
+        self.spawn(['python3', str(ROOT / 'bridge-wm/tray.py'), '--ipc', str(self.ipc)], 'tray')
+        im = self.start_input_method()
+        im_restarts = deque()
         # Install only the shell family in this dedicated prefix. Runtime overrides select them.
         subprocess.run(['python3', str(ROOT / 'prefix/stage.py'), str(self.prefix),
                         '--wine', self.wine], check=True)
@@ -122,6 +175,8 @@ class Session:
             while not self.stopping:
                 if wm.poll() is not None:
                     raise RuntimeError('WM exited during session')
+                if im and im.poll() is not None:
+                    im = self.restart_input_method(im_restarts)
                 has_tray = self.tray()
                 if has_tray and not ready:
                     ready = True
@@ -150,6 +205,17 @@ class Session:
                 self.fallback(wm)
                 return
             time.sleep(1)
+
+    def restart_input_method(self, restarts):
+        """Restart an input method that exited, at most three times in two minutes."""
+        now = time.monotonic()
+        restarts.append(now)
+        while restarts and now-restarts[0] > 120:
+            restarts.popleft()
+        if len(restarts) > 3:
+            print('input method keeps exiting; see fcitx5.log', file=sys.stderr)
+            return None
+        return self.start_input_method()
 
     def end_requested(self, shell):
         """Finish the session after an XP log off, shut down or restart."""

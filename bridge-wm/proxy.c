@@ -7,6 +7,7 @@
 #define _UNICODE
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shellapi.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -34,19 +35,25 @@ static BOOL dirty = TRUE;
 static char frames_text[MAX_CLIENTS * 96];
 static BOOL frames_written;
 
-static void write_command(const char *data)
+/* Commands for the WM end in .cmd, those for the tray host in .tray. */
+static void write_file_command(const char *data, const WCHAR *suffix)
 {
     WCHAR temp[MAX_PATH + 64], target[MAX_PATH + 64];
     fprintf(stderr, "bridge command: %s", data);
     DWORD written;
     HANDLE file;
     swprintf(temp, MAX_PATH + 64, L"%ls\\%lu-%u.tmp", directory, GetCurrentProcessId(), sequence);
-    swprintf(target, MAX_PATH + 64, L"%ls\\%lu-%u.cmd", directory, GetCurrentProcessId(), sequence++);
+    swprintf(target, MAX_PATH + 64, L"%ls\\%lu-%u.%ls", directory, GetCurrentProcessId(), sequence++, suffix);
     file = CreateFileW(temp, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE) return;
     WriteFile(file, data, (DWORD)strlen(data), &written, NULL);
     CloseHandle(file);
     if (!MoveFileExW(temp, target, MOVEFILE_REPLACE_EXISTING)) DeleteFileW(temp);
+}
+
+static void write_command(const char *data)
+{
+    write_file_command(data, L"cmd");
 }
 
 static void command(const char *op, unsigned long xid)
@@ -739,6 +746,262 @@ static void switch_events(void)
     else if (switcher.window) ShowWindow(switcher.window, SW_HIDE);
 }
 
+/* Linux tray icons. bridge-wm/tray.py hosts StatusNotifierItems and lists
+ * them in tray.tsv with a W4I1 image each; they join the XP notification
+ * area through the public Shell_NotifyIcon. Clicks go back as *.tray files,
+ * and a context menu that tray.py fetched over D-Bus is shown here. */
+#define MAX_TRAY 64
+#define TRAY_CALLBACK (WM_APP + 0x10)
+#define MAX_MENU 256
+static struct tray_icon
+{
+    unsigned id;
+    int seen, added, failed, menu_pending;
+    char status;
+    HICON icon, retired;
+    FILETIME icon_time;
+    DWORD icon_size;
+    WCHAR tip[128];
+    POINT menu_point;
+    unsigned menu_shown;
+} tray_icons[MAX_TRAY];
+static HWND tray_window;
+static UINT taskbar_created;
+
+static void tray_notify(struct tray_icon *t, DWORD op)
+{
+    NOTIFYICONDATAW data = {0};
+    data.cbSize = sizeof(data);
+    data.hWnd = tray_window;
+    data.uID = t->id;
+    data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    data.uCallbackMessage = TRAY_CALLBACK;
+    data.hIcon = t->icon ? t->icon : default_icon;
+    lstrcpynW(data.szTip, t->tip, ARRAYSIZE(data.szTip));
+    if (op == NIM_DELETE) data.uFlags = 0;
+    /* Before the shell's taskbar exists every attempt fails; the next
+     * change or TaskbarCreated tries again. Report only the first. An add
+     * the shell took while still starting may have answered FALSE: then
+     * the icon exists and only NIM_MODIFY succeeds. */
+    if (!Shell_NotifyIconW(op, &data) && (op != NIM_ADD || !Shell_NotifyIconW(NIM_MODIFY, &data)))
+    {
+        if (!t->failed) fprintf(stderr, "Shell_NotifyIcon %lu for tray icon %u failed\n", op, t->id);
+        t->failed = 1;
+        return;
+    }
+    t->failed = 0;
+    if (op == NIM_ADD) t->added = 1;
+}
+
+static void tray_remove(struct tray_icon *t)
+{
+    if (t->added) tray_notify(t, NIM_DELETE);
+    if (t->icon) DestroyIcon(t->icon);
+    if (t->retired) DestroyIcon(t->retired);
+    memset(t, 0, sizeof(*t));
+}
+
+/* Returns whether the image changed. */
+static int tray_icon_image(struct tray_icon *t)
+{
+    WCHAR path[MAX_PATH + 40];
+    WIN32_FILE_ATTRIBUTE_DATA attrs;
+    HICON icon;
+    swprintf(path, MAX_PATH + 40, L"%ls\\tray-%u.argb", directory, t->id);
+    if (!GetFileAttributesExW(path, GetFileExInfoStandard, &attrs) || attrs.nFileSizeHigh ||
+        attrs.nFileSizeLow > 12 + 64 * 64 * 4)
+        return 0;
+    if (t->icon && !CompareFileTime(&attrs.ftLastWriteTime, &t->icon_time) && attrs.nFileSizeLow == t->icon_size)
+        return 0;
+    if (!(icon = read_icon(path, attrs.nFileSizeLow))) return 0;
+    /* The shell keeps showing the previous image until NIM_MODIFY has the
+     * new handle; destroying it first could hand the same value back. */
+    if (t->retired) DestroyIcon(t->retired);
+    t->retired = t->icon;
+    t->icon = icon;
+    t->icon_time = attrs.ftLastWriteTime;
+    t->icon_size = attrs.nFileSizeLow;
+    return 1;
+}
+
+static void tray_menu(struct tray_icon *t)
+{
+    WCHAR path[MAX_PATH + 40], label[256];
+    char line[1024];
+    unsigned seq = 0, count = 0, items[MAX_MENU];
+    HMENU stack[9] = {0};
+    int depth, item, offset, chosen;
+    char flags[8];
+    FILE *file;
+    swprintf(path, MAX_PATH + 40, L"%ls\\menu-%u.tsv", directory, t->id);
+    if (!(file = _wfopen(path, L"rb"))) return;
+    if (!fgets(line, sizeof(line), file) || sscanf(line, "%u", &seq) != 1 || seq <= t->menu_shown)
+    {
+        fclose(file);
+        return;
+    }
+    t->menu_pending = 0;
+    t->menu_shown = seq;
+    stack[0] = CreatePopupMenu();
+    while (stack[0] && count < MAX_MENU && fgets(line, sizeof(line), file))
+    {
+        UINT mf = MF_STRING;
+        offset = 0;
+        line[strcspn(line, "\r\n")] = 0;
+        if (sscanf(line, "%d\t%d\t%7s\t%n", &depth, &item, flags, &offset) != 3 || depth < 0 || depth > 7) continue;
+        if (!offset) offset = strlen(line);
+        if (!MultiByteToWideChar(CP_UTF8, 0, line + offset, -1, label, ARRAYSIZE(label))) label[0] = 0;
+        while (depth > 0 && !stack[depth]) --depth;
+        if (strchr(flags, 's')) { AppendMenuW(stack[depth], MF_SEPARATOR, 0, NULL); continue; }
+        if (strchr(flags, 'd')) mf |= MF_GRAYED;
+        if (strchr(flags, 'c') || strchr(flags, 'r')) mf |= MF_CHECKED;
+        items[count] = item;
+        /* An entry followed by deeper ones opens a submenu; the next line decides. */
+        AppendMenuW(stack[depth], mf, ++count, label);
+        stack[depth + 1] = NULL;
+        {
+            long position = ftell(file);
+            char next[64];
+            int next_depth;
+            if (fgets(next, sizeof(next), file) && sscanf(next, "%d", &next_depth) == 1 && next_depth == depth + 1)
+            {
+                HMENU sub = CreatePopupMenu();
+                MENUITEMINFOW info = {.cbSize = sizeof(info), .fMask = MIIM_SUBMENU, .hSubMenu = sub};
+                SetMenuItemInfoW(stack[depth], count, FALSE, &info);
+                stack[depth + 1] = sub;
+            }
+            fseek(file, position, SEEK_SET);
+        }
+    }
+    fclose(file);
+    if (!stack[0]) return;
+    /* The usual notification-area idiom: the owner must be foreground for
+     * the menu to close when the user clicks elsewhere. */
+    SetForegroundWindow(tray_window);
+    chosen = TrackPopupMenuEx(stack[0], TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+                              t->menu_point.x, t->menu_point.y, tray_window, NULL);
+    PostMessageW(tray_window, WM_NULL, 0, 0);
+    DestroyMenu(stack[0]);
+    if (chosen > 0 && (unsigned)chosen <= count)
+    {
+        char data[80];
+        snprintf(data, sizeof(data), "event %u %u %u\n", t->id, seq, items[chosen - 1]);
+        write_file_command(data, L"tray");
+    }
+}
+
+static void tray_sync(void)
+{
+    WCHAR path[MAX_PATH + 32];
+    char line[1024];
+    FILE *file;
+    unsigned i;
+    if (!tray_window) return;
+    for (i = 0; i < MAX_TRAY; ++i) tray_icons[i].seen = 0;
+    swprintf(path, MAX_PATH + 32, L"%ls\\tray.tsv", directory);
+    if ((file = _wfopen(path, L"rb")))
+    {
+        while (fgets(line, sizeof(line), file))
+        {
+            unsigned id;
+            char status;
+            int offset = 0, changed;
+            WCHAR tip[128];
+            struct tray_icon *t = NULL;
+            line[strcspn(line, "\r\n")] = 0;
+            if (sscanf(line, "%u\t%c\t%n", &id, &status, &offset) != 2 || !id) continue;
+            if (!offset) offset = strlen(line);
+            if (!MultiByteToWideChar(CP_UTF8, 0, line + offset, -1, tip, ARRAYSIZE(tip))) tip[0] = 0;
+            for (i = 0; i < MAX_TRAY && !t; ++i) if (tray_icons[i].id == id) t = &tray_icons[i];
+            for (i = 0; i < MAX_TRAY && !t; ++i) if (!tray_icons[i].id) { t = &tray_icons[i]; t->id = id; }
+            if (!t) continue;
+            t->seen = 1;
+            changed = tray_icon_image(t) | (wcscmp(t->tip, tip) != 0) | (t->status != status);
+            wcscpy(t->tip, tip);
+            t->status = status;
+            if (!t->added) tray_notify(t, NIM_ADD);
+            else if (changed) tray_notify(t, NIM_MODIFY);
+            if (t->retired && t->added)
+            {
+                DestroyIcon(t->retired);
+                t->retired = NULL;
+            }
+        }
+        fclose(file);
+    }
+    for (i = 0; i < MAX_TRAY; ++i)
+    {
+        if (tray_icons[i].id && !tray_icons[i].seen) tray_remove(&tray_icons[i]);
+        else if (tray_icons[i].menu_pending) tray_menu(&tray_icons[i]);
+    }
+}
+
+static LRESULT CALLBACK tray_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == TRAY_CALLBACK)
+    {
+        const char *op = NULL;
+        unsigned i;
+        POINT pt;
+        GetCursorPos(&pt);
+        switch (LOWORD(lp))
+        {
+        case WM_LBUTTONUP: op = "activate"; break;
+        case WM_MBUTTONUP: op = "secondary"; break;
+        case WM_RBUTTONUP: op = "context"; break;
+        }
+        for (i = 0; op && i < MAX_TRAY; ++i)
+            if (tray_icons[i].id == wp)
+            {
+                char data[80];
+                if (!strcmp(op, "context"))
+                {
+                    tray_icons[i].menu_pending = 1;
+                    tray_icons[i].menu_point = pt;
+                }
+                snprintf(data, sizeof(data), "%s %u %ld %ld\n", op, tray_icons[i].id, pt.x, pt.y);
+                write_file_command(data, L"tray");
+                break;
+            }
+        return 0;
+    }
+    if (msg == taskbar_created && msg)
+    {
+        /* A restarted shell has an empty notification area. */
+        unsigned i;
+        for (i = 0; i < MAX_TRAY; ++i) tray_icons[i].added = 0;
+        dirty = TRUE;
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static void tray_start(void)
+{
+    WNDCLASSW cls = {0};
+    WCHAR path[MAX_PATH + 32];
+    char size[16];
+    FILE *file;
+    taskbar_created = RegisterWindowMessageW(L"TaskbarCreated");
+    cls.lpfnWndProc = tray_proc;
+    cls.hInstance = GetModuleHandleW(NULL);
+    cls.lpszClassName = L"Win4WineTray";
+    if (!RegisterClassW(&cls)) return;
+    tray_window = CreateWindowExW(WS_EX_TOOLWINDOW, L"Win4WineTray", L"", WS_POPUP, 0, 0, 0, 0,
+                                  NULL, NULL, GetModuleHandleW(NULL), NULL);
+    /* tray.py renders the images at the notification area's icon size. */
+    swprintf(path, MAX_PATH + 32, L"%ls\\tray-size.tmp", directory);
+    snprintf(size, sizeof(size), "%d\n", GetSystemMetrics(SM_CXSMICON));
+    if ((file = _wfopen(path, L"wb")))
+    {
+        WCHAR target[MAX_PATH + 32];
+        fputs(size, file);
+        fclose(file);
+        swprintf(target, MAX_PATH + 32, L"%ls\\tray-size", directory);
+        if (!MoveFileExW(path, target, MOVEFILE_REPLACE_EXISTING)) DeleteFileW(path);
+    }
+}
+
 /* Out-of-context WinEvents arrive as messages for this thread. Only top-level
  * windows can be tasks; a destroyed one is matched against the last list. */
 static void CALLBACK win_event(HWINEVENTHOOK hook, DWORD event, HWND hwnd, LONG object, LONG child,
@@ -772,6 +1035,7 @@ int wmain(int argc, WCHAR **argv)
     cls.lpfnWndProc = switch_proc;
     cls.lpszClassName = L"Win4WineSwitch";
     if (!RegisterClassW(&cls)) return 3;
+    tray_start();
     /* The WM tests this lock to know whether the proxy is running.
      * wineserver backs it with a POSIX lock that ends with this process. */
     swprintf(path, MAX_PATH + 32, L"%ls\\proxy.lock", directory);
@@ -795,6 +1059,7 @@ int wmain(int argc, WCHAR **argv)
             dirty = FALSE;
             snapshot();
             shell_events();
+            tray_sync();
         }
         if (shell_layout_pending() != !!layout_timer)
         {
@@ -814,6 +1079,7 @@ int wmain(int argc, WCHAR **argv)
                     DestroyWindow(clients[i].hwnd);
                     if (clients[i].icon) DestroyIcon(clients[i].icon);
                 }
+                for (i = 0; i < MAX_TRAY; ++i) if (tray_icons[i].id) tray_remove(&tray_icons[i]);
                 return 0;
             }
             if (msg.message == WM_TIMER && !msg.hwnd && msg.wParam == layout_timer)
