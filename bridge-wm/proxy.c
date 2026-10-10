@@ -521,11 +521,193 @@ static void shell_layout(void)
                         SMTO_ABORTIFHUNG, 500, &result);
 }
 
+/* XP's Alt+Tab window, as measured on the reference XP machine: 331 px wide,
+ * seven 43 px cells per row, centred while there is only one row, a 2 px
+ * highlight frame around the selected icon and its title in a sunken field
+ * below; the window is centred in the work area. The WM owns the keyboard
+ * while Alt is held and records the session, the number of Tab steps and
+ * whether the switch is open, committed or cancelled in switch.tsv. */
+#define SWITCH_COLUMNS 7
+#define SWITCH_ROWS 3
+#define SWITCH_CELL 43
+static struct
+{
+    unsigned session;
+    int steps, count, selected;
+    char state;
+    HWND window, items[SWITCH_COLUMNS * SWITCH_ROWS];
+    HFONT font;
+} switcher;
+
+static BOOL CALLBACK switch_candidate(HWND hwnd, LPARAM param)
+{
+    DWORD style = GetWindowLongW(hwnd, GWL_STYLE), ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+    WCHAR name[64];
+    (void)param;
+    if (switcher.count >= SWITCH_COLUMNS * SWITCH_ROWS) return FALSE;
+    if (hwnd == switcher.window || !(style & WS_VISIBLE) || (style & WS_DISABLED)) return TRUE;
+    if (!(ex & WS_EX_APPWINDOW) && ((ex & WS_EX_TOOLWINDOW) || GetWindow(hwnd, GW_OWNER))) return TRUE;
+    if (ex & WS_EX_NOACTIVATE) return TRUE;
+    GetClassNameW(hwnd, name, ARRAYSIZE(name));
+    if (!wcscmp(name, L"Progman") || !wcscmp(name, L"Shell_TrayWnd")) return TRUE;
+    switcher.items[switcher.count++] = hwnd;
+    return TRUE;
+}
+
+static void switch_collect(void)
+{
+    HWND foreground = GetForegroundWindow();
+    int i;
+    switcher.count = 0;
+    EnumWindows(switch_candidate, 0);
+    /* Start from the active window, which is not always the topmost one. */
+    for (i = 0; i < switcher.count; ++i)
+        if (switcher.items[i] == foreground && i)
+        {
+            memmove(switcher.items + 1, switcher.items, i * sizeof(HWND));
+            switcher.items[0] = foreground;
+            break;
+        }
+}
+
+static HICON switch_icon(HWND hwnd)
+{
+    DWORD_PTR icon = 0;
+    if (!SendMessageTimeoutW(hwnd, WM_GETICON, ICON_BIG, 0, SMTO_ABORTIFHUNG, 100, &icon)) icon = 0;
+    if (!icon) icon = GetClassLongPtrW(hwnd, GCLP_HICON);
+    if (!icon && !SendMessageTimeoutW(hwnd, WM_GETICON, ICON_SMALL2, 0, SMTO_ABORTIFHUNG, 100, &icon)) icon = 0;
+    if (!icon) icon = GetClassLongPtrW(hwnd, GCLP_HICONSM);
+    return icon ? (HICON)icon : default_icon;
+}
+
+static int switch_rows(void)
+{
+    return switcher.count > SWITCH_COLUMNS ? (switcher.count + SWITCH_COLUMNS - 1) / SWITCH_COLUMNS : 1;
+}
+
+static void switch_paint(HWND hwnd)
+{
+    PAINTSTRUCT ps;
+    HDC dc = BeginPaint(hwnd, &ps);
+    RECT rect, field;
+    int shown = switcher.count < SWITCH_COLUMNS ? switcher.count : SWITCH_COLUMNS;
+    int left = 15 + (SWITCH_COLUMNS - shown) * SWITCH_CELL / 2, i, rows = switch_rows();
+    WCHAR title[512] = L"";
+    HGDIOBJ old_font;
+
+    GetClientRect(hwnd, &rect);
+    FillRect(dc, &rect, GetSysColorBrush(COLOR_3DFACE));
+    DrawEdge(dc, &rect, EDGE_RAISED, BF_RECT);
+    for (i = 0; i < switcher.count; ++i)
+    {
+        int x = left + i % SWITCH_COLUMNS * SWITCH_CELL, y = 19 + i / SWITCH_COLUMNS * SWITCH_CELL;
+        if (i == switcher.selected)
+        {
+            RECT frame = {x + 1, y, x + 1 + SWITCH_CELL, y + SWITCH_CELL};
+            HBRUSH brush = GetSysColorBrush(COLOR_HIGHLIGHT);
+            FrameRect(dc, &frame, brush);
+            InflateRect(&frame, -1, -1);
+            FrameRect(dc, &frame, brush);
+        }
+        DrawIconEx(dc, x + 6, y + 5, switch_icon(switcher.items[i]), 32, 32, 0, NULL, DI_NORMAL);
+    }
+    SetRect(&field, 15, 72 + (rows - 1) * SWITCH_CELL, 316, 97 + (rows - 1) * SWITCH_CELL);
+    DrawEdge(dc, &field, EDGE_SUNKEN, BF_RECT);
+    if (switcher.selected < switcher.count)
+        GetWindowTextW(switcher.items[switcher.selected], title, ARRAYSIZE(title));
+    InflateRect(&field, -2, -2);
+    field.left += 2;
+    old_font = SelectObject(dc, switcher.font);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
+    DrawTextW(dc, title, -1, &field, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+    SelectObject(dc, old_font);
+    EndPaint(hwnd, &ps);
+}
+
+static LRESULT CALLBACK switch_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_PAINT) { switch_paint(hwnd); return 0; }
+    if (msg == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static void switch_show(void)
+{
+    RECT area;
+    int width = 30 + SWITCH_COLUMNS * SWITCH_CELL, height = 64 + switch_rows() * SWITCH_CELL;
+    if (!switcher.font)
+    {
+        NONCLIENTMETRICSW metrics = {.cbSize = sizeof(metrics)};
+        SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0);
+        metrics.lfCaptionFont.lfWeight = FW_BOLD;
+        switcher.font = CreateFontIndirectW(&metrics.lfCaptionFont);
+    }
+    if (!switcher.window)
+        switcher.window = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, L"Win4WineSwitch", L"", WS_POPUP,
+                                          0, 0, width, height, NULL, NULL, GetModuleHandleW(NULL), NULL);
+    if (!switcher.window) return;
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &area, 0);
+    SetWindowPos(switcher.window, HWND_TOPMOST, area.left + (area.right - area.left - width) / 2,
+                 area.top + (area.bottom - area.top - height) / 2, width, height,
+                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    InvalidateRect(switcher.window, NULL, FALSE);
+    UpdateWindow(switcher.window);
+}
+
+static void switch_commit(void)
+{
+    HWND target = switcher.selected < switcher.count ? switcher.items[switcher.selected] : NULL;
+    unsigned i;
+    if (switcher.window) ShowWindow(switcher.window, SW_HIDE);
+    if (!target) return;
+    /* The WM activates the chosen window as for a click; Wine gives a
+     * managed window X focus only through the WM. Linux windows are named by
+     * their own X window, Wine windows by the one Wine created. */
+    for (i = 0; i < MAX_CLIENTS; ++i)
+        if (clients[i].xid && clients[i].hwnd == target)
+        {
+            command("switch", clients[i].xid);
+            return;
+        }
+    if (IsIconic(target)) ShowWindowAsync(target, SW_RESTORE);
+    command("switch", (unsigned long)(uintptr_t)GetPropW(target, L"__wine_x11_whole_window"));
+}
+
+static void switch_events(void)
+{
+    WCHAR path[MAX_PATH + 32];
+    unsigned session;
+    int steps;
+    char state;
+    FILE *file;
+    swprintf(path, MAX_PATH + 32, L"%ls\\switch.tsv", directory);
+    if (!(file = _wfopen(path, L"rb"))) return;
+    if (fscanf(file, "%u %d %c", &session, &steps, &state) != 3) state = 0;
+    fclose(file);
+    if (!state || (session == switcher.session && steps == switcher.steps && state == switcher.state)) return;
+    if (session != switcher.session)
+    {
+        if (switcher.window) ShowWindow(switcher.window, SW_HIDE);
+        switch_collect();
+    }
+    else if (switcher.state != 'o') return; /* This session already ended. */
+    switcher.session = session;
+    switcher.steps = steps;
+    switcher.state = state;
+    if (!switcher.count) return;
+    switcher.selected = ((steps % switcher.count) + switcher.count) % switcher.count;
+    if (state == 'o' && switcher.count > 1) switch_show();
+    else if (state == 'c') switch_commit();
+    else if (switcher.window) ShowWindow(switcher.window, SW_HIDE);
+}
+
 int wmain(int argc, WCHAR **argv)
 {
     WNDCLASSW cls = {0};
     MSG msg;
     ULONGLONG next = 0;
+    HANDLE changes;
     if (argc != 2 || wcslen(argv[1]) >= MAX_PATH) return 2;
     wcscpy(directory, argv[1]);
     shell_message = RegisterWindowMessageW(L"SHELLHOOK");
@@ -535,6 +717,14 @@ int wmain(int argc, WCHAR **argv)
     cls.hInstance = GetModuleHandleW(NULL);
     cls.lpszClassName = L"Win4WineProxy";
     if (!RegisterClassW(&cls)) return 3;
+    cls.hIcon = NULL;
+    cls.hCursor = LoadCursorW(NULL, IDC_ARROW);
+    cls.lpfnWndProc = switch_proc;
+    cls.lpszClassName = L"Win4WineSwitch";
+    if (!RegisterClassW(&cls)) return 3;
+    /* Wake up as soon as the WM writes the Alt+Tab state. */
+    changes = FindFirstChangeNotificationW(directory, FALSE,
+                                           FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE);
     for (;;)
     {
         while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
@@ -552,6 +742,7 @@ int wmain(int argc, WCHAR **argv)
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        switch_events();
         if (GetTickCount64() >= next)
         {
             snapshot();
@@ -559,6 +750,11 @@ int wmain(int argc, WCHAR **argv)
             shell_layout();
             next = GetTickCount64() + 200;
         }
-        MsgWaitForMultipleObjects(0, NULL, FALSE, 100, QS_ALLINPUT);
+        if (changes != INVALID_HANDLE_VALUE)
+        {
+            if (MsgWaitForMultipleObjects(1, &changes, FALSE, 100, QS_ALLINPUT) == WAIT_OBJECT_0)
+                FindNextChangeNotification(changes);
+        }
+        else MsgWaitForMultipleObjects(0, NULL, FALSE, 100, QS_ALLINPUT);
     }
 }

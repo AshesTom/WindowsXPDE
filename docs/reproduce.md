@@ -38,6 +38,8 @@ version 19 はフォルダ オプションの「全般」「表示」ページ�
 version 20 は XP 既定の視覚効果（UserPreferencesMask `be 3e 07 80`、メニュー等の影を含む）を一度だけ入れる。
 version 21 は Folder の explore 動詞（Win+E と「エクスプローラ」、XP と同じ DDE `[ExploreFolder(...)]`）と、
 コントロール パネルの名前（XP shell32 の文字列 4161）を入れる。
+version 22 は Folder の open / explore に XP と同じ形の command（`C:\xp\xp-explorer.exe /idlist,%I,%L`）を加え、
+「ファイル名を指定して実行」からフォルダを開けるようにする。
 version 17 は日本語 Luna profile に Start のユーザー名と「すべてのプログラム」の字体を加える。
 version 15/16 は壁紙（Bliss を XP と同じく Wallpaper1.bmp に変換、拡大表示）と `LogonType=1` を一度だけ設定する。
 画像は再抽出（30ファイル）で入り、session 開始時の stage で `C:\windows\Web\Wallpaper` とユーザー画像へ置く。

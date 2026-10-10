@@ -782,3 +782,10 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
   desktop.ini の LocalizedResourceName で名前が付くため、stage が利用者と All Users の3フォルダにも同じ項目を書く。
   desktop.ini は隠し・システム属性にする（Wine の attrib は複数指定の最後しか効かないため1つずつ）。隠し属性が
   ないと Start メニューに「desktop」が並び、スタートアップの desktop.ini がログオン時にメモ帳で開いた。
+- Alt+Tab で何も表示されず、WM が対応付けの順に切り替えていた。実XPの切り替えウィンドウを2〜9個で測り
+  （幅331px、43px の7列、1行のときは中央寄せ、2px の選択枠、凹んだ欄に太字の題名、作業領域の中央）、proxy が
+  公開 API だけで描く。Linux のウィンドウも含め Z 順（直前のウィンドウが次）で、2個のときの画面は実XPと0画素差。
+  短い Alt+Tab は直前のウィンドウへ、Esc は取り消し、Shift+Tab は逆順、最小化中のウィンドウは戻して切り替える。
+- 「ファイル名を指定して実行」で C:\ などのフォルダを開くと「関連付けられていません」になった。XP の ShellExecute は
+  動詞の command を必要とし、Wine の Folder は DDE だけだったため、registry profile 22 で XP と同じ形の command
+  （XP Explorer を起動、シェルが応答すれば DDE を使う）を入れた。

@@ -24,6 +24,13 @@ WM → proxy: `windows.tsv` を同一ディレクトリで atomic rename。行�
 
 proxy → WM: `PID-SEQUENCE.cmd` を atomic rename。内容は `activate|minimize|close|maximize|restore XID(hex)` または `geometry XID(hex) x y width height`。WM は現在管理する Linux の通常ウィンドウだけを操作し、処理後削除する。proxy は最大 2048 ウィンドウまで。
 
+Alt+Tab は XP の切り替えウィンドウを proxy が描く。WM は Alt を押している間キーボードを grab し、
+`switch.tsv`（`session steps state`、state は o=表示中・c=確定・x=取り消し）を atomic rename で更新する。
+steps は Tab の回数（Shift+Tab は負）。proxy は IPC ディレクトリの変更通知で直ちに起き、新しい session で
+Win32 の Z 順（アクティブなウィンドウが先頭）から候補を集め、選択を描く。確定時は `switch XID(hex)` を送り、
+WM は Wine のウィンドウも含めクリックと同じく活性化する（Wine は管理対象の窓の X フォーカスを WM に任せるため）。
+最小化中の Wine ウィンドウは先に元に戻す。proxy がなければ WM は従来どおり順に切り替える。
+
 枠の同期には次の 2 ファイルを追加する。どちらも同じ IPC ディレクトリで atomic rename し、数値を空白で区切る。
 
 - WM → proxy の `geometry.tsv`: `XID(hex) x y width height maximized(0/1) workX workY workWidth workHeight`。座標とサイズは root 上の native クライアント領域。末尾は現在の作業領域。

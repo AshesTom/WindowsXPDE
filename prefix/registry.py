@@ -3,7 +3,7 @@ import os
 import pwd
 import struct
 
-VERSION = 21
+VERSION = 22
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -196,7 +196,13 @@ def install(run, exists):
 
     # XP's Folder class also has the explore verb that the Win+E hotkey and
     # the folder menu's Explore use; Wine registers only open. Like Wine's open
-    # verb, it is served by the running shell's DDE server.
+    # verb, it is served by the running shell's DDE server. XP's ShellExecute
+    # also needs each verb's command, so Run could not open a folder; XP's
+    # command starts Explorer, which is XP Explorer here, when no shell answers.
+    run('reg', 'add', r'HKCR\Folder\shell\open\command', '/ve', '/t', 'REG_SZ',
+        '/d', r'C:\xp\xp-explorer.exe /idlist,%I,%L', '/f')
+    run('reg', 'add', r'HKCR\Folder\shell\explore\command', '/ve', '/t', 'REG_SZ',
+        '/d', r'C:\xp\xp-explorer.exe /e,/idlist,%I,%L', '/f')
     explore = r'HKCR\Folder\shell\explore'
     run('reg', 'add', explore, '/v', 'BrowserFlags', '/t', 'REG_DWORD', '/d', '34', '/f')
     run('reg', 'add', explore, '/v', 'ExplorerFlags', '/t', 'REG_DWORD', '/d', '33', '/f')

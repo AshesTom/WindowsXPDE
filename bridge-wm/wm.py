@@ -57,6 +57,10 @@ class Manager:
         self.setprop(self.root, '_NET_CURRENT_DESKTOP', Xatom.CARDINAL, [0])
         self.own_xsettings()
         self.tab = self.d.keysym_to_keycode(XK.string_to_keysym('Tab'))
+        self.escape = self.d.keysym_to_keycode(XK.string_to_keysym('Escape'))
+        self.alt_codes = {code for code in self.d.get_modifier_mapping()[X.Mod1MapIndex] if code}
+        self.switch = None
+        self.switch_session = 0
         for modifiers in (0, X.LockMask, X.Mod2Mask, X.LockMask | X.Mod2Mask):
             self.root.grab_key(self.tab, X.Mod1Mask | modifiers, True, X.GrabModeAsync, X.GrabModeAsync)
             self.root.grab_key(self.tab, X.Mod1Mask | X.ShiftMask | modifiers, True, X.GrabModeAsync, X.GrabModeAsync)
@@ -316,6 +320,52 @@ class Manager:
         if list(self.prop(self.root, '_NET_WORKAREA')) != list(self.area):
             self.setprop(self.root, '_NET_WORKAREA', Xatom.CARDINAL, list(self.area))
 
+    def bridge_alive(self):
+        try:
+            return time.time() - (self.ipc / 'frames.tsv').stat().st_mtime < 2
+        except OSError:
+            return False
+
+    def write_switch(self, state):
+        temporary = self.ipc / 'switch.tmp'
+        temporary.write_text(f'{self.switch_session} {self.switch} {state}\n')
+        temporary.replace(self.ipc / 'switch.tsv')
+
+    def switch_key(self, reverse):
+        """Alt+Tab: XP's switch window, drawn by the Win32 bridge.
+
+        The keyboard stays grabbed while Alt is held; Tab and Shift+Tab move
+        the selection, Escape cancels and releasing Alt switches. Without the
+        bridge, cycle through the clients directly.
+        """
+        if not self.bridge_alive():
+            self.cycle(reverse)
+            return
+        if self.root.grab_keyboard(True, X.GrabModeAsync, X.GrabModeAsync, X.CurrentTime) != X.GrabSuccess:
+            self.cycle(reverse)
+            return
+        self.switch_session += 1
+        self.switch = -1 if reverse else 1
+        self.write_switch('o')
+        # Alt may already be up when the grab starts; its release is then lost.
+        keys = self.d.query_keymap()
+        if not any(keys[code // 8] & (1 << (code % 8)) for code in self.alt_codes):
+            self.end_switch('c')
+
+    def switch_event(self, e):
+        if e.type == X.KeyPress and e.detail == self.tab:
+            self.switch += -1 if e.state & X.ShiftMask else 1
+            self.write_switch('o')
+        elif e.type == X.KeyPress and e.detail == self.escape:
+            self.end_switch('x')
+        elif e.type == X.KeyRelease and e.detail in self.alt_codes:
+            self.end_switch('c')
+
+    def end_switch(self, state):
+        self.write_switch(state)
+        self.d.ungrab_keyboard(X.CurrentTime)
+        self.switch = None
+
     def cycle(self, reverse=False):
         ids = [i for i, c in self.clients.items() if c['kind'] == 'normal']
         if not ids:
@@ -508,7 +558,10 @@ class Manager:
                 op, value, *args = command.read_text().split()
                 i = int(value, 16)
                 c = self.clients.get(i)
-                if c and c['kind'] == 'normal' and not len(self.prop(c['w'], '_WIN4WINE_HWND')):
+                if op == 'switch' and c and c['kind'] == 'normal':
+                    # Alt+Tab chose this window, which may also be a Wine one.
+                    self.focus(c['w'])
+                elif c and c['kind'] == 'normal' and not len(self.prop(c['w'], '_WIN4WINE_HWND')):
                     if op == 'geometry' and len(args) == 4:
                         x, y, width, height = map(int, args)
                         if width > 0 and height > 0:
@@ -580,11 +633,13 @@ class Manager:
                 w.configure(width=max(64, width+dx), height=max(32, height+dy))
         elif e.type == X.ButtonRelease:
             self.drag = None
+        elif self.switch is not None and e.type in (X.KeyPress, X.KeyRelease):
+            self.switch_event(e)
         elif e.type == X.KeyPress and e.detail == self.d.keysym_to_keycode(XK.string_to_keysym('F4')):
             if self.active in self.clients:
                 self.close(self.clients[self.active]['w'])
         elif e.type == X.KeyPress and e.detail == self.tab:
-            self.cycle(bool(e.state & X.ShiftMask))
+            self.switch_key(bool(e.state & X.ShiftMask))
         elif e.type == X.FocusIn and e.mode == X.NotifyNormal and e.detail not in (X.NotifyPointer, X.NotifyPointerRoot, X.NotifyDetailNone) and e.window.id in self.clients:
             if self.clients[e.window.id]['kind'] == 'normal':
                 self.active = e.window.id
