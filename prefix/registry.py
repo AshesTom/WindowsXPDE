@@ -3,7 +3,7 @@ import os
 import pwd
 import struct
 
-VERSION = 20
+VERSION = 21
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -86,9 +86,9 @@ NAMESPACE_STRINGS = (
     ('{450D8FBA-AD25-11D0-98A8-0800361B1103}', XP_SHELL32 + '-9227', XP_SHELL32 + '-22914'),
     ('{2227A280-3AEA-1069-A2DE-08002B30309D}', XP_SHELL32 + '-9319', XP_SHELL32 + '-12696'),
     ('{871C5380-42A0-1069-A2EA-08002B30309D}', '@shdoclc.dll,-880', '@shdoclc.dll,-881'),
-    # XP names Control Panel from shell32 itself; Wine's reference would
-    # select an unrelated string from the XP DLL.
-    ('{21EC2020-3AEA-1069-A2DD-08002B30309D}', None, XP_SHELL32 + '-31361'),
+    # XP's registry leaves Control Panel's name to shell32 itself; its string
+    # 4161 is that name, while Wine's reference selects an unrelated string.
+    ('{21EC2020-3AEA-1069-A2DD-08002B30309D}', XP_SHELL32 + '-4161', XP_SHELL32 + '-31361'),
 )
 
 
@@ -193,6 +193,17 @@ def install(run, exists):
         '/v', 'msgina', '/d', 'native', '/f')
     run('reg', 'add', r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer',
         '/v', 'Logon User Name', '/t', 'REG_SZ', '/d', pwd.getpwuid(os.getuid()).pw_name, '/f')
+
+    # XP's Folder class also has the explore verb that the Win+E hotkey and
+    # the folder menu's Explore use; Wine registers only open. Like Wine's open
+    # verb, it is served by the running shell's DDE server.
+    explore = r'HKCR\Folder\shell\explore'
+    run('reg', 'add', explore, '/v', 'BrowserFlags', '/t', 'REG_DWORD', '/d', '34', '/f')
+    run('reg', 'add', explore, '/v', 'ExplorerFlags', '/t', 'REG_DWORD', '/d', '33', '/f')
+    run('reg', 'add', explore + r'\ddeexec', '/ve', '/t', 'REG_SZ', '/d', '[ExploreFolder("%l", %I, %S)]', '/f')
+    run('reg', 'add', explore + r'\ddeexec', '/v', 'NoActivateHandler', '/t', 'REG_SZ', '/d', '', '/f')
+    run('reg', 'add', explore + r'\ddeexec\application', '/ve', '/t', 'REG_SZ', '/d', 'Folders', '/f')
+    run('reg', 'add', explore + r'\ddeexec\topic', '/ve', '/t', 'REG_SZ', '/d', 'AppProperties', '/f')
 
     # Wine's builtin ShellExecute handles executable extensions directly;
     # native XP ShellExecute requires their explicit association.

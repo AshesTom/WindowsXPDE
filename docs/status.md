@@ -775,3 +775,6 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
 - Start パネルの「マイ ピクチャ」「マイ ミュージック」が Pictures/Music と表示され、マイ ドキュメント・最近使った
   ファイルを含む4項目のアイコンが普通のフォルダだった。実XPの desktop.ini の項目（`tests/folder-icons.c`）を stage が
   prefix 内のフォルダに書き、mydocs.dll（抽出31ファイル）をアイコン元にして、右列のアイコンと名前が実XPと0画素差。
+- Win+E で「Invalid parameter.」が出てマイ コンピュータが開かなかった。Wine の Folder クラスに explore 動詞がなく、
+  実XPのレジストリ（`tests/reg-dump.c`）と同じ DDE の explore を registry profile 21 で入れ、フォルダ ツリー付きで開く。
+  ツリーの「Control Panel」は、XP shell32 の該当文字列（`tests/string-id.c` で 4161）を参照してコントロール パネルにした。
