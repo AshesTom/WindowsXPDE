@@ -695,7 +695,8 @@ Start パネルの「マイ ピクチャ」「マイ ミュージック」が Wi
 各フォルダの desktop.ini が `[DeleteOnCopy]` の Personalized（CSIDL）と PersonalizedName（作成時の名前）で
 名前を、`[.ShellClassInfo]` でアイコンと説明を与え、マイ ドキュメントは CLSID の DefaultIcon が mydocs.dll,0 だった。
 **判断: stage が prefix 内の実フォルダにだけ、実XPと同じ項目の desktop.ini を書き、システム属性を付ける。**
-利用者のホーム（H:\ のマイ ドキュメントや XDG へのリンク）には書かず、既存の desktop.ini は残す。
+「スタート メニュー」「プログラム」「スタートアップ」（利用者と All Users）も同じく LocalizedResourceName で名付ける。
+利用者のホーム（H:\ のマイ ドキュメントや XDG へのリンク）には書かず、ほかの desktop.ini は残す。
 値は設定項目と番号だけで、XP のファイルは複製しない。
 **判断: 利用者の XP メディアの mydocs.dll を無改変で抽出し、アイコンの読み出し元にだけ使う。**
 COM の登録は Wine のままで、mydocs.dll のコードは読み込まない。無い既存 prefix ではマイ ピクチャの desktop.ini と

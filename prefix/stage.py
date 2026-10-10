@@ -123,34 +123,46 @@ def stage_media(prefix, wine=None):
 # reference machine: [DeleteOnCopy] names a folder by its CSIDL while it keeps
 # its created name, and [.ShellClassInfo] gives its icon and tip.
 SPECIAL_FOLDERS = (
-    ('Pictures', [('DeleteOnCopy', [('Owner', None), ('Personalized', '39'), ('PersonalizedName', None)]),
+    ('users/{user}/Pictures', [('DeleteOnCopy', [('Owner', None), ('Personalized', '39'), ('PersonalizedName', None)]),
                   ('.ShellClassInfo', [('InfoTip', '@Shell32.dll,-12688'),
                                        ('IconFile', r'%SystemRoot%\system32\mydocs.dll'), ('IconIndex', '-101')])]),
-    ('Music', [('DeleteOnCopy', [('Owner', None), ('Personalized', '13'), ('PersonalizedName', None)]),
+    ('users/{user}/Music', [('DeleteOnCopy', [('Owner', None), ('Personalized', '13'), ('PersonalizedName', None)]),
                ('.ShellClassInfo', [('InfoTip', '@Shell32.dll,-12689'),
                                     ('IconFile', r'%SystemRoot%\system32\SHELL32.dll'), ('IconIndex', '-237')])]),
-    ('AppData/Roaming/Microsoft/Windows/Recent',
+    ('users/{user}/AppData/Roaming/Microsoft/Windows/Recent',
      [('.ShellClassInfo', [('InfoTip', '@Shell32.dll,-12692'), ('IconFile', r'%SystemRoot%\system32\SHELL32.dll'),
                            ('IconIndex', '-21'), ('LocalizedResourceName', '@shell32.dll,-12691')])]),
-    ('Favorites',
+    ('users/{user}/Favorites',
      [('.ShellClassInfo', [('IconFile', r'%SystemRoot%\system32\SHELL32.dll'), ('IconIndex', '-173'),
                            ('LocalizedResourceName', '@shell32.dll,-12693')])]),
-)
+) + tuple((root + menu, [('.ShellClassInfo', [('LocalizedResourceName', name)])])
+          for root in ('users/{user}/AppData/Roaming/', 'ProgramData/')
+          for menu, name in (('Microsoft/Windows/Start Menu', '@shell32.dll,-21786'),
+                             ('Microsoft/Windows/Start Menu/Programs', '@shell32.dll,-21782'),
+                             ('Microsoft/Windows/Start Menu/Programs/StartUp',
+                              r'@%SystemRoot%\system32\shell32.dll,-21787')))
+
+def hidden(path):
+    """Whether Wine records the DOS hidden attribute of PATH."""
+    try:
+        return bool(int(os.getxattr(path, 'user.DOSATTRIB').split(b'\0')[0], 16) & 2)
+    except (OSError, ValueError):
+        return False
 
 def stage_folders(prefix, wine):
     """Give the prefix's own special folders XP's names and icons.
 
     Only real directories inside the prefix are marked, never a link to the
-    user's home, and an existing desktop.ini is kept.
+    user's home, and a desktop.ini other than ours is kept as it is.
     """
     user = pwd.getpwuid(os.getuid()).pw_name
-    profile = prefix / f'drive_c/users/{user}'
     mydocs = (prefix / 'drive_c/windows/system32/mydocs.dll').is_file()
     marked = []
     for relative, sections in SPECIAL_FOLDERS:
-        folder = profile / relative
+        relative = relative.format(user=user)
+        folder = prefix / 'drive_c' / relative
         ini = folder / 'desktop.ini'
-        if not folder.is_dir() or folder.is_symlink() or ini.exists() or ini.is_symlink():
+        if not folder.is_dir() or folder.is_symlink() or ini.is_symlink():
             continue
         if any(value.endswith('mydocs.dll') for _, entries in sections for _, value in entries if value) and not mydocs:
             continue
@@ -159,8 +171,14 @@ def stage_folders(prefix, wine):
             lines.append(f'[{section}]')
             for key, value in entries:
                 lines.append(f'{key}={value or (user if key == "Owner" else folder.name)}')
-        ini.write_text('\r\n'.join(lines) + '\r\n', encoding='ascii')
-        marked.append('C:\\users\\' + user + '\\' + relative.replace('/', '\\'))
+        content = '\r\n'.join(lines) + '\r\n'
+        if ini.exists():
+            # Earlier versions left ours visible; repair only those.
+            if hidden(ini) or ini.read_bytes() != content.encode('ascii'):
+                continue
+        else:
+            ini.write_text(content, encoding='ascii', newline='')
+        marked.append('C:\\' + relative.replace('/', '\\'))
     icon = prefix / '.xp-mydocs-icon'
     if not marked and (not mydocs or icon.is_file()):
         return
@@ -170,8 +188,10 @@ def stage_folders(prefix, wine):
         for folder in marked:
             subprocess.run([str(wine), 'attrib', '+s', folder], env=env, check=False, timeout=120,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run([str(wine), 'attrib', '+h', '+s', folder + '\\desktop.ini'], env=env, check=False,
-                           timeout=120, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Wine's attrib applies only the last of several flags.
+            for flag in ('+h', '+s'):
+                subprocess.run([str(wine), 'attrib', flag, folder + '\\desktop.ini'], env=env, check=False,
+                               timeout=120, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if mydocs:
             subprocess.run([str(wine), 'reg', 'add',
                             r'HKCR\CLSID\{450D8FBA-AD25-11D0-98A8-0800361B1103}\DefaultIcon', '/ve', '/t',

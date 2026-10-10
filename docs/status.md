@@ -778,3 +778,7 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
 - Win+E で「Invalid parameter.」が出てマイ コンピュータが開かなかった。Wine の Folder クラスに explore 動詞がなく、
   実XPのレジストリ（`tests/reg-dump.c`）と同じ DDE の explore を registry profile 21 で入れ、フォルダ ツリー付きで開く。
   ツリーの「Control Panel」は、XP shell32 の該当文字列（`tests/string-id.c` で 4161）を参照してコントロール パネルにした。
+- 「すべてのプログラム」が英語の「StartUp」だった。実XPの「スタート メニュー」「プログラム」「スタートアップ」は
+  desktop.ini の LocalizedResourceName で名前が付くため、stage が利用者と All Users の3フォルダにも同じ項目を書く。
+  desktop.ini は隠し・システム属性にする（Wine の attrib は複数指定の最後しか効かないため1つずつ）。隠し属性が
+  ないと Start メニューに「desktop」が並び、スタートアップの desktop.ini がログオン時にメモ帳で開いた。

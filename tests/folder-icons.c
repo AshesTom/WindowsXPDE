@@ -57,6 +57,9 @@ int wmain(int argc, WCHAR **argv)
         {L"personal", CSIDL_PERSONAL}, {L"recent", CSIDL_RECENT}, {L"pictures", CSIDL_MYPICTURES},
         {L"music", CSIDL_MYMUSIC}, {L"drives", CSIDL_DRIVES}, {L"controls", CSIDL_CONTROLS},
         {L"printers", CSIDL_PRINTERS}, {L"favorites", CSIDL_FAVORITES}, {L"network", CSIDL_NETHOOD},
+        {L"startmenu", CSIDL_STARTMENU}, {L"programs", CSIDL_PROGRAMS}, {L"startup", CSIDL_STARTUP},
+        {L"desktop", CSIDL_DESKTOPDIRECTORY}, {L"templates", CSIDL_TEMPLATES}, {L"sendto", CSIDL_SENDTO},
+        {L"commonprograms", CSIDL_COMMON_PROGRAMS}, {L"commonstartup", CSIDL_COMMON_STARTUP},
     };
     WCHAR line[2048], path[MAX_PATH], location[MAX_PATH + 64];
     IShellFolder *desktop;
