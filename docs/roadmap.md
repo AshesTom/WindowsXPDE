@@ -181,3 +181,15 @@
 ## 後回しの候補
 
 - 既知の未解決: WinHelp のポップアップ、「オフライン ファイル」タブ、主ツールバーの TB_GETBUTTONSIZE の差。
+- 段階 1 で見つけた、変更前からある差（詳細は `docs/status.md` の「WM の最適化」）:
+  - Alt+Tab の切り替えウィンドウで、XP Explorer のフォルダのアイコン（32×32）の半透明部分が実XPと各色1だけ違う
+    （2つのアイコンで146画素）。DrawIconEx の合成の丸めと見られる。以前の「実XPと0画素差」は別のウィンドウでの比較。
+  - Alt と Shift を押してから Tab を押す Alt+Shift+Tab が、最下位ではなく直前のウィンドウを選ぶ。実XPとは未比較。
+    Alt を押したまま後から Shift+Tab を押す場合の逆順は動く。
+  - 非クライアント領域の試験で、nonclient-caption の非アクティブ時6件と nonclient-theme の
+    「caption button pixels differ: active=1」が失敗する（変更前の bridge・Wine でも同じ結果）。
+  - 待機中も wineserver が毎秒60〜85回起きる。proxy がなくても同程度で、Wine の常駐プロセス（services、
+    plugplay、winedevice など）によるもの。どのプロセスかは未特定。
+  - uxtheme のテーマ画像の一覧（MSSTYLES_LoadBitmap の連結リスト）は、スレッド間で排他なしに追加される。
+    0076 は描画だけを直列化した。初回読み込みの競合は未確認。0076 と同じ競合は通常の Wine アプリにもあり得るが、
+    opt-in の方針で外部シェルに限っている（段階 2 で upstream 相当の修正にするか検討）。
