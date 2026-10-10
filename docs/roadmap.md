@@ -52,6 +52,8 @@
 
 ## 段階 2: パッチの整理
 
+状態: 2026-10-10 完了。構成と対応表は `docs/patches.md`、結果は `docs/status.md` の「パッチの整理（2026-10-10、段階 2）」。
+
 目的: 積み重なった Wine パッチ（`wine/patches/` の 0001〜）を、保守しやすく、後で 64bit にも当てやすくする。
 
 やること:
@@ -190,6 +192,5 @@
     「caption button pixels differ: active=1」が失敗する（変更前の bridge・Wine でも同じ結果）。
   - 待機中も wineserver が毎秒60〜85回起きる。proxy がなくても同程度で、Wine の常駐プロセス（services、
     plugplay、winedevice など）によるもの。どのプロセスかは未特定。
-  - uxtheme のテーマ画像の一覧（MSSTYLES_LoadBitmap の連結リスト）は、スレッド間で排他なしに追加される。
-    0076 は描画だけを直列化した。初回読み込みの競合は未確認。0076 と同じ競合は通常の Wine アプリにもあり得るが、
-    opt-in の方針で外部シェルに限っている（段階 2 で upstream 相当の修正にするか検討）。
+  - （段階 2 で対応済み）uxtheme のテーマ画像の競合は、0008（旧 0076）で opt-in をやめ、読み込みの一覧にも排他を
+    加えた（`docs/dll-policy.md` の「パッチの整理」）。

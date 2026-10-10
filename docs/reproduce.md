@@ -263,7 +263,7 @@ native アプリとの clipboard 相互運用の合格を代用しない。
 Wine が画面全体を覆う最大化枠を全画面として切り詰めるため、`_WIN4WINE_CLASS=Shell_TrayWnd` の dock ウィンドウを
 画面下端に置いてから実行する（変更前の bridge でも同じ）。
 
-## WM / proxy のイベント駆動化（0073〜0076）
+## WM / proxy のイベント駆動化（旧 0073〜0076、現 0021・0045・0008）
 
 既存の環境は Wine（0073〜0076 で win32u・uxtheme・user32 が変わる）、`bridge-wm/build.sh` の proxy、
 `bridge-wm/wm.py` をまとめて更新し、セッションを再起動する。新しい WM は proxy の生存を `proxy.lock` の
@@ -287,7 +287,31 @@ DISPLAY=:93 XP_BRIDGE_DIR=/absolute/private/ipc WINEPREFIX=/same/prefix/as/proxy
 `XP_LATENCY_ROUNDS`（既定 20）と `XP_IDLE_SECONDS`（既定 10）で回数と待機時間を変えられる。
 native ウィンドウを作って動かすので、作業用の display では実行しない。待機中の値は直前の試験の後処理が
 終わってから測る。`tests/bridge_integration.py` は Win32 ウィンドウの題名変更の通知も検査するため、
-0073 のない Wine では失敗する。
+題名の WinEvent（現 0021、旧 0073）のない Wine では失敗する。
+
+
+## パッチの整理（段階 2）後の更新
+
+段階 2 で `wine/patches/` を 55 本に組み直した（`docs/patches.md`）。整理前のパッチを当てたソースツリーには
+`wine/patch-state.py` で新しい series を重ねられない（opt-in 判定の共通化と 0008 の変更で内容が変わったため、
+「適用済み」と判定できない）。新しいソースとビルドディレクトリを別名で作り、全体をビルドする。
+
+```sh
+WINE_SOURCE=/work/.local/wine-upstream-stage2 WINE_BUILD=/work/.local/wine-build-stage2 \
+  WINE_INSTALL=/work/.local/wine-install-stage2 ./wine/build.sh > .local/wine-build-stage2.log 2>&1
+```
+
+ビルドディレクトリは使い回さない。古いビルドディレクトリにソースを入れ替えて `make` すると、更新時刻の古いファイルが
+再コンパイルされず、前のソースのオブジェクトが残ることがある（段階 2 で、検証用ビルドの `user32/text.o`・`win.o` と、
+`x11drv.h` の古い構造体のまま `winex11.drv/bitblt.o` が残っていたのを見つけた。`docs/status.md` を参照）。
+試験 VM など、モジュールを個別に差し替えてきた環境は、`lib/wine` 全体を新しい install のものに入れ替える。
+
+使う側の設定は変わらない。registry profile は変更なし（version 22）、prefix の再生成や `prefix/stage.py` の
+再実行は不要。bridge（WM・proxy）も変更なし。server protocol の変更（0023）は整理前と同じなので、wineserver と
+ntdll と win32u は同じ install のものをそろえる（既存の prefix の wineserver は止めてから切り替える）。
+
+0008 は通常の Wine アプリでもテーマ画像の描画を排他にする。ほかの変更は opt-in（`WIN4WINE_EXTERNAL_SHELL`）の
+プロセスだけに効くのは整理前と同じ。
 
 
 ## テーマ適用と system font の往復試験

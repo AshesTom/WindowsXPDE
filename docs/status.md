@@ -4,6 +4,8 @@
 ローカルの日本語 XP SP3 x86 ISO、ソース版 Wine 10.0 で試験。
 ホスト自体を対象 OS の検証結果に含めない。
 
+「パッチの整理（2026-10-10、段階 2）」より前の節のパッチ番号は旧番号。現在の番号との対応は `docs/patches.md`。
+
 | 段階 | 状態 | 証拠 / 残件 |
 |---|---|---|
 | M0 | 基本経路を実測 | Debian 13 のソースビルド成功、ISO から20ファイル抽出、新規 prefix 生成成功。ログ `.local/prefix-m0-create.log` |
@@ -834,3 +836,54 @@ HSHELL_REDRAW になるまで 10〜15 ms（従来は最大 200 ms の巡回）�
   Shift+Tab、Tab 2回の結果と重なり順も変更前と同じ。Alt と Shift を押してから Tab を押す Alt+Shift+Tab が最下位ではなく
   直前のウィンドウを選ぶのも変更前と同じで、実XPとの比較は未実施。
 
+
+## パッチの整理（2026-10-10、段階 2）
+
+`wine/patches/` の 76 本を 55 本にまとめ直した。構成、書式、新旧の対応表は `docs/patches.md`、判断は
+`docs/dll-policy.md` の「パッチの整理」。
+
+- 並べ替えとまとめ: 旧パッチを git の履歴にして、機能ごとに cherry-pick し直した（衝突6か所は手で解消）。
+  未改変の Wine 10.0 に当てた結果のソースツリーは、整理前の 76 本と完全に一致した。
+- その上で、opt-in 判定を `include/wine/win4wine.h`（0015）にまとめ、各パッチの判定を機械的に置き換えた。
+  共有テーマ画像の排他（0008、旧 0076）は opt-in をやめ、画像の読み込みの一覧にも排他を加えた。
+  これが整理前のツリーとの差のすべて（31 ファイル）。
+- 新しい series は未改変の Wine 10.0 に `wine/patch-state.py --apply` で全部当たり、もう一度実行すると
+  すべて適用済みと判定される。`tests/patch_state.py` も成功。整理前のパッチを当てたツリーには重ねられない
+  （`docs/reproduce.md` の手順で作り直す）。
+
+### 検証で見つかった、以前の検証用ビルドの古いオブジェクト
+
+整理前後を比べるため検証用ビルド（`.local/wine-verified-build`、試験 VM の Wine の元）にソースを入れ替えて差分ビルドしたところ、
+「ファイル名を指定して実行」のボタンがテーマ付きになり、整理前はクラシックだった。パッチが触る 48 個の .c を
+同じコマンドで再コンパイルして比べると、検証用ビルドの次の3つは現在のソースから作られていなかった。
+
+- `user32/text.o`（旧 0066 の日本語の折り返しが入っていない）と `user32/win.o`（旧 0068 のテーマ付きコントロールへの置き換えが
+  入っていない）。そのため VM の XP シェルでは、Run などのダイアログがクラシックのコントロールで、Run の説明文の
+  「ット」が欠けていた。ソースの更新時刻がオブジェクトより古く、make が再コンパイルしなかったと見られる。
+- `winex11.drv/bitblt.o` は `x11drv.h` に旧 0042・0072 が加えたフィールドの前の構造体の配置のままで、
+  `struct x11drv_win_data` の別の位置を読んでいた。
+
+段階 1 までの VM での確認はこのビルドで行っていた。以降の比較は、整理前のツリーをゼロからビルドしたもの
+（`.local/wine-clean-old-install`）と、それに整理後の差分だけをビルドしたもの（`.local/wine-clean-new-install`、
+差は8モジュール: win32u、winex11、comctl32 と win4wine-controls、explorer、kernelbase、user32、uxtheme）で行った。
+試験 VM の `/work/.local/wine-final-install` はクリーンビルドに入れ替え（`wine.inf` は既存のものを残して prefix の更新を避けた）、
+古いものは `wine-final-install.stale` に残した。現在は整理後のモジュールで動いている。
+
+### 整理前後の比較（クリーンビルド同士）
+
+- ビルド: 警告なし（upstream の bison の警告だけ）。再コンパイルされた 30 オブジェクトのうち 15 は逆アセンブルが一致した。
+  残りは、意図して変えた draw.o・msstyles.o・font-profile.o のほかは、見た範囲では行番号の定数、データの配置、
+  関数のインライン展開とレジスタの割り当ての違い（判定が static inline 関数になったため）。
+- 試験 VM の XP シェル（Luna、96 DPI）で、セッションを起動し直して同じ操作の画面を各2回撮って比べた
+  （`.local/vm-cleanup-scenes.sh`、画像は `localres/cleanup/`）。デスクトップ、スタートメニュー、デスクトップの右クリックメニュー、
+  「ファイル名を指定して実行」、全部閉じた後は時計を除いて0画素差。フォルダウィンドウ（Win+E）は開くたびに位置が変わるので
+  ウィンドウの位置でそろえて比べ、位置で変わる角の透過部分とマウスポインタの周りを除いて0画素差。Alt+Tab の切り替えウィンドウも
+  0画素差。
+- VM の非クライアント領域の試験（nonclient-caption、caption-icons、nonclient-theme、caption-text、frame-control）の出力は
+  handle を除いて一致（nonclient-caption と nonclient-theme の既知の失敗も同じ）。
+- chroot の Xvfb で `tests/wm_integration.py`、`tests/native_frames.py`（Luna と Classic）、`tests/xterm_redraw.py`、
+  `tests/bridge_integration.py` が整理前後とも成功（`.local/cleanup-bridge-tests.sh`、
+  ログ `.local/cleanup-old-bridge-tests.log` / `cleanup-new-bridge-tests.log`）。
+- 0008 の変更の確認に `tests/theme-threads.c` を加えた。4スレッドが同じテーマの部品を300回ずつ描き、1スレッドで描いた結果と比べる。
+  VM で、整理前は opt-in ありで不一致0、opt-in なし（通常の Wine アプリ）で1200回中876回（古いビルドでは894回）。
+  整理後は opt-in の有無にかかわらず0回。

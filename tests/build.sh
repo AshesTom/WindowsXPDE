@@ -26,6 +26,7 @@ compile "$root/.local/bridge/margin-shrink-test.exe" "$root/tests/margin-shrink.
 compile "$root/.local/bridge/text-wrap-test.exe" "$root/tests/text-wrap.c" -lgdi32 -luser32
 compile "$root/.local/bridge/alpha-blend-test.exe" "$root/tests/alpha-blend.c" -lgdi32
 compile "$root/.local/bridge/part-black-test.exe" "$root/tests/part-black.c" -luxtheme -lgdi32 -luser32
+compile "$root/.local/bridge/theme-threads-test.exe" "$root/tests/theme-threads.c" -luxtheme -lgdi32 -luser32
 compile "$root/.local/bridge/menu-layout-test.exe" "$root/tests/menu-layout.c" -luser32 -lgdi32
 compile "$root/.local/bridge/class-probe.exe" -municode "$root/prefix/class-probe.c" -lole32 -luuid
 

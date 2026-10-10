@@ -1,12 +1,28 @@
-From: Win4Wine contributors
-Subject: [PATCH] win32u: preserve external-shell HALFTONE mapping under clipping
+From: Codex <codex@localhost>
+Subject: [PATCH] win32u: keep the external shell's HALFTONE mapping under clipping
 
-Keep the original stretch coordinates and interpolation phase for partial
-repaints, and retain the neighboring source sample needed by bilinear
-interpolation. Both StretchBlt and StretchDIBits use the same visibility rule.
-The behavior is opt-in via WIN4WINE_EXTERNAL_SHELL. Ordinary Wine rendering
-retains its original path. No Microsoft binary or resource is modified.
+Purpose: draw the same pixels for a stretched image whether it is painted
+whole or in parts.
+Wine before: a clipped StretchBlt or StretchDIBits with HALFTONE recomputed
+the scale for the clipped rectangle and dropped the neighbouring source
+pixel, so a partial repaint of a Luna caption changed its colours.
+Change: keep the original stretch coordinates and phase, and keep the
+neighbouring source sample that bilinear interpolation needs; both
+functions use the same visibility rule.
+Evidence: tests/halftone-clip.c (1408 cases of formats, stretch directions,
+mirroring, clips and viewports); Luna's caption keeps its pixels under
+partial WM_PAINT updates.
+Scope: only with WIN4WINE_EXTERNAL_SHELL.
+Old patches: 0036.
+---
+ dlls/win32u/bitblt.c            |  13 +-
+ dlls/win32u/dib.c               |   2 +-
+ dlls/win32u/dibdrv/primitives.c | 314 +++++++++++++++++++++++---------
+ dlls/win32u/ntgdi_private.h     |   2 +-
+ 4 files changed, 243 insertions(+), 88 deletions(-)
 
+diff --git a/dlls/win32u/bitblt.c b/dlls/win32u/bitblt.c
+index 9aaeaf9..cc159cb 100644
 --- a/dlls/win32u/bitblt.c
 +++ b/dlls/win32u/bitblt.c
 @@ -23,6 +23,7 @@
@@ -17,7 +33,15 @@ retains its original path. No Microsoft binary or resource is modified.
  #include <limits.h>
  #include <math.h>
  #include <float.h>
-@@ -40,7 +41,7 @@
+@@ -32,6 +33,7 @@
+ #include "wingdi.h"
+ #include "ntgdi_private.h"
+ #include "wine/debug.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(bitblt);
+ 
+@@ -40,7 +42,7 @@ static inline BOOL rop_uses_src( DWORD rop )
      return ((rop >> 2) & 0x330000) != (rop & 0x330000);
  }
  
@@ -26,7 +50,7 @@ retains its original path. No Microsoft binary or resource is modified.
  {
      RECT rect;
  
-@@ -105,8 +106,11 @@
+@@ -105,8 +107,11 @@ BOOL intersect_vis_rectangles( struct bitblt_coords *dst, struct bitblt_coords *
          /* avoid rounding errors */
          rect.left--;
          rect.top--;
@@ -35,12 +59,12 @@ retains its original path. No Microsoft binary or resource is modified.
 +        /* HALFTONE needs the next sample for bilinear interpolation. The
 +         * right/bottom coordinates are exclusive, so rounding alone is not
 +         * enough when the visible destination ends inside a source pixel. */
-+        rect.right += halftone && getenv("WIN4WINE_EXTERNAL_SHELL") ? 2 : 1;
-+        rect.bottom += halftone && getenv("WIN4WINE_EXTERNAL_SHELL") ? 2 : 1;
++        rect.right += halftone && win4wine_external_shell() ? 2 : 1;
++        rect.bottom += halftone && win4wine_external_shell() ? 2 : 1;
          if (!intersect_rect( &src->visrect, &rect, &src->visrect )) return FALSE;
      }
      return TRUE;
-@@ -160,7 +164,7 @@
+@@ -160,7 +165,7 @@ static BOOL get_vis_rectangles( DC *dc_dst, struct bitblt_coords *dst,
      if (!clip_device_rect( dc_src, &src->visrect, &rect )) return FALSE;
      if (IsRectEmpty( &dst->visrect )) return FALSE;
  
@@ -49,9 +73,11 @@ retains its original path. No Microsoft binary or resource is modified.
  }
  
  void free_heap_bits( struct gdi_image_bits *bits )
+diff --git a/dlls/win32u/dib.c b/dlls/win32u/dib.c
+index 23dbfbc..e373907 100644
 --- a/dlls/win32u/dib.c
 +++ b/dlls/win32u/dib.c
-@@ -579,7 +579,7 @@
+@@ -579,7 +579,7 @@ INT nulldrv_StretchDIBits( PHYSDEV dev, INT xDst, INT yDst, INT widthDst, INT he
  
      if (!clip_visrect( dc, &dst.visrect, &rect )) goto done;
  
@@ -60,20 +86,11 @@ retains its original path. No Microsoft binary or resource is modified.
  
      if (clip) NtGdiOffsetRgn( clip, dst.x - src.x, dst.y - src.y );
  
---- a/dlls/win32u/ntgdi_private.h
-+++ b/dlls/win32u/ntgdi_private.h
-@@ -148,7 +148,7 @@
- /* bitblt.c */
- extern DWORD convert_bits( const BITMAPINFO *src_info, struct bitblt_coords *src,
-                            BITMAPINFO *dst_info, struct gdi_image_bits *bits );
--extern BOOL intersect_vis_rectangles( struct bitblt_coords *dst, struct bitblt_coords *src );
-+extern BOOL intersect_vis_rectangles( struct bitblt_coords *dst, struct bitblt_coords *src, BOOL halftone );
- extern DWORD stretch_bits( const BITMAPINFO *src_info, struct bitblt_coords *src,
-                            BITMAPINFO *dst_info, struct bitblt_coords *dst,
-                            struct gdi_image_bits *bits, int mode );
+diff --git a/dlls/win32u/dibdrv/primitives.c b/dlls/win32u/dibdrv/primitives.c
+index 3633c68..bcd5ce3 100644
 --- a/dlls/win32u/dibdrv/primitives.c
 +++ b/dlls/win32u/dibdrv/primitives.c
-@@ -23,6 +23,7 @@
+@@ -23,11 +23,13 @@
  #endif
  
  #include <assert.h>
@@ -81,7 +98,13 @@ retains its original path. No Microsoft binary or resource is modified.
  
  #include "ntgdi_private.h"
  #include "dibdrv.h"
-@@ -7455,17 +7456,23 @@
+ 
+ #include "wine/debug.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(dib);
+ 
+@@ -7455,17 +7457,23 @@ static BYTE bilinear_interpolate( BYTE c00, BYTE c01, BYTE c10, BYTE c11, float
                                 linear_interpolate( c10, c11, dx ), dy );
  }
  
@@ -93,10 +116,9 @@ retains its original path. No Microsoft binary or resource is modified.
  {
      int src_width, src_height, dst_width, dst_height;
      BOOL mirrored_x, mirrored_y;
--
 +    RECT full_src, full_dst, visible_dst;
-+    BOOL stable = getenv("WIN4WINE_EXTERNAL_SHELL") != NULL;
-+
++    BOOL stable = win4wine_external_shell();
+ 
 +    get_bounding_rect(&full_src, src->x, src->y, src->width, src->height);
 +    get_bounding_rect(&full_dst, dst->x, dst->y, dst->width, dst->height);
 +    sample_offset->x = sample_offset->y = 0;
@@ -108,7 +130,7 @@ retains its original path. No Microsoft binary or resource is modified.
      OffsetRect( dst_rect, -dst_rect->left, -dst_rect->top );
  
      src_width = src_rect->right - src_rect->left;
-@@ -7479,6 +7486,36 @@
+@@ -7479,6 +7487,36 @@ static void calc_halftone_params( const struct bitblt_coords *dst, const struct
      *src_start_y = mirrored_y ? src_rect->bottom - 1 : src_rect->top;
      *src_inc_x = mirrored_x ? -(float)src_width / dst_width : (float)src_width / dst_width;
      *src_inc_y = mirrored_y ? -(float)src_height / dst_height : (float)src_height / dst_height;
@@ -145,7 +167,7 @@ retains its original path. No Microsoft binary or resource is modified.
  }
  
  static void halftone_888( const dib_info *dst_dib, const struct bitblt_coords *dst,
-@@ -7491,29 +7528,43 @@
+@@ -7491,29 +7529,43 @@ static void halftone_888( const dib_info *dst_dib, const struct bitblt_coords *d
      BYTE c00_g, c01_g, c10_g, c11_g;
      BYTE c00_b, c01_b, c10_b, c11_b;
      RECT dst_rect, src_rect;
@@ -199,7 +221,7 @@ retains its original path. No Microsoft binary or resource is modified.
  
              c00_ptr = src_ptr + x0;
              c01_ptr = src_ptr + x1;
-@@ -7554,29 +7605,43 @@
+@@ -7554,29 +7606,43 @@ static void halftone_32( const dib_info *dst_dib, const struct bitblt_coords *ds
      BYTE c00_g, c01_g, c10_g, c11_g;
      BYTE c00_b, c01_b, c10_b, c11_b;
      RECT dst_rect, src_rect;
@@ -253,7 +275,7 @@ retains its original path. No Microsoft binary or resource is modified.
  
              c00_ptr = src_ptr + x0;
              c01_ptr = src_ptr + x1;
-@@ -7617,29 +7682,43 @@
+@@ -7617,29 +7683,43 @@ static void halftone_24( const dib_info *dst_dib, const struct bitblt_coords *ds
      BYTE c00_g, c01_g, c10_g, c11_g;
      BYTE c00_b, c01_b, c10_b, c11_b;
      RECT dst_rect, src_rect;
@@ -307,7 +329,7 @@ retains its original path. No Microsoft binary or resource is modified.
  
              c00_ptr = src_ptr + x0 * 3;
              c01_ptr = src_ptr + x1 * 3;
-@@ -7682,29 +7761,43 @@
+@@ -7682,29 +7762,43 @@ static void halftone_555( const dib_info *dst_dib, const struct bitblt_coords *d
      BYTE c00_g, c01_g, c10_g, c11_g;
      BYTE c00_b, c01_b, c10_b, c11_b;
      RECT dst_rect, src_rect;
@@ -361,7 +383,7 @@ retains its original path. No Microsoft binary or resource is modified.
  
              c00_ptr = src_ptr + x0;
              c01_ptr = src_ptr + x1;
-@@ -7745,29 +7838,43 @@
+@@ -7745,29 +7839,43 @@ static void halftone_16( const dib_info *dst_dib, const struct bitblt_coords *ds
      BYTE c00_g, c01_g, c10_g, c11_g;
      BYTE c00_b, c01_b, c10_b, c11_b;
      RECT dst_rect, src_rect;
@@ -415,7 +437,7 @@ retains its original path. No Microsoft binary or resource is modified.
  
              c00_ptr = src_ptr + x0;
              c01_ptr = src_ptr + x1;
-@@ -7807,30 +7914,44 @@
+@@ -7807,30 +7915,44 @@ static void halftone_8( const dib_info *dst_dib, const struct bitblt_coords *dst
      float src_inc_x, src_inc_y, float_x, float_y, dx, dy;
      const RGBQUAD *src_clr_table;
      RECT dst_rect, src_rect;
@@ -470,16 +492,15 @@ retains its original path. No Microsoft binary or resource is modified.
  
              c00_ptr = src_ptr + x0;
              c01_ptr = src_ptr + x1;
-@@ -7872,29 +7993,43 @@
+@@ -7872,29 +7994,43 @@ static void halftone_4( const dib_info *dst_dib, const struct bitblt_coords *dst
      BYTE r, g, b, val, c00, c01, c10, c11;
      const RGBQUAD *src_clr_table;
      RECT dst_rect, src_rect;
--
--    calc_halftone_params( dst, src, &dst_rect, &src_rect, &src_start_x, &src_start_y, &src_inc_x,
--                          &src_inc_y );
 +    POINT sample_offset;
 +    BOOL stable;
-+
+ 
+-    calc_halftone_params( dst, src, &dst_rect, &src_rect, &src_start_x, &src_start_y, &src_inc_x,
+-                          &src_inc_y );
 +    stable = calc_halftone_params( dst, src, &dst_rect, &src_rect, &src_start_x, &src_start_y, &src_inc_x,
 +                          &src_inc_y, &sample_offset );
  
@@ -525,7 +546,7 @@ retains its original path. No Microsoft binary or resource is modified.
  
              c00_ptr = src_ptr + (src_dib->rect.left + x0) / 2;
              c01_ptr = src_ptr + (src_dib->rect.left + x1) / 2;
-@@ -7963,11 +8098,13 @@
+@@ -7963,11 +8099,13 @@ static void halftone_1( const dib_info *dst_dib, const struct bitblt_coords *dst
      BYTE r, g, b, val, c00, c01, c10, c11;
      const RGBQUAD *src_clr_table;
      RECT dst_rect, src_rect;
@@ -541,7 +562,7 @@ retains its original path. No Microsoft binary or resource is modified.
  
      float_y = src_start_y;
      bg_entry = *get_dib_color_table( dst_dib );
-@@ -7975,20 +8112,32 @@
+@@ -7975,20 +8113,32 @@ static void halftone_1( const dib_info *dst_dib, const struct bitblt_coords *dst
      dst_col_ptr = (BYTE *)dst_dib->bits.ptr + (dst_dib->rect.top + dst_rect.top) * dst_dib->stride;
      for (dst_y = dst_rect.top; dst_y < dst_rect.bottom; ++dst_y)
      {
@@ -582,3 +603,16 @@ retains its original path. No Microsoft binary or resource is modified.
  
              c00_ptr = src_ptr + (src_dib->rect.left + x0) / 8;
              c01_ptr = src_ptr + (src_dib->rect.left + x1) / 8;
+diff --git a/dlls/win32u/ntgdi_private.h b/dlls/win32u/ntgdi_private.h
+index ce54a65..62837cc 100644
+--- a/dlls/win32u/ntgdi_private.h
++++ b/dlls/win32u/ntgdi_private.h
+@@ -148,7 +148,7 @@ static inline BOOL is_bitmapobj_dib( const BITMAPOBJ *bmp )
+ /* bitblt.c */
+ extern DWORD convert_bits( const BITMAPINFO *src_info, struct bitblt_coords *src,
+                            BITMAPINFO *dst_info, struct gdi_image_bits *bits );
+-extern BOOL intersect_vis_rectangles( struct bitblt_coords *dst, struct bitblt_coords *src );
++extern BOOL intersect_vis_rectangles( struct bitblt_coords *dst, struct bitblt_coords *src, BOOL halftone );
+ extern DWORD stretch_bits( const BITMAPINFO *src_info, struct bitblt_coords *src,
+                            BITMAPINFO *dst_info, struct bitblt_coords *dst,
+                            struct gdi_image_bits *bits, int mode );

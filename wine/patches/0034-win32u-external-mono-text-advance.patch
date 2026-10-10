@@ -1,0 +1,42 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] win32u: use measured advances for external monochrome text
+
+Purpose: lay out non-antialiased text with the same advances as XP.
+XP behavior: DrawText, GetTextExtent and ExtTextOut with explicit advances
+give matching layouts.
+Wine before: embedded monochrome glyph advances could differ from the
+outline metrics used for measuring.
+Change: reuse the existing delta generation path for monochrome text; text
+with explicit or PDY advances and antialiased text are unchanged.
+Evidence: tests/mono-advance.c.
+Scope: only with WIN4WINE_EXTERNAL_SHELL.
+Old patches: 0030.
+---
+ dlls/win32u/font.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/win32u/font.c b/dlls/win32u/font.c
+index 62a4dc5..e3d877b 100644
+--- a/dlls/win32u/font.c
++++ b/dlls/win32u/font.c
+@@ -44,6 +44,7 @@
+ #include "wine/unixlib.h"
+ #include "wine/rbtree.h"
+ #include "wine/debug.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(font);
+ 
+@@ -5992,7 +5993,11 @@ BOOL WINAPI NtGdiExtTextOutW( HDC hdc, INT x, INT y, UINT flags, const RECT *lpr
+     if (char_extra && lpDx && NtGdiGetDeviceCaps( hdc, TECHNOLOGY ) == DT_RASPRINTER)
+         char_extra = 0; /* Printer drivers don't add char_extra if lpDx is supplied */
+ 
+-    if(char_extra || dc->breakExtra || breakRem || lpDx || lf.lfEscapement != 0)
++    /* Embedded monochrome bitmaps may have different advances from the
++     * outline metrics used for layout. Keep external-shell text placement
++     * consistent with GetTextExtent, while preserving explicit distances. */
++    if(char_extra || dc->breakExtra || breakRem || lpDx || lf.lfEscapement != 0 ||
++       (dc->aa_flags == GGO_BITMAP && win4wine_external_shell()))
+     {
+         UINT i;
+         POINT total = {0, 0}, desired[2];

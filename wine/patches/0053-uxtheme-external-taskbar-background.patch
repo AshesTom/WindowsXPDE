@@ -1,0 +1,75 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] uxtheme: paint themed backgrounds for the external taskbar's children
+
+Purpose: show the Luna taskbar behind its native child windows.
+XP behavior: the taskbar's descendants fill their buffers with
+DrawThemeParentBackground.
+Wine before: their custom parents erase with the classic face and give no
+themed WM_PRINTCLIENT output, so grey covered the tray's background.
+Change: for descendants of Shell_TrayWnd with themes active, draw the
+Taskbar part at the ancestor's coordinates, keeping the caller's clip and
+viewport. Other windows keep the parent message painting.
+Evidence: tests/taskbar-background.c compares translated child rendering
+with a direct DrawThemeBackground of the user's theme.
+Scope: only with WIN4WINE_EXTERNAL_SHELL.
+Old patches: 0016.
+---
+ dlls/uxtheme/draw.c | 38 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+
+diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
+index 1e2453d..19db719 100644
+--- a/dlls/uxtheme/draw.c
++++ b/dlls/uxtheme/draw.c
+@@ -95,6 +95,43 @@ BOOL WINAPI IsThemeDialogTextureEnabled(HWND hwnd)
+     return dwDialogTextureFlags && !(dwDialogTextureFlags & ETDT_DISABLE);
+ }
+ 
++/* Native XP taskbar descendants erase with the classic face colour even
++ * though the tray itself paints its active theme. Use the same Taskbar part
++ * at the ancestor's coordinates in this explicitly selected shell. */
++static BOOL external_shell_taskbar_background(HWND hwnd, HDC dc, const RECT *clip)
++{
++    HWND tray = hwnd;
++    WCHAR name[64];
++    RECT rect, screen;
++    HTHEME theme;
++    int part, saved;
++    HRESULT result;
++
++    if (!win4wine_external_shell() || !IsThemeActive()) return FALSE;
++    while (tray)
++    {
++        if (GetClassNameW(tray, name, ARRAY_SIZE(name)) && !wcsicmp(name, L"Shell_TrayWnd")) break;
++        tray = GetParent(tray);
++    }
++    if (!tray) return FALSE;
++    theme = OpenThemeDataForDpi(NULL, L"Taskbar", GetDpiForWindow(tray));
++    if (!theme) return FALSE;
++    GetWindowRect(tray, &screen);
++    if (screen.right - screen.left >= screen.bottom - screen.top)
++        part = screen.top < GetSystemMetrics(SM_CYSCREEN) / 2 ? TBP_BACKGROUNDTOP : TBP_BACKGROUNDBOTTOM;
++    else
++        part = screen.left < GetSystemMetrics(SM_CXSCREEN) / 2 ? TBP_BACKGROUNDLEFT : TBP_BACKGROUNDRIGHT;
++    GetClientRect(tray, &rect);
++    MapWindowPoints(tray, hwnd, (POINT *)&rect, 2);
++    saved = SaveDC(dc);
++    if (!saved) { CloseThemeData(theme); return FALSE; }
++    if (clip) IntersectClipRect(dc, clip->left, clip->top, clip->right, clip->bottom);
++    result = DrawThemeBackground(theme, dc, part, 0, &rect, NULL);
++    RestoreDC(dc, saved);
++    CloseThemeData(theme);
++    return SUCCEEDED(result);
++}
++
+ /***********************************************************************
+  *      DrawThemeParentBackground                           (UXTHEME.@)
+  */
+@@ -107,6 +144,7 @@ HRESULT WINAPI DrawThemeParentBackground(HWND hwnd, HDC hdc, RECT *prc)
+     int hasClip = -1;
+     
+     TRACE("(%p,%p,%p)\n", hwnd, hdc, prc);
++    if (external_shell_taskbar_background(hwnd, hdc, prc)) return S_OK;
+     hParent = GetParent(hwnd);
+     if(!hParent)
+         hParent = hwnd;

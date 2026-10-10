@@ -1,0 +1,93 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] user32: paint the external shell's stretched wallpaper
+
+Purpose: show XP's default desktop, Bliss stretched over the screen.
+XP behavior: explorer paints its desktop with PaintDesktop in its own
+process; WallpaperStyle 2 stretches the picture.
+Wine before: the wallpaper bitmap was loaded only in the desktop thread's
+process, so the XP desktop showed the plain background colour.
+Change: load the configured wallpaper in the painting process when the
+setting changes, and stretch it with HALFTONE for WallpaperStyle 2. Tiled
+and centred wallpapers keep the existing code. The JPEG is converted to
+Wallpaper1.bmp beforehand, as XP does, by prefix/wallpaper-convert.c.
+Scope: only with WIN4WINE_EXTERNAL_SHELL.
+Old patches: 0056.
+---
+ dlls/user32/desktop.c | 33 ++++++++++++++++++++++++++++++---
+ 1 file changed, 30 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/user32/desktop.c b/dlls/user32/desktop.c
+index 35cf39b..5f63c34 100644
+--- a/dlls/user32/desktop.c
++++ b/dlls/user32/desktop.c
+@@ -27,11 +27,14 @@
+ #include "wingdi.h"
+ #include "winnls.h"
+ #include "controls.h"
++#include "wine/win4wine.h"
+ 
+ static HBRUSH hbrushPattern;
+ static HBITMAP hbitmapWallPaper;
+ static SIZE bitmapSize;
+ static BOOL fTileWallPaper;
++static BOOL fStretchWallPaper;
++static WCHAR loaded_wallpaper[MAX_PATH];
+ 
+ 
+ /***********************************************************************
+@@ -70,7 +73,12 @@ static void init_wallpaper( const WCHAR *wallpaper )
+ 	bitmapSize.cx = (bmp.bmWidth != 0) ? bmp.bmWidth : 1;
+ 	bitmapSize.cy = (bmp.bmHeight != 0) ? bmp.bmHeight : 1;
+         fTileWallPaper = GetProfileIntA( "desktop", "TileWallPaper", 0 );
++        /* WallpaperStyle 2 stretches the picture over the whole desktop,
++         * XP's setting for its default wallpaper. */
++        fStretchWallPaper = win4wine_external_shell() && !fTileWallPaper &&
++                            GetProfileIntA( "desktop", "WallpaperStyle", 0 ) == 2;
+     }
++    lstrcpynW( loaded_wallpaper, wallpaper, MAX_PATH );
+ }
+ 
+ /***********************************************************************
+@@ -126,12 +134,22 @@ BOOL WINAPI PaintDesktop(HDC hdc)
+     {
+         RECT rect;
+ 
++        /* The XP shell paints its desktop in its own process, where the
++         * desktop thread's wallpaper bitmap is not loaded. */
++        if (win4wine_external_shell())
++        {
++            WCHAR wallpaper[MAX_PATH];
++            if (SystemParametersInfoW( SPI_GETDESKWALLPAPER, MAX_PATH, wallpaper, 0 ) &&
++                wcscmp( wallpaper, loaded_wallpaper ))
++                init_wallpaper( wallpaper );
++        }
++
+         GetClientRect( hwnd, &rect );
+ 
+         /* Paint desktop pattern (only if wall paper does not cover everything) */
+ 
+-        if (!hbitmapWallPaper ||
+-            (!fTileWallPaper && ((bitmapSize.cx < rect.right) || (bitmapSize.cy < rect.bottom))))
++        if (!hbitmapWallPaper || (!fTileWallPaper && !fStretchWallPaper &&
++                                  ((bitmapSize.cx < rect.right) || (bitmapSize.cy < rect.bottom))))
+         {
+             HBRUSH brush = hbrushPattern;
+             if (!brush) brush = (HBRUSH)GetClassLongPtrW( hwnd, GCLP_HBRBACKGROUND );
+@@ -150,7 +168,16 @@ BOOL WINAPI PaintDesktop(HDC hdc)
+ 
+             SelectObject( hMemDC, hbitmapWallPaper );
+ 
+-            if (fTileWallPaper)
++            if (fStretchWallPaper)
++            {
++                int mode = SetStretchBltMode( hdc, HALFTONE );
++                POINT origin;
++                SetBrushOrgEx( hdc, 0, 0, &origin );
++                StretchBlt( hdc, 0, 0, rect.right, rect.bottom, hMemDC, 0, 0, bitmapSize.cx, bitmapSize.cy, SRCCOPY );
++                SetBrushOrgEx( hdc, origin.x, origin.y, NULL );
++                SetStretchBltMode( hdc, mode );
++            }
++            else if (fTileWallPaper)
+             {
+                 for (y = 0; y < rect.bottom; y += bitmapSize.cy)
+                     for (x = 0; x < rect.right; x += bitmapSize.cx)

@@ -4,7 +4,7 @@
 
 `prefix/create.py ASSETS PREFIX` は Wine が生成するクリーンな win32 レジストリに、winxp、ホームの H: マッピング、Personal フォルダ、クラシック表示を設定する。XP explorer は `C:\xp` に置き、builtin explorer を保存する。
 
-`wine/build.sh` は upstream mirror の固定 commit を取得し、`wine/patches/series` を順に適用する。適用済みの判定を行う。Wine の修正には目的、対象 XP 動作、実装根拠・制約を書く。`.local/wine-upstream` の変更を直接の成果物とせず、必ずパッチに反映する。
+`wine/build.sh` は upstream mirror の固定 commit を取得し、`wine/patches/series` を順に適用する。適用済みの判定を行う。Wine の修正には目的、対象 XP 動作、実装根拠・制約を書く。`.local/wine-upstream` の変更を直接の成果物とせず、必ずパッチに反映する。パッチの並び、書式、opt-in 判定、旧番号との対応は `docs/patches.md`。
 
 `bridge-wm/wm.py` は単一 X11 screen の非 reparenting WM。`_WIN4WINE_CLASS` と `_WIN4WINE_HWND` を Wine X11 ドライバから読み、デスクトップ、トレイ、代理ウィンドウを識別する。通常の Wine ウィンドウを二重に代理化しない。desktop を下げ、dock を上げる。dock の strut または位置から `_NET_WORKAREA` を生成する。Alt+Tab、click to focus、EWMH activate/close/maximize、ICCCM iconic state を処理する。
 定期的には起きない。X のイベント（MapRequest、ConfigureNotify、PropertyNotify、FocusIn など）、IPC ディレクトリの
@@ -16,7 +16,7 @@ inotify（proxy の `*.cmd` と `frames.tsv`）、シグナルだけで起き、
 `bridge-wm/proxy.c` は Wine 上の Win32 プロセス。Linux の通常ウィンドウに `Win4WineProxy` HWND を割り当てる。Win32 のシェルが GetWindowText、IsWindowVisible、IsIconic 等を参照できる。代理 HWND は `WS_OVERLAPPEDWINDOW` を持ち、その X ウィンドウを native クライアントの直下に表示して Win32 のタイトルバーと枠を使う。対応するクライアントがない代理は隠す。shell hook の登録は user32 パッチで HWND の property に保存し、仲介プロセスが SHELLHOOK メッセージを配信する。完全な Win32 hook 実装ではない。
 proxy も定期的には起きない。IPC ディレクトリの変更通知、out-of-context の WinEvent（前面化、最小化の開始・終了、
 最上位ウィンドウの生成・破棄・表示・非表示、題名の変更）、自分のウィンドウへのメッセージで起き、Win32 の一覧と前回との差を
-SHELLHOOK で配信する。Wine 10 は題名の変更を WinEvent で知らせないため、0073 が外部シェルの opt-in 時だけ
+SHELLHOOK で配信する。Wine 10 は題名の変更を WinEvent で知らせないため、Wine パッチ 0021 が外部シェルの opt-in 時だけ
 DefWindowProc の WM_SETTEXT で EVENT_OBJECT_NAMECHANGE を出す。ファイルの同期はメッセージ処理より先に行う
 （先に動いた native が枠の一部を見えるようにし、その再描画を先にすると枠の移動が遅れるため）。
 
@@ -63,7 +63,7 @@ property は最大1 MiB、画像は256×256までとし、manage と icon / hint
 small / big の WM_SETICON に同じ HICON を設定し、交換・ウィンドウ破棄時に所有した HICON を一度破棄する。
 アイコンがない・壊れている場合は Wine builtin の共有 `IDI_APPLICATION` に戻す。共有アイコンは破棄しない。
 Wine の CreateIconIndirect は alpha 用 bitmap を内部で premultiply するため、bridge では二重変換しない。
-Wine 0025 は外部シェル opt-in 時だけ、別プロセス間の公開 `WM_GETICON` を許可する。
+Wine パッチ 0023 は外部シェル opt-in 時だけ、別プロセス間の公開 `WM_GETICON` を許可する。
 返す値は所有者の元の borrowed HICON で、受信側で `GetIconInfo` / `DrawIconEx` / `CopyIcon` を使える。
 所有者が初期化した static icon の画素・resource metadata を wineserver に不変 snapshot として登録する。
 画像は256×256、metadata は各2048 bytes、所有プロセスは16 MiB、server 全体は64 MiBまで。
@@ -74,7 +74,7 @@ foreign HICON の破棄・変更、別プロセスの `WM_SETICON`、他の GDI 
 opt-in がない通常 Wine の挙動は維持する。上限を超える画像と animated icon は foreign snapshot の対象外。
 検証用の読み取り専用 WM_APP query は引き続き proxy 内で寸法・画素 checksum を返し、実 caption は X image でも検査する。
 XP タスクバーは非同期 `WM_GETICON` の callback 後に固有 icon を描く。初期の既定画像からの切り替えと icon 更新後の表示は、taskbar の実 X 画素で検査する。
-0025 は server protocol を変更するため、wineserver / ntdll / win32u を揃えて配備し、既存 prefix server を停止して切り替える。
+0023 は server protocol を変更するため、wineserver / ntdll / win32u を揃えて配備し、既存 prefix server を停止して切り替える。
 
 代理 XID への EWMH activate も native のフォーカスに変換するので、タスクが二重にならない。
 タイトルバーと角の操作は Win32 の通常の非クライアント処理を通し、移動・リサイズを
@@ -86,7 +86,7 @@ border幅を返し、ShowWindow(SW_MAXIMIZE/RESTORE)で本物のWS_MAXIMIZEを�
 外側borderは画面外へ出し、Luna/96 DPIの可視余白は左右下0、上26pxになる。
 Win4WineMaximized propertyも既存の非クライアント描画との互換用に維持する。
 
-Wineの通常ウィンドウは代理化しない。0041は外部shellに限り、managed最大化windowの
+Wineの通常ウィンドウは代理化しない。Wine パッチ 0025 は外部shellに限り、managed最大化windowの
 位置・サイズを所有threadからX11へ送る。WMはEWMH状態を確認し、幾何を上書きしない。
 これによりWM_GETMINMAXINFOのアプリ独自制限と復元位置を尊重する。
 WMが非同期に最大化サイズを強制する方式は、Wineのpending矩形と実Xサイズを食い違わせ、
@@ -120,6 +120,6 @@ WM は native X クライアントのフォーカス・サイズ変更に合わ�
 周期的な再描画ではない。ConfigureRequest には root 座標の
 synthetic ConfigureNotify も返す。
 
-XP のタスクボタンが他プロセスの最小化可否を調べるため、Wine 0010 は外部シェル opt-in 時に
+XP のタスクボタンが他プロセスの最小化可否を調べるため、Wine パッチ 0022 は外部シェル opt-in 時に
 標準システムメニューのプロセス内コピーを返す。アプリ独自の変更は同期しない限定 shim。
-0011 は名前付き child ReBar の未指定 alignment を CCS_TOP に正規化し、フォルダの初期ずれを防ぐ。
+0032 は名前付き child ReBar の未指定 alignment を CCS_TOP に正規化し、フォルダの初期ずれを防ぐ。

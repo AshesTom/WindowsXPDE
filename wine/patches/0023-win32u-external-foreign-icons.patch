@@ -1,0 +1,844 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] server, win32u: let the external taskbar read other processes' window icons
+
+Purpose: show the right icons for other processes' windows on the XP
+taskbar, including the proxy windows of Linux applications.
+Wine before: win32u refused WM_GETICON across processes and rejected
+foreign icon handles, so the taskbar fell back to the default icon.
+Change: allow WM_GETICON across processes. The returned HICON stays the
+owner's borrowed handle; the server keeps an immutable pixel snapshot of
+static icons (up to 256x256, 2048 bytes of resource data each, 16 MiB per
+owner and 64 MiB in all, freed when the owner destroys the icon or exits),
+and GetIconInfo, DrawIconEx and CopyIcon in a reader build a private copy
+from it (at most 64 cached, pinned while used and revalidated on every
+read). Foreign icons cannot be changed or destroyed; animated and larger
+icons are not shared. The first display DC is created outside the user
+lock.
+Evidence: tests/foreign-icons.c runs two processes with self-authored
+pixels: identity, GetIconInfo, alpha and monochrome DrawIconEx, CopyIcon,
+destroy refusal, cache pressure, handle reuse and owner exit.
+Scope: only with WIN4WINE_EXTERNAL_SHELL; the server protocol changes, so
+wineserver, ntdll and win32u must come from the same build.
+Old patches: 0025.
+---
+ dlls/win32u/cursoricon.c       | 290 ++++++++++++++++++++++++++++++++-
+ dlls/win32u/message.c          |  10 +-
+ dlls/win32u/ntuser_private.h   |   1 +
+ dlls/win32u/window.c           |   2 +
+ include/wine/server_protocol.h |  51 +++++-
+ server/protocol.def            |  31 ++++
+ server/request_handlers.h      |  12 ++
+ server/request_trace.h         |  25 +++
+ server/user.c                  |  78 ++++++++-
+ 9 files changed, 493 insertions(+), 7 deletions(-)
+
+diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
+index fedd122..0574f69 100644
+--- a/dlls/win32u/cursoricon.c
++++ b/dlls/win32u/cursoricon.c
+@@ -33,6 +33,7 @@
+ #include "ntuser_private.h"
+ #include "wine/server.h"
+ #include "wine/debug.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(cursor);
+ WINE_DECLARE_DEBUG_CHANNEL(icon);
+@@ -47,6 +48,10 @@ struct cursoricon_object
+     HRSRC                   rsrc;       /* resource for shared icons */
+     BOOL                    is_shared;  /* whether this object is shared */
+     BOOL                    is_icon;    /* whether icon or cursor */
++    BOOL                    is_foreign; /* read-only imported frame, never a local USER object */
++    BOOL                    retired;
++    unsigned int            refs;
++    struct list             foreign_entry;
+     BOOL                    is_ani;     /* whether this object is a static cursor or an animated cursor */
+     UINT                    delay;      /* delay between this frame and the next (in jiffies) */
+     union
+@@ -62,6 +67,8 @@ struct cursoricon_object
+ };
+ 
+ static struct list icon_cache = LIST_INIT( icon_cache );
++static struct list foreign_icons = LIST_INIT( foreign_icons );
++static unsigned int foreign_count;
+ 
+ static struct cursoricon_object *get_icon_ptr( HICON handle )
+ {
+@@ -74,6 +81,284 @@ static struct cursoricon_object *get_icon_ptr( HICON handle )
+     return obj;
+ }
+ 
++/* Runtime snapshots contain client pixels/metadata, no shared GDI handles.
++ * The server verifies owner, generation, dimensions and memory budgets. */
++static size_t shared_icon_size( const struct shared_icon_data *data )
++{
++    size_t size;
++    if (!data->width || !data->height || data->width > SHARED_ICON_MAX_DIM ||
++        data->height > SHARED_ICON_MAX_DIM ||
++        (data->flags & ~(SHARED_ICON_COLOR | SHARED_ICON_ALPHA | SHARED_ICON_RESOURCE)) ||
++        ((data->flags & SHARED_ICON_ALPHA) && !(data->flags & SHARED_ICON_COLOR)) ||
++        data->module_bytes > SHARED_ICON_MAX_STRING || data->name_bytes > SHARED_ICON_MAX_STRING ||
++        ((data->module_bytes | data->name_bytes) & 1) || data->name_id > 0xffff ||
++        (data->name_id && data->name_bytes)) return 0;
++    size = sizeof(*data) + ((data->width + 31) / 32 * 4) * data->height *
++           (data->flags & SHARED_ICON_COLOR ? 1 : 2);
++    if (data->flags & SHARED_ICON_COLOR) size += data->width * data->height * 4;
++    if (data->flags & SHARED_ICON_ALPHA) size += data->width * data->height * 4;
++    return size + data->module_bytes + data->name_bytes;
++}
++
++static void init_icon_bitmap_info( BITMAPINFO *info, UINT width, UINT height, UINT bpp )
++{
++    memset( info, 0, sizeof(BITMAPINFOHEADER) + 2 * sizeof(RGBQUAD) );
++    info->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
++    info->bmiHeader.biWidth = width;
++    info->bmiHeader.biHeight = -(LONG)height;
++    info->bmiHeader.biPlanes = 1;
++    info->bmiHeader.biBitCount = bpp;
++    info->bmiHeader.biCompression = BI_RGB;
++    if (bpp == 1)
++        info->bmiColors[1].rgbRed = info->bmiColors[1].rgbGreen = info->bmiColors[1].rgbBlue = 255;
++}
++
++static BOOL export_icon_bitmap( HDC dc, HBITMAP bitmap, UINT width, UINT height, UINT bpp, void *bits )
++{
++    char buffer[sizeof(BITMAPINFOHEADER) + 2 * sizeof(RGBQUAD)];
++    BITMAPINFO *info = (BITMAPINFO *)buffer;
++    UINT size = ((width * bpp + 31) / 32 * 4) * height;
++    init_icon_bitmap_info( info, width, height, bpp );
++    return NtGdiGetDIBitsInternal( dc, bitmap, 0, height, bits, info,
++                                 DIB_RGB_COLORS, size, sizeof(buffer) ) == height;
++}
++
++static HBITMAP import_icon_bitmap( UINT width, UINT height, UINT bpp, const void *pixels )
++{
++    char buffer[sizeof(BITMAPINFOHEADER) + 2 * sizeof(RGBQUAD)];
++    BITMAPINFO *info = (BITMAPINFO *)buffer;
++    HBITMAP bitmap;
++    void *bits;
++    init_icon_bitmap_info( info, width, height, bpp );
++    bitmap = NtGdiCreateDIBSection( NULL, NULL, 0, info, DIB_RGB_COLORS, 0, 0, 0, &bits );
++    if (bitmap) memcpy( bits, pixels, ((width * bpp + 31) / 32 * 4) * height );
++    return bitmap;
++}
++
++static void publish_icon( struct cursoricon_object *obj )
++{
++    struct shared_icon_data header, *data;
++    size_t size, mask_size, color_size;
++    BYTE *pixels;
++    HDC dc;
++    BOOL ok;
++    if (!win4wine_external_shell() || !obj->is_icon || obj->is_ani) return;
++    memset( &header, 0, sizeof(header) );
++    header.width = obj->frame.width;
++    header.height = obj->frame.height;
++    header.hotspot_x = obj->frame.hotspot.x;
++    header.hotspot_y = obj->frame.hotspot.y;
++    header.flags = (obj->frame.color ? SHARED_ICON_COLOR : 0) |
++                   (obj->frame.alpha ? SHARED_ICON_ALPHA : 0) |
++                   (obj->is_shared ? SHARED_ICON_RESOURCE : 0);
++    header.module_bytes = obj->module.Length;
++    if (IS_INTRESOURCE( obj->resname )) header.name_id = LOWORD(obj->resname);
++    else header.name_bytes = lstrlenW( obj->resname ) * sizeof(WCHAR);
++    if (!(size = shared_icon_size( &header )) || size > SHARED_ICON_MAX_BYTES ||
++        !(data = malloc( size ))) return;
++    *data = header;
++    mask_size = ((header.width + 31) / 32 * 4) * header.height * (obj->frame.color ? 1 : 2);
++    color_size = header.width * header.height * 4;
++    pixels = (BYTE *)(data + 1);
++    dc = NtGdiCreateCompatibleDC( 0 );
++    ok = dc && export_icon_bitmap( dc, obj->frame.mask, header.width,
++                                  header.height * (obj->frame.color ? 1 : 2), 1, pixels );
++    pixels += mask_size;
++    if (ok && obj->frame.color)
++    {
++        ok = export_icon_bitmap( dc, obj->frame.color, header.width, header.height, 32, pixels );
++        pixels += color_size;
++    }
++    if (ok && obj->frame.alpha)
++    {
++        ok = export_icon_bitmap( dc, obj->frame.alpha, header.width, header.height, 32, pixels );
++        pixels += color_size;
++    }
++    if (dc) NtGdiDeleteObjectApp( dc );
++    if (ok)
++    {
++        if (header.module_bytes) memcpy( pixels, obj->module.Buffer, header.module_bytes );
++        pixels += header.module_bytes;
++        if (header.name_bytes) memcpy( pixels, obj->resname, header.name_bytes );
++        SERVER_START_REQ( set_shared_icon )
++        {
++            req->handle = wine_server_user_handle( obj->obj.handle );
++            wine_server_add_data( req, data, size );
++            wine_server_call( req );
++        }
++        SERVER_END_REQ;
++    }
++    free( data );
++}
++
++/* Owner USER objects stay untouched. Cache/list/ref operations hold USER lock;
++ * unpublished bitmap imports and cleanup can run outside it. */
++static void destroy_foreign_icon( struct cursoricon_object *obj )
++{
++    assert( obj->is_foreign && !obj->refs );
++    if (obj->frame.color) NtGdiDeleteObjectApp( obj->frame.color );
++    if (obj->frame.alpha) NtGdiDeleteObjectApp( obj->frame.alpha );
++    if (obj->frame.mask) NtGdiDeleteObjectApp( obj->frame.mask );
++    free( obj->module.Buffer );
++    if (!IS_INTRESOURCE( obj->resname )) free( obj->resname );
++    free( obj );
++}
++
++static void free_foreign_icon( struct cursoricon_object *obj )
++{
++    list_remove( &obj->foreign_entry );
++    --foreign_count;
++    destroy_foreign_icon( obj );
++}
++
++void release_foreign_icon( void *ptr )
++{
++    struct cursoricon_object *obj = ptr;
++    if (!obj->is_foreign) return;
++    assert( obj->refs );
++    if (!--obj->refs && obj->retired) free_foreign_icon( obj );
++}
++
++static struct cursoricon_object *get_foreign_icon( HICON handle )
++{
++    struct cursoricon_object *obj, *next, *cached;
++    struct shared_icon_data *data;
++    HICON full = NULL;
++    unsigned int size = 0, received = 0;
++    BYTE *pixels;
++    size_t mask_size, color_size;
++    BOOL ok;
++    HDC dc;
++
++    SERVER_START_REQ( get_shared_icon )
++    {
++        req->handle = wine_server_user_handle( handle );
++        if (!wine_server_call( req ))
++        { full = wine_server_ptr_handle( reply->handle ); size = reply->size; }
++    }
++    SERVER_END_REQ;
++    user_lock();
++    if (!full || size < sizeof(*data) || size > SHARED_ICON_MAX_BYTES)
++    {
++        LIST_FOR_EACH_ENTRY_SAFE( obj, next, &foreign_icons, struct cursoricon_object, foreign_entry )
++            if (obj->obj.handle == handle || (!HIWORD(handle) && LOWORD(obj->obj.handle) == LOWORD(handle)))
++            {
++                obj->retired = TRUE;
++                if (!obj->refs) free_foreign_icon( obj );
++            }
++        user_unlock();
++        return NULL;
++    }
++    LIST_FOR_EACH_ENTRY( obj, &foreign_icons, struct cursoricon_object, foreign_entry )
++        if (obj->obj.handle == full && !obj->retired)
++        {
++            ++obj->refs;
++            list_remove( &obj->foreign_entry );
++            list_add_head( &foreign_icons, &obj->foreign_entry );
++            return obj;
++        }
++    /* GDI imports can initialize the graphics driver and dispatch messages.
++     * Keep the unpublished temporary object outside USER lock, then validate
++     * owner liveness and generation again before publishing it to the cache. */
++    user_unlock();
++    /* GetIconInfo's copy_bitmap creates a DC under its borrowed object lock.
++     * Initialize the display driver here, before that lock can be held. */
++    if (!(dc = NtGdiCreateCompatibleDC( 0 ))) return NULL;
++    NtGdiDeleteObjectApp( dc );
++    if (!(data = malloc( size ))) return NULL;
++    SERVER_START_REQ( get_shared_icon )
++    {
++        req->handle = wine_server_user_handle( full );
++        wine_server_set_reply( req, data, size );
++        ok = !wine_server_call( req );
++        if (ok) received = wine_server_reply_size( reply );
++    }
++    SERVER_END_REQ;
++    if (!ok || received != size || shared_icon_size( data ) != size ||
++        !(obj = calloc( 1, sizeof(*obj) )))
++    { free( data ); return NULL; }
++    obj->obj.handle = full;
++    obj->obj.type = NTUSER_OBJ_ICON;
++    obj->is_foreign = obj->is_icon = TRUE;
++    obj->is_shared = !!(data->flags & SHARED_ICON_RESOURCE);
++    obj->frame.width = data->width;
++    obj->frame.height = data->height;
++    obj->frame.hotspot.x = data->hotspot_x;
++    obj->frame.hotspot.y = data->hotspot_y;
++    pixels = (BYTE *)(data + 1);
++    mask_size = ((data->width + 31) / 32 * 4) * data->height * (data->flags & SHARED_ICON_COLOR ? 1 : 2);
++    color_size = data->width * data->height * 4;
++    obj->frame.mask = import_icon_bitmap( data->width, data->height * (data->flags & SHARED_ICON_COLOR ? 1 : 2), 1, pixels );
++    ok = !!obj->frame.mask;
++    pixels += mask_size;
++    if (data->flags & SHARED_ICON_COLOR)
++    {
++        obj->frame.color = import_icon_bitmap( data->width, data->height, 32, pixels );
++        ok = ok && !!obj->frame.color;
++        pixels += color_size;
++    }
++    if (data->flags & SHARED_ICON_ALPHA)
++    {
++        obj->frame.alpha = import_icon_bitmap( data->width, data->height, 32, pixels );
++        ok = ok && !!obj->frame.alpha;
++        pixels += color_size;
++    }
++    if (data->module_bytes)
++    {
++        obj->module.Buffer = malloc( data->module_bytes );
++        if (obj->module.Buffer) { memcpy( obj->module.Buffer, pixels, data->module_bytes ); obj->module.Length = data->module_bytes; }
++        else ok = FALSE;
++        pixels += data->module_bytes;
++    }
++    if (data->name_bytes)
++    {
++        obj->resname = malloc( data->name_bytes + sizeof(WCHAR) );
++        if (obj->resname) { memcpy( obj->resname, pixels, data->name_bytes ); obj->resname[data->name_bytes / sizeof(WCHAR)] = 0; }
++        else ok = FALSE;
++    }
++    else obj->resname = MAKEINTRESOURCEW(data->name_id);
++    free( data );
++    if (!ok) { destroy_foreign_icon( obj ); return NULL; }
++    user_lock();
++    SERVER_START_REQ( get_shared_icon )
++    {
++        req->handle = wine_server_user_handle( full );
++        ok = !wine_server_call( req ) && wine_server_ptr_handle( reply->handle ) == full &&
++             reply->size == size;
++    }
++    SERVER_END_REQ;
++    if (!ok) { user_unlock(); destroy_foreign_icon( obj ); return NULL; }
++    /* Another thread or a callback may have populated this handle meanwhile. */
++    LIST_FOR_EACH_ENTRY( cached, &foreign_icons, struct cursoricon_object, foreign_entry )
++        if (cached->obj.handle == full && !cached->retired)
++        {
++            ++cached->refs;
++            list_remove( &cached->foreign_entry );
++            list_add_head( &foreign_icons, &cached->foreign_entry );
++            destroy_foreign_icon( obj );
++            return cached;
++        }
++    /* Evict only unpinned copies, preserving the bound after unlocked import. */
++    if (foreign_count >= 64)
++    {
++        LIST_FOR_EACH_ENTRY_REV( cached, &foreign_icons, struct cursoricon_object, foreign_entry )
++            if (!cached->refs) { free_foreign_icon( cached ); break; }
++        if (foreign_count >= 64) { user_unlock(); destroy_foreign_icon( obj ); return NULL; }
++    }
++    list_add_head( &foreign_icons, &obj->foreign_entry );
++    ++foreign_count;
++    obj->refs = 1;
++    return obj;
++}
++
++static struct cursoricon_object *get_icon_read_ptr( HICON handle )
++{
++    struct cursoricon_object *obj = get_user_handle_ptr( handle, NTUSER_OBJ_ICON );
++    if (obj != OBJ_OTHER_PROCESS) return obj;
++    if (!win4wine_external_shell()) return NULL;
++    return get_foreign_icon( handle );
++}
++
+ BOOL process_wine_setcursor( HWND hwnd, HWND window, HCURSOR handle )
+ {
+     TRACE( "hwnd %p, window %p, hcursor %p\n", hwnd, window, handle );
+@@ -160,7 +445,7 @@ static struct cursoricon_object *get_icon_frame_ptr( HICON handle, UINT step )
+ {
+     struct cursoricon_object *obj, *ret;
+ 
+-    if (!(obj = get_icon_ptr( handle ))) return NULL;
++    if (!(obj = get_icon_read_ptr( handle ))) return NULL;
+     if (!obj->is_ani) return obj;
+     if (step >= obj->ani.num_steps)
+     {
+@@ -338,6 +623,7 @@ BOOL WINAPI NtUserSetCursorIconData( HCURSOR cursor, UNICODE_STRING *module, UNI
+         }
+     }
+ 
++    publish_icon( obj );
+     release_user_handle_ptr( obj );
+     return TRUE;
+ }
+@@ -476,7 +762,7 @@ BOOL WINAPI NtUserGetIconInfo( HICON icon, ICONINFO *info, UNICODE_STRING *modul
+     struct cursoricon_object *obj, *frame_obj;
+     BOOL ret = TRUE;
+ 
+-    if (!(obj = get_icon_ptr( icon )))
++    if (!(obj = get_icon_read_ptr( icon )))
+     {
+         RtlSetLastWin32Error( ERROR_INVALID_CURSOR_HANDLE );
+         return FALSE;
+diff --git a/dlls/win32u/message.c b/dlls/win32u/message.c
+index 2f1e14c..43d3e2a 100644
+--- a/dlls/win32u/message.c
++++ b/dlls/win32u/message.c
+@@ -35,6 +35,7 @@
+ #include "dde.h"
+ #include "immdev.h"
+ #include "wine/debug.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(msg);
+ WINE_DECLARE_DEBUG_CHANNEL(key);
+@@ -885,6 +886,9 @@ static BOOL unpack_message( HWND hwnd, UINT message, WPARAM *wparam, LPARAM *lpa
+     case WM_NOTIFY:
+         /* WM_NOTIFY cannot be sent across processes (MSDN) */
+         return FALSE;
++    case WM_GETICON:
++        return win4wine_external_shell();
++
+     case WM_NCPAINT:
+         if (*wparam <= 1) return TRUE;
+         FIXME( "WM_NCPAINT hdc unpacking not supported\n" );
+@@ -912,7 +916,6 @@ static BOOL unpack_message( HWND hwnd, UINT message, WPARAM *wparam, LPARAM *lpa
+     case WM_PAINTCLIPBOARD:
+     case WM_SIZECLIPBOARD:
+     /* these contain HICON */
+-    case WM_GETICON:
+     case WM_SETICON:
+     case WM_QUERYDRAGICON:
+     case WM_QUERYPARKICON:
+@@ -1237,6 +1240,10 @@ static size_t pack_message( HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
+         push_data( data, (LPVOID)h_extra->lparam, sizeof(MSLLHOOKSTRUCT) );
+         return 0;
+     }
++    case WM_GETICON:
++        if (!win4wine_external_shell()) data->count = -1;
++        return 0; /* scalar parameters and original borrowed HICON result */
++
+     case WM_NCPAINT:
+         if (wparam <= 1) return 0;
+         FIXME( "WM_NCPAINT hdc packing not supported yet\n" );
+@@ -1265,7 +1272,6 @@ static size_t pack_message( HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
+     case WM_PAINTCLIPBOARD:
+     case WM_SIZECLIPBOARD:
+     /* these contain HICON */
+-    case WM_GETICON:
+     case WM_SETICON:
+     case WM_QUERYDRAGICON:
+     case WM_QUERYPARKICON:
+diff --git a/dlls/win32u/ntuser_private.h b/dlls/win32u/ntuser_private.h
+index 2f3bbdf..5e46d81 100644
+--- a/dlls/win32u/ntuser_private.h
++++ b/dlls/win32u/ntuser_private.h
+@@ -234,6 +234,7 @@ HANDLE alloc_user_handle( struct user_object *ptr, unsigned int type );
+ void *free_user_handle( HANDLE handle, unsigned int type );
+ void *get_user_handle_ptr( HANDLE handle, unsigned int type );
+ void release_user_handle_ptr( void *ptr );
++void release_foreign_icon( void *ptr );
+ void *next_process_user_handle_ptr( HANDLE *handle, unsigned int type );
+ UINT win_set_flags( HWND hwnd, UINT set_mask, UINT clear_mask );
+ 
+diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
+index ba20495..ea4d111 100644
+--- a/dlls/win32u/window.c
++++ b/dlls/win32u/window.c
+@@ -61,6 +61,7 @@ HANDLE alloc_user_handle( struct user_object *ptr, unsigned int type )
+ 
+     SERVER_START_REQ( alloc_user_handle )
+     {
++        req->type = type;
+         if (!wine_server_call_err( req )) handle = wine_server_ptr_handle( reply->handle );
+     }
+     SERVER_END_REQ;
+@@ -137,6 +138,7 @@ static void set_user_handle_ptr( HANDLE handle, struct user_object *ptr )
+ void release_user_handle_ptr( void *ptr )
+ {
+     assert( ptr && ptr != OBJ_OTHER_PROCESS );
++    if (((struct user_object *)ptr)->type == NTUSER_OBJ_ICON) release_foreign_icon( ptr );
+     user_unlock();
+ }
+ 
+diff --git a/include/wine/server_protocol.h b/include/wine/server_protocol.h
+index a39ab12..71d499a 100644
+--- a/include/wine/server_protocol.h
++++ b/include/wine/server_protocol.h
+@@ -57,6 +57,21 @@ struct request_max_size
+ 
+ 
+ 
++#define SHARED_ICON_COLOR 1
++#define SHARED_ICON_ALPHA 2
++#define SHARED_ICON_RESOURCE 4
++#define SHARED_ICON_MAX_DIM 256
++#define SHARED_ICON_MAX_STRING 2048
++struct shared_icon_data
++{
++    unsigned int width, height;
++    unsigned int hotspot_x, hotspot_y;
++    unsigned int flags;
++    unsigned int module_bytes, name_bytes, name_id;
++};
++#define SHARED_ICON_MAX_BYTES (sizeof(struct shared_icon_data) + 2 * 256 * 256 * 4 + 256 * 256 / 4 + 2 * SHARED_ICON_MAX_STRING)
++
++
+ union debug_event_data
+ {
+     int code;
+@@ -5611,7 +5626,7 @@ struct set_window_layered_info_reply
+ struct alloc_user_handle_request
+ {
+     struct request_header __header;
+-    char __pad_12[4];
++    unsigned int   type;
+ };
+ struct alloc_user_handle_reply
+ {
+@@ -5883,6 +5898,32 @@ struct set_keyboard_repeat_reply
+ };
+ 
+ 
++struct set_shared_icon_request
++{
++    struct request_header __header;
++    user_handle_t  handle;
++    /* VARARG(data,bytes); */
++};
++struct set_shared_icon_reply
++{
++    struct reply_header __header;
++};
++
++
++struct get_shared_icon_request
++{
++    struct request_header __header;
++    user_handle_t  handle;
++};
++struct get_shared_icon_reply
++{
++    struct reply_header __header;
++    user_handle_t  handle;
++    data_size_t    size;
++    /* VARARG(data,bytes); */
++};
++
++
+ enum request
+ {
+     REQ_new_process,
+@@ -6177,6 +6218,8 @@ enum request
+     REQ_resume_process,
+     REQ_get_next_thread,
+     REQ_set_keyboard_repeat,
++    REQ_set_shared_icon,
++    REQ_get_shared_icon,
+     REQ_NB_REQUESTS
+ };
+ 
+@@ -6476,6 +6519,8 @@ union generic_request
+     struct resume_process_request resume_process_request;
+     struct get_next_thread_request get_next_thread_request;
+     struct set_keyboard_repeat_request set_keyboard_repeat_request;
++    struct set_shared_icon_request set_shared_icon_request;
++    struct get_shared_icon_request get_shared_icon_request;
+ };
+ union generic_reply
+ {
+@@ -6773,8 +6818,10 @@ union generic_reply
+     struct resume_process_reply resume_process_reply;
+     struct get_next_thread_reply get_next_thread_reply;
+     struct set_keyboard_repeat_reply set_keyboard_repeat_reply;
++    struct set_shared_icon_reply set_shared_icon_reply;
++    struct get_shared_icon_reply get_shared_icon_reply;
+ };
+ 
+-#define SERVER_PROTOCOL_VERSION 855
++#define SERVER_PROTOCOL_VERSION 856
+ 
+ #endif /* __WINE_WINE_SERVER_PROTOCOL_H */
+diff --git a/server/protocol.def b/server/protocol.def
+index 292303c..dec4e10 100644
+--- a/server/protocol.def
++++ b/server/protocol.def
+@@ -72,6 +72,21 @@ struct request_max_size
+ #define LAST_USER_HANDLE  0xffef  /* last possible value for low word of user handle */
+ 
+ 
++/* Immutable, bounded static icon snapshots for opt-in cross-process reads. */
++#define SHARED_ICON_COLOR 1
++#define SHARED_ICON_ALPHA 2
++#define SHARED_ICON_RESOURCE 4
++#define SHARED_ICON_MAX_DIM 256
++#define SHARED_ICON_MAX_STRING 2048
++struct shared_icon_data
++{
++    unsigned int width, height;
++    unsigned int hotspot_x, hotspot_y;
++    unsigned int flags;
++    unsigned int module_bytes, name_bytes, name_id;
++};
++#define SHARED_ICON_MAX_BYTES (sizeof(struct shared_icon_data) + 2 * 256 * 256 * 4 + 256 * 256 / 4 + 2 * SHARED_ICON_MAX_STRING)
++
+ /* debug event data */
+ union debug_event_data
+ {
+@@ -3922,6 +3937,7 @@ struct handle_info
+ 
+ /* Allocate an arbitrary user handle */
+ @REQ(alloc_user_handle)
++    unsigned int   type;          /* client-side NTUSER object type */
+ @REPLY
+     user_handle_t  handle;        /* allocated handle */
+ @END
+@@ -4079,3 +4095,18 @@ struct handle_info
+ @REPLY
+     int enable;                /* previous state of auto-repeat enable */
+ @END
++
++/* Publish a static icon once; only its owning client may supply pixels. */
++@REQ(set_shared_icon)
++    user_handle_t  handle;
++    VARARG(data,bytes);
++@END
++
++/* Validate a global icon handle; optionally retrieve its immutable snapshot. */
++@REQ(get_shared_icon)
++    user_handle_t  handle;
++@REPLY
++    user_handle_t  handle;        /* full handle, including generation */
++    data_size_t    size;
++    VARARG(data,bytes);
++@END
+diff --git a/server/request_handlers.h b/server/request_handlers.h
+index fd39842..6115992 100644
+--- a/server/request_handlers.h
++++ b/server/request_handlers.h
+@@ -299,6 +299,8 @@ DECL_HANDLER(suspend_process);
+ DECL_HANDLER(resume_process);
+ DECL_HANDLER(get_next_thread);
+ DECL_HANDLER(set_keyboard_repeat);
++DECL_HANDLER(set_shared_icon);
++DECL_HANDLER(get_shared_icon);
+ 
+ typedef void (*req_handler)( const void *req, void *reply );
+ static const req_handler req_handlers[REQ_NB_REQUESTS] =
+@@ -595,6 +597,8 @@ static const req_handler req_handlers[REQ_NB_REQUESTS] =
+     (req_handler)req_resume_process,
+     (req_handler)req_get_next_thread,
+     (req_handler)req_set_keyboard_repeat,
++    (req_handler)req_set_shared_icon,
++    (req_handler)req_get_shared_icon,
+ };
+ 
+ C_ASSERT( sizeof(abstime_t) == 8 );
+@@ -2190,6 +2194,7 @@ C_ASSERT( offsetof(struct set_window_layered_info_request, color_key) == 16 );
+ C_ASSERT( offsetof(struct set_window_layered_info_request, alpha) == 20 );
+ C_ASSERT( offsetof(struct set_window_layered_info_request, flags) == 24 );
+ C_ASSERT( sizeof(struct set_window_layered_info_request) == 32 );
++C_ASSERT( offsetof(struct alloc_user_handle_request, type) == 12 );
+ C_ASSERT( sizeof(struct alloc_user_handle_request) == 16 );
+ C_ASSERT( offsetof(struct alloc_user_handle_reply, handle) == 8 );
+ C_ASSERT( sizeof(struct alloc_user_handle_reply) == 16 );
+@@ -2270,3 +2275,10 @@ C_ASSERT( offsetof(struct set_keyboard_repeat_request, period) == 20 );
+ C_ASSERT( sizeof(struct set_keyboard_repeat_request) == 24 );
+ C_ASSERT( offsetof(struct set_keyboard_repeat_reply, enable) == 8 );
+ C_ASSERT( sizeof(struct set_keyboard_repeat_reply) == 16 );
++C_ASSERT( offsetof(struct set_shared_icon_request, handle) == 12 );
++C_ASSERT( sizeof(struct set_shared_icon_request) == 16 );
++C_ASSERT( offsetof(struct get_shared_icon_request, handle) == 12 );
++C_ASSERT( sizeof(struct get_shared_icon_request) == 16 );
++C_ASSERT( offsetof(struct get_shared_icon_reply, handle) == 8 );
++C_ASSERT( offsetof(struct get_shared_icon_reply, size) == 12 );
++C_ASSERT( sizeof(struct get_shared_icon_reply) == 16 );
+diff --git a/server/request_trace.h b/server/request_trace.h
+index 6e38f2a..3d0684c 100644
+--- a/server/request_trace.h
++++ b/server/request_trace.h
+@@ -3179,6 +3179,7 @@ static void dump_set_window_layered_info_request( const struct set_window_layere
+ 
+ static void dump_alloc_user_handle_request( const struct alloc_user_handle_request *req )
+ {
++    fprintf( stderr, " type=%08x", req->type );
+ }
+ 
+ static void dump_alloc_user_handle_reply( const struct alloc_user_handle_reply *req )
+@@ -3344,6 +3345,24 @@ static void dump_set_keyboard_repeat_reply( const struct set_keyboard_repeat_rep
+     fprintf( stderr, " enable=%d", req->enable );
+ }
+ 
++static void dump_set_shared_icon_request( const struct set_shared_icon_request *req )
++{
++    fprintf( stderr, " handle=%08x", req->handle );
++    dump_varargs_bytes( ", data=", cur_size );
++}
++
++static void dump_get_shared_icon_request( const struct get_shared_icon_request *req )
++{
++    fprintf( stderr, " handle=%08x", req->handle );
++}
++
++static void dump_get_shared_icon_reply( const struct get_shared_icon_reply *req )
++{
++    fprintf( stderr, " handle=%08x", req->handle );
++    fprintf( stderr, ", size=%u", req->size );
++    dump_varargs_bytes( ", data=", cur_size );
++}
++
+ typedef void (*dump_func)( const void *req );
+ 
+ static const dump_func req_dumpers[REQ_NB_REQUESTS] =
+@@ -3640,6 +3659,8 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] =
+     (dump_func)dump_resume_process_request,
+     (dump_func)dump_get_next_thread_request,
+     (dump_func)dump_set_keyboard_repeat_request,
++    (dump_func)dump_set_shared_icon_request,
++    (dump_func)dump_get_shared_icon_request,
+ };
+ 
+ static const dump_func reply_dumpers[REQ_NB_REQUESTS] =
+@@ -3936,6 +3957,8 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] =
+     NULL,
+     (dump_func)dump_get_next_thread_reply,
+     (dump_func)dump_set_keyboard_repeat_reply,
++    NULL,
++    (dump_func)dump_get_shared_icon_reply,
+ };
+ 
+ static const char * const req_names[REQ_NB_REQUESTS] =
+@@ -4232,6 +4255,8 @@ static const char * const req_names[REQ_NB_REQUESTS] =
+     "resume_process",
+     "get_next_thread",
+     "set_keyboard_repeat",
++    "set_shared_icon",
++    "get_shared_icon",
+ };
+ 
+ static const struct
+diff --git a/server/user.c b/server/user.c
+index 2d038a6..c253c75 100644
+--- a/server/user.c
++++ b/server/user.c
+@@ -18,6 +18,8 @@
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+ 
++#include "ntstatus.h"
++#define WIN32_NO_STATUS
+ #include "thread.h"
+ #include "user.h"
+ #include "request.h"
+@@ -27,12 +29,16 @@ struct user_handle
+     void          *ptr;          /* pointer to object */
+     unsigned short type;         /* object type (0 if free) */
+     unsigned short generation;   /* generation counter */
++    unsigned int client_type;    /* arbitrary client object type */
++    void *icon_data;              /* immutable snapshot, owner lifetime */
++    data_size_t icon_size;
+ };
+ 
+ static struct user_handle *handles;
+ static struct user_handle *freelist;
+ static int nb_handles;
+ static int allocated_handles;
++static size_t icon_bytes;
+ 
+ static struct user_handle *handle_to_entry( user_handle_t handle )
+ {
+@@ -83,6 +89,10 @@ static inline void *free_user_entry( struct user_handle *ptr )
+ {
+     void *ret;
+     ret = ptr->ptr;
++    icon_bytes -= ptr->icon_size;
++    free( ptr->icon_data );
++    ptr->icon_data = NULL;
++    ptr->icon_size = 0;
+     ptr->ptr  = freelist;
+     ptr->type = 0;
+     freelist  = ptr;
+@@ -96,6 +106,9 @@ user_handle_t alloc_user_handle( void *ptr, enum user_object type )
+     if (!entry) return 0;
+     entry->ptr  = ptr;
+     entry->type = type;
++    entry->client_type = 0;
++    entry->icon_data = NULL;
++    entry->icon_size = 0;
+     if (++entry->generation >= 0xffff) entry->generation = 1;
+     return entry_to_handle( entry );
+ }
+@@ -180,6 +193,7 @@ void free_process_user_handles( struct process *process )
+ DECL_HANDLER(alloc_user_handle)
+ {
+     reply->handle = alloc_user_handle( current->process, USER_CLIENT );
++    if (reply->handle) handle_to_entry( reply->handle )->client_type = req->type;
+ }
+ 
+ 
+@@ -189,7 +203,69 @@ DECL_HANDLER(free_user_handle)
+     struct user_handle *entry;
+ 
+     if ((entry = handle_to_entry( req->handle )) && entry->type == USER_CLIENT)
+-        free_user_entry( entry );
++    {
++        if (entry->client_type == NTUSER_OBJ_ICON && entry->ptr != current->process)
++            set_error( STATUS_ACCESS_DENIED );
++        else free_user_entry( entry );
++    }
+     else
+         set_error( STATUS_INVALID_HANDLE );
+ }
++
++/* No window message, process memory pointer, or GDI handle crosses the server.
++ * Dimensions and all inferred bitmap sizes are checked before allocation. */
++static BOOL valid_icon_data( const struct shared_icon_data *data, data_size_t size )
++{
++    size_t expected;
++    if (size < sizeof(*data) || !data->width || !data->height ||
++        data->width > SHARED_ICON_MAX_DIM || data->height > SHARED_ICON_MAX_DIM ||
++        (data->flags & ~(SHARED_ICON_COLOR | SHARED_ICON_ALPHA | SHARED_ICON_RESOURCE)) ||
++        ((data->flags & SHARED_ICON_ALPHA) && !(data->flags & SHARED_ICON_COLOR)) ||
++        data->module_bytes > SHARED_ICON_MAX_STRING || data->name_bytes > SHARED_ICON_MAX_STRING ||
++        ((data->module_bytes | data->name_bytes) & 1) || data->name_id > 0xffff ||
++        (data->name_id && data->name_bytes)) return FALSE;
++    expected = sizeof(*data) + ((data->width + 31) / 32 * 4) * data->height *
++               (data->flags & SHARED_ICON_COLOR ? 1 : 2);
++    if (data->flags & SHARED_ICON_COLOR) expected += data->width * data->height * 4;
++    if (data->flags & SHARED_ICON_ALPHA) expected += data->width * data->height * 4;
++    expected += data->module_bytes + data->name_bytes;
++    return expected == size && expected <= SHARED_ICON_MAX_BYTES;
++}
++
++DECL_HANDLER(set_shared_icon)
++{
++    struct user_handle *entry = handle_to_entry( req->handle );
++    const struct shared_icon_data *data = get_req_data();
++    data_size_t size = get_req_data_size();
++    size_t owner_bytes = 0;
++    unsigned int i;
++
++    if (!entry || entry->type != USER_CLIENT || entry->client_type != NTUSER_OBJ_ICON)
++    { set_error( STATUS_INVALID_HANDLE ); return; }
++    if (entry->ptr != current->process)
++    { set_error( STATUS_ACCESS_DENIED ); return; }
++    if (entry->icon_data || !valid_icon_data( data, size ))
++    { set_error( STATUS_INVALID_PARAMETER ); return; }
++    for (i = 0; i < nb_handles; ++i)
++        if (handles[i].type == USER_CLIENT && handles[i].ptr == current->process)
++            owner_bytes += handles[i].icon_size;
++    if (owner_bytes + size > 16 * 1024 * 1024 || icon_bytes + size > 64 * 1024 * 1024)
++    { set_error( STATUS_NO_MEMORY ); return; }
++    if (!(entry->icon_data = memdup( data, size ))) return;
++    entry->icon_size = size;
++    icon_bytes += size;
++}
++
++DECL_HANDLER(get_shared_icon)
++{
++    struct user_handle *entry = handle_to_entry( req->handle );
++    if (!entry || entry->type != USER_CLIENT || entry->client_type != NTUSER_OBJ_ICON || !entry->icon_data)
++    { set_error( STATUS_INVALID_HANDLE ); return; }
++    reply->handle = entry_to_handle( entry );
++    reply->size = entry->icon_size;
++    if (get_reply_max_size())
++    {
++        if (get_reply_max_size() < entry->icon_size) set_error( STATUS_BUFFER_TOO_SMALL );
++        else set_reply_data( entry->icon_data, entry->icon_size );
++    }
++}
