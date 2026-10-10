@@ -25,6 +25,7 @@ compile "$root/.local/bridge/stretch-map-test.exe" "$root/tests/stretch-map.c" -
 compile "$root/.local/bridge/margin-shrink-test.exe" "$root/tests/margin-shrink.c" -luxtheme -lgdi32 -luser32
 compile "$root/.local/bridge/text-wrap-test.exe" "$root/tests/text-wrap.c" -lgdi32 -luser32
 compile "$root/.local/bridge/text-underline-test.exe" -municode "$root/tests/text-underline.c" -lgdi32 -luser32
+compile "$root/.local/bridge/foreground-focus-test.exe" -mwindows "$root/tests/foreground-focus.c" -luser32
 compile "$root/.local/bridge/alpha-blend-test.exe" "$root/tests/alpha-blend.c" -lgdi32
 compile "$root/.local/bridge/part-black-test.exe" "$root/tests/part-black.c" -luxtheme -lgdi32 -luser32
 compile "$root/.local/bridge/theme-threads-test.exe" "$root/tests/theme-threads.c" -luxtheme -lgdi32 -luser32

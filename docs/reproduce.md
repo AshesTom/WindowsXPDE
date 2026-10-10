@@ -411,3 +411,32 @@ WINE_SOURCE=/work/.local/wine-upstream-stage4 WINE_BUILD=/work/.local/wine-build
 `WINE_SOURCE` が無ければ `wine/build.sh` が upstream から取得する。手元の未改変の Wine のリポジトリを `git clone` して
 渡してもよい（作業ツリーの変更は複製されない）。新しい install に切り替えるときは、既存の prefix の wineserver を止めてから `lib/wine` と `bin` をまとめて入れ替える。
 registry profile は version 23（段階 3）。bridge（WM・proxy）は変更なし。
+
+## Wine 11 への移行（段階 5）後の更新
+
+段階 5 で基にする Wine を 11.0 にした（`wine/upstream.env`）。パッチは 53 本に変わり、番号も振り直した（`docs/patches.md`）。
+10.0 のソースツリーには重ねられないので、新しいソースとビルドディレクトリを別名で作り、configure から全体をビルドする。
+
+```sh
+WINE_SOURCE=/work/.local/wine-upstream-11 WINE_BUILD=/work/.local/wine-build-11 \
+  WINE_INSTALL=/work/.local/wine-install-11 ./wine/build.sh > .local/wine-build-11.log 2>&1
+```
+
+`win4wine-controls.dll` は 11.0 では `comctl32_v6.dll` から作られる（`wine/build.sh`）。ビルドの依存は 10.0 と同じ
+（chroot の `scripts/debian.sh init` の一覧のまま）。
+
+既存の prefix は 11.0 の Wine で更新できる。
+
+1. セッションを止め、wineserver が終わったことを確かめる。戻せるように prefix を写しておく（11.0 で更新した prefix は
+   10.0 では使わない）。
+2. install を丸ごと入れ替える（`lib/wine`、`bin` に加えて `share` も。11.0 の `wine.inf` で prefix が更新される）。
+3. `./prefix/stage.py --wine "$WINE" "$WINEPREFIX"` を実行する。`wine.inf` が新しいことを見つけて `wineboot -u` を行い、
+   その後で registry profile（version 23 のまま）を入れ直す。セッションの開始時にも同じ処理が走るが、段階 5 の入れ替えでは
+   一度、stage より先に prefix が更新されて profile が入れ直されず、デスクトップの名前が英語（My Computer）になった
+   （原因は未特定）。そうなったら `wine.inf` の時刻を新しくして（`touch`）stage をもう一度実行する。
+4. セッションを起動する。
+
+11.0 の `wineboot` は KnownDLLs を `\KnownDlls` に登録するようになった（prefix の更新で
+`HKLM\System\CurrentControlSet\Control\Session Manager\KnownDLLs` が増える）。値は変えない。XP Explorer が `C:\xp` の
+comctl32 を使えるのは 0016 による。新規 prefix は `prefix/create.py` で 10.0 と同じ手順で作れる（段階 5 で確かめた）。
+bridge（WM・proxy）と registry profile は変更なし。

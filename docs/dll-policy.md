@@ -799,3 +799,26 @@ XP のファイルの種類は、それぞれのアプリの ShellNew の登録�
 `include/wine/` にも入るが、Wine の公開ヘッダーと同じ扱いで、挙動は変わらない。
 **判断: 整理の検証は、新しいソースとビルドディレクトリで configure からビルドしたもので行う。** 段階 2 は使い回した
 ビルドディレクトリで差分ビルドしたため、0015 の一覧の漏れに気づかなかった。
+
+## Wine 11 への移行（段階 5、2026-10-10）
+
+**判断: 基にする Wine は 11.0（`wine-11.0`、db11d0fe）にする。** 11.0 の保守版（11.0.x）はまだ出ていない（gitlab の
+`stable` ブランチの先頭が 11.0 のリリース）。保守版が出たら、パッチが当たることと同じ試験を確かめて移る。
+**判断: upstream に同じ修正が入った 10.0 版の 0001（binutils 2.44）、0009（TransparentBlt の縮小 mode）、0021（題名の変更の
+WinEvent）は外す（利用者の判断）。** 0021 は 11.0 ですべてのアプリに入ったので、残すと opt-in 時に二重に通知される。
+**判断: パッチは 0001〜0053 に振り直す（利用者の判断）。** 番号の対応は `docs/patches.md`。
+**判断: 外部シェルのプロセスでは comctl32.dll を `\KnownDlls` から取らない（新 0016、利用者の判断）。** 11.0 の wineboot は
+KnownDLLs とその import 先を `\KnownDlls` に登録し、comctl32 も既知 DLL になった。XP Explorer は SxS の activation context
+なしで動き、exe と同じ `C:\xp` の XP の v6 に頼っているため、11.0 のままでは system32 の XP の v5 を読んで崩れた。
+- 実XPでは explorer の manifest による SxS のリダイレクトが KnownDlls より先に効く。exe の隣の v6 はその代わりなので、
+  例外は comctl32.dll だけに限る。ほかの既知 DLL と、opt-in の無いプロセスは 11.0 のまま。
+- prefix の KnownDLLs の値を消す方法は取らない。comctl32 は値ではなく import の連鎖で登録され、wineboot の更新のたびに戻る。
+- explorer に manifest を与える方法は、クラス名の版や 0039 のテーマ付きコントロールの仕組みが変わるため、段階 5 では取らない。
+**判断: Win32 の判定は ntdll でも 0013 の `win4wine_external_shell()` を使う。** ntdll は kernel32 を呼べないので、
+`_NTSYSTEM_` のときは `RtlQueryEnvironmentVariable_U` でプロセスの環境を読む（意味は PE モジュールと同じ）。
+**判断: win4wine-controls.dll は 11.0 の comctl32_v6.dll から作る。** 11.0 は comctl32 を v5 と v6 に分け、テーマ付きの
+Button などは v6 だけにある。0038〜0040 の変更も `dlls/comctl32_v6/` に移した。
+**判断: すべての窓を閉じた後にデスクトップのアイコンにフォーカスの点線が出るのは、11.0 の挙動のまま受け入れる。**
+10.0 版では閉じた後の前面ウィンドウが Wine のデスクトップ（#32769）だったが、11.0 では Progman になり、アイコン一覧に
+フォーカスが移る。実XPで同じ操作の後に `tests/foreground-focus.c` を実行すると、
+前面は Progman、フォーカスはアイコン一覧、フォーカス項目は 0 で、画面にも点線が出た。11.0 の方が実XPに近い。

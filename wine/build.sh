@@ -21,8 +21,9 @@ for version in {33..42} 46 47; do extra+=("--disable-d3dcompiler_$version"); don
 "$src/configure" --prefix="$install" --without-wayland --disable-tests "${extra[@]}" CC='gcc -m32' CXX='g++ -m32'
 make -j"${JOBS:-6}"
 make install
-# Isolate Wine's themed Start Button from the XP common-control module.
+# Isolate Wine's themed controls from the XP common-control module. Since
+# Wine 11 they are in comctl32_v6; comctl32 is the version 5 module.
 controls_tmp=$(mktemp "$install/lib/wine/i386-windows/win4wine-controls.dll.XXXXXX")
-cp -p -- "$install/lib/wine/i386-windows/comctl32.dll" "$controls_tmp"
+cp -p -- "$install/lib/wine/i386-windows/comctl32_v6.dll" "$controls_tmp"
 mv -f -- "$controls_tmp" "$install/lib/wine/i386-windows/win4wine-controls.dll"
 "$install/bin/wine" --version

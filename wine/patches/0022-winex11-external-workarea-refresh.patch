@@ -1,0 +1,172 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] winex11: refresh the external shell's work area without a mode change
+
+Purpose: follow the work area that the companion WM publishes for the XP
+taskbar.
+Wine before: the work area was read only on display mode changes.
+Change: on the desktop owner thread, watch the EWMH and GTK work-area
+properties of the root window, ignore unchanged contents, refresh the
+monitor data and send a bounded setting-change notification. A work area
+set explicitly with SPI_SETWORKAREA is kept. The new internal call is
+appended without renumbering existing ones.
+Evidence: tests/workarea.py on its own Xvfb display and prefix.
+Scope: only with WIN4WINE_EXTERNAL_SHELL.
+Old patches: 0039.
+---
+ dlls/win32u/sysparams.c  | 18 ++++++++++++++-
+ dlls/winex11.drv/event.c | 58 ++++++++++++++++++++++++++++++++++++++++++++++++
+ include/ntuser.h         |  1 +
+ 3 files changed, 76 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/win32u/sysparams.c b/dlls/win32u/sysparams.c
+index eee8149..411eb4a 100644
+--- a/dlls/win32u/sysparams.c
++++ b/dlls/win32u/sysparams.c
+@@ -36,6 +36,7 @@
+ #include "d3dkmdt.h"
+ #include "wine/wingdi16.h"
+ #include "wine/server.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(system);
+ 
+@@ -295,6 +296,7 @@ union sysparam_all_entry
+ 
+ static UINT system_dpi;
+ static RECT work_area;
++static BOOL work_area_explicit;
+ static DWORD process_layout = ~0u;
+ 
+ static HDC display_dc;
+@@ -6302,6 +6304,7 @@ BOOL WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT w
+         if (!ptr) return FALSE;
+         spi_idx = SPI_SETWORKAREA_IDX;
+         work_area = *(RECT*)ptr;
++        work_area_explicit = TRUE;
+         spi_loaded[spi_idx] = TRUE;
+         ret = TRUE;
+         break;
+@@ -6314,7 +6317,8 @@ BOOL WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT w
+         if (!ptr) return FALSE;
+ 
+         spi_idx = SPI_SETWORKAREA_IDX;
+-        if (!spi_loaded[spi_idx])
++        if (!spi_loaded[spi_idx] ||
++            (win4wine_external_shell() && !work_area_explicit))
+         {
+             struct monitor *monitor;
+ 
+@@ -7470,6 +7474,18 @@ ULONG_PTR WINAPI NtUserCallNoParam( ULONG code )
+         display_mode_changed( FALSE );
+         return TRUE;
+ 
++    case NtUserCallNoParam_WorkAreaChanged:
++    {
++        static const WCHAR emptyW[1];
++        if (!win4wine_external_shell() || !update_display_cache( TRUE )) return FALSE;
++        /* The screen mode is unchanged. Notify applications only after the
++         * shared monitor work areas have been refreshed. Keep pointer data
++         * in a bounded synchronous call, as for SPIF_SENDCHANGE above. */
++        send_message_timeout( HWND_BROADCAST, WM_SETTINGCHANGE, SPI_SETWORKAREA,
++                              (LPARAM)emptyW, SMTO_ABORTIFHUNG, 200, FALSE );
++        return TRUE;
++    }
++
+     /* temporary exports */
+     case NtUserExitingThread:
+         exiting_thread_id = GetCurrentThreadId();
+diff --git a/dlls/winex11.drv/event.c b/dlls/winex11.drv/event.c
+index fdb6b63..195f2f0 100644
+--- a/dlls/winex11.drv/event.c
++++ b/dlls/winex11.drv/event.c
+@@ -44,6 +44,7 @@
+ 
+ #include "wine/server.h"
+ #include "wine/debug.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(event);
+ WINE_DECLARE_DEBUG_CHANNEL(xdnd);
+@@ -1332,6 +1333,61 @@ static void handle_net_active_window( XPropertyEvent *event )
+     net_active_window_notify( event->serial, window, event->time );
+ }
+ 
++/* Only the desktop owner publishes shared monitor state. Deduplicate
++ * property contents rather than X event serials: WMs may repeatedly write
++ * identical reservations, and a single update may change both properties. */
++static void handle_work_area_notify( HWND hwnd, XPropertyEvent *event )
++{
++    static struct work_area_property
++    {
++        Atom type;
++        int format;
++        unsigned long count;
++        unsigned char *data;
++        BOOL initialized;
++    } cached[2];
++    Atom atoms[2] = {x11drv_atom(_NET_WORKAREA), x11drv_atom(_GTK_WORKAREAS_D0)};
++    BOOL changed = FALSE;
++    unsigned int i;
++
++    if (!win4wine_external_shell() || event->window != root_window ||
++        hwnd != NtUserGetDesktopWindow() || NtUserGetWindowThread( hwnd, NULL ) != GetCurrentThreadId()) return;
++    for (i = 0; i < ARRAY_SIZE(atoms); i++)
++    {
++        Atom type;
++        int format;
++        unsigned long count, remaining;
++        unsigned char *data = NULL;
++        SIZE_T size;
++
++        if (XGetWindowProperty( event->display, root_window, atoms[i], 0, 4096, False,
++                                AnyPropertyType, &type, &format, &count, &remaining, &data )) continue;
++        /* A work area is a bounded CARDINAL32 array of rectangle tuples.
++         * Property deletion is valid and restores the driver's fallback. */
++        if (remaining || count > 4096 ||
++            (type != None && (type != XA_CARDINAL || format != 32 || count < 4 || count % 4)))
++        {
++            XFree( data );
++            continue;
++        }
++        size = count * sizeof(long);
++        if (!cached[i].initialized || cached[i].type != type || cached[i].format != format ||
++            cached[i].count != count || (size && memcmp( cached[i].data, data, size )))
++        {
++            XFree( cached[i].data );
++            cached[i].type = type;
++            cached[i].format = format;
++            cached[i].count = count;
++            cached[i].data = data;
++            cached[i].initialized = TRUE;
++            changed = TRUE;
++        }
++        else XFree( data );
++    }
++    if (changed && !NtUserCallNoParam( NtUserCallNoParam_WorkAreaChanged ))
++        for (i = 0; i < ARRAY_SIZE(cached); i++) cached[i].initialized = FALSE;
++}
++
+ /***********************************************************************
+  *           X11DRV_PropertyNotify
+  */
+@@ -1348,6 +1404,8 @@ static BOOL X11DRV_PropertyNotify( HWND hwnd, XEvent *xev )
+     if (event->atom == x11drv_atom(WM_NORMAL_HINTS)) handle_wm_normal_hints_notify( hwnd, event );
+     if (event->atom == x11drv_atom(_NET_SUPPORTED)) handle_net_supported_notify( event );
+     if (event->atom == x11drv_atom(_NET_ACTIVE_WINDOW)) handle_net_active_window( event );
++    if (event->atom == x11drv_atom(_NET_WORKAREA) || event->atom == x11drv_atom(_GTK_WORKAREAS_D0))
++        handle_work_area_notify( hwnd, event );
+ 
+     return TRUE;
+ }
+diff --git a/include/ntuser.h b/include/ntuser.h
+index ce1b18f..82ed517 100644
+--- a/include/ntuser.h
++++ b/include/ntuser.h
+@@ -1077,6 +1077,7 @@ enum
+     /* temporary exports */
+     NtUserExitingThread,
+     NtUserThreadDetach,
++    NtUserCallNoParam_WorkAreaChanged,
+ };
+ 
+ static inline HWND NtUserGetDesktopWindow(void)

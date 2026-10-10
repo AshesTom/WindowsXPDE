@@ -953,3 +953,42 @@ Wine のパッチは変えていない。
   クリーンビルドと handle を除いて一致（既知の失敗も同じ）。chroot の Xvfb で `tests/wm_integration.py`、`tests/native_frames.py`
   （Luna と Classic）、`tests/xterm_redraw.py`、`tests/bridge_integration.py` が成功（`.local/stage4-bridge-tests.log`）。
 - 段階 3 のプローブ（`tests/desktop-menu.c`、`tests/text-underline.c`）の結果も、差分ビルドで確かめたときと同じ。
+
+## Wine 11 への移行（2026-10-10、段階 5）
+
+基にする Wine を 10.0 から 11.0（`wine-11.0`、db11d0fe）にした。11.0 の保守版はまだ無い。パッチは 55 本から 53 本になり、
+0001〜0053 に振り直した。対応（移植・統合・削除）は `docs/patches.md` の「10.0 → 11.0」、判断は `docs/dll-policy.md`。
+
+- 移植は、10.0 に各パッチをコミットとして積み、11.0 へ順に cherry-pick して行った。残した 52 本のうち 41 本はそのまま当たり、
+  11 本（旧 0015、0023〜0027、0031、0035、0037、0040、0041）は競合を 11.0 のコードに合わせて解いた。
+- 外した3本（10.0 版 0001、0009、0021）は upstream に同じ修正が入っていた（利用者の判断）。
+- 11.0 の変更で、当たっても動かなかったもの:
+  - 0039（旧 0041）: 11.0 の user32 の `init_class_name` が呼び出し側のバッファへ名前を写すようになり、未初期化の
+    UNICODE_STRING から NULL+0x10 へ書き込んだ。XP Explorer のウィンドウのコールバックの中のアクセス違反（ucrtbase の memmove）
+    として現れ、「ファイル名を指定して実行」が開かず、タスクバーの高さとスタートメニューが崩れた。`RtlInitUnicodeString` にした。
+  - 11.0 の wineboot が KnownDLLs とその import 先を `\KnownDlls` に登録し、comctl32 が既知 DLL になった。XP Explorer が
+    `C:\xp` の XP の v6 でなく system32 の XP の v5 を読み、アイコンの文字の背景、スタートメニューの右列、タスクバーのボタン、
+    フォルダウィンドウのメニューバーが崩れ、Win+E でデスクトップが開いた。新しい 0016 で、opt-in 時は comctl32.dll だけ
+    `\KnownDlls` から取らない（利用者の判断）。
+  - 0044（旧 0046）は、11.0 の user32 が ReleaseCapture などを win32u へ直接転送するためリンクできなかった。
+- 未改変の 11.0 に `wine/patch-state.py --apply` で 53 本が当たり、もう一度実行すると適用済みと判定される。当てたツリーは
+  移植ブランチと完全に一致した。`tests/patch_state.py` も成功。
+- 新しいソースとビルドディレクトリで configure から全体をビルドした（`.local/wine-stage5b-install`）。警告は bison の
+  文法の衝突の報告（upstream）だけで、段階 4 にあった import library の2件も出なかった。
+- 試験 VM の install を丸ごと入れ替え（10.0 版は `wine-final-install.wine10`、更新前の prefix は `prefix-final.wine10` として残す）、
+  prefix は 11.0 の wineboot で更新された。入れ替えの前後でセッションを起動し直して同じ場面を各2回撮った（`.local/vm-stage5-scenes.sh`、
+  画像は `localres/stage5/s5b*`（10.0）・`s5f*`（11.0））。
+  - デスクトップ、スタートメニュー、デスクトップの右クリックメニュー、「ファイル名を指定して実行」は時計を除いて0画素差。
+    右クリックメニューは段階 3 で実XPと0画素差なので、それを保つ。Alt+Tab の切り替えウィンドウも0画素差。
+  - フォルダウィンドウはウィンドウの位置でそろえると、ツリーのアイコン（非同期に読み込まれ、10.0 版同士でも違う）と
+    マウスポインタの周りだけが違う。
+  - 全部閉じた後は、11.0 だけデスクトップのアイコンにフォーカスの点線が出る（91画素）。10.0 版は閉じた後の前面が Wine の
+    デスクトップ（#32769）だったが、11.0 では Progman になる。実XPで同じ操作をして `tests/foreground-focus.c` で測ると、
+    前面は Progman、フォーカスはアイコン一覧の項目 0 で、点線も出た。11.0 の方が実XPに近いので、そのまま受け入れた。
+- VM の非クライアント領域の試験（nonclient-caption、caption-icons、nonclient-theme、caption-text、frame-control）の出力は、
+  段階 4 と handle を除いて一致（既知の失敗も同じ）。chroot の Xvfb で `tests/wm_integration.py`、`tests/native_frames.py`
+  （Luna と Classic）、`tests/xterm_redraw.py`、`tests/bridge_integration.py` が成功（`.local/stage5-bridge-tests.log`、
+  prefix は写しを使った）。
+- `prefix/create.py` で 11.0 の新規 prefix を作れた（registry profile 23、`win4wine-controls.dll` は comctl32_v6 の写し）。
+- 入れ替えの2回目では、セッションの stage より先に prefix が更新され、registry profile が入れ直されずにデスクトップの名前が
+  英語になった。`wine.inf` の時刻を新しくして stage を走らせると直った。原因は未特定（`docs/reproduce.md` に手順を書いた）。

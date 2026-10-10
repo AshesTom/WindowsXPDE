@@ -53,7 +53,7 @@ int wmain(int argc, WCHAR **argv)
     initialize = !wcscmp(argv[1], L"classic-initialize");
     module = LoadLibraryW(L"uxtheme.dll");
     if (!module) return 1;
-    /* Ordinals and signatures come from Wine 10.0's own uxtheme/system.c. */
+    /* Ordinals and signatures come from Wine's own uxtheme/system.c (the same in 10.0 and 11.0). */
     open_theme = (void *)GetProcAddress(module, MAKEINTRESOURCEA(2));
     close_theme = (void *)GetProcAddress(module, MAKEINTRESOURCEA(3));
     apply_theme = (void *)GetProcAddress(module, MAKEINTRESOURCEA(4));

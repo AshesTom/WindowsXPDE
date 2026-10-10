@@ -1,23 +1,28 @@
 # Wine パッチの構成と対応表
 
-`wine/patches/` の series は、未改変の Wine 10.0（`wine/upstream.env`）に `wine/patch-state.py` で上から順に当てる。
-2026-10-10 の段階 2 で、0001〜0076 の 76 本を機能ごとの 55 本にまとめ直した（下の対応表）。
-それ以前の文書（`docs/status.md`、`docs/dll-policy.md` の各節）に出てくるパッチ番号は旧番号。
+`wine/patches/` の series は、未改変の Wine 11.0（`wine/upstream.env`）に `wine/patch-state.py` で上から順に当てる。
+
+- 2026-10-10 の段階 2 で、Wine 10.0 用の 0001〜0076 の 76 本を機能ごとの 55 本にまとめ直した。
+- 2026-10-10 の段階 5 で基にする Wine を 11.0 にした。upstream に同じ修正が入った3本を外し、11.0 で必要になった1本
+  （0016）を加えて、53 本を 0001〜0053 に振り直した（下の「10.0 → 11.0」）。
+
+それ以前の文書（`docs/status.md`、`docs/dll-policy.md` の各節）に出てくるパッチ番号は、書いた時点の番号（段階 2 より前の旧番号、
+または段階 2〜4 の 10.0 版の番号）。下の対応表で今の番号に読み替える。
 
 ## 並び順
 
 | 番号 | まとまり | opt-in |
 |---|---|---|
-| 0001–0010 | Wine 一般の修正（ビルド、uxtheme と win32u の文書化された挙動） | なし。すべての Wine アプリに効く |
-| 0011–0014 | XP の部品が呼ぶのに Wine にない、または stub の API | なし |
-| 0015–0018 | 外部シェルの基盤（opt-in 判定、desktop manager、モジュール名、セッション終了） | あり |
-| 0019–0027 | bridge（WM・proxy）との連携と X11 の表示 | 0019・0020 以外あり |
-| 0028–0033 | ウィンドウの配置、UI 状態、メニュー、WM_PRINT、壁紙 | あり |
-| 0034–0038 | 文字と GDI の画素 | あり |
-| 0039–0042 | user32 / comctl32 のコントロール（Start ボタン、テーマ付きコントロール） | あり |
-| 0043–0055 | uxtheme（枠、テーマ画像、字体、タスクバー） | あり |
+| 0001–0008 | Wine 一般の修正（uxtheme と win32u の文書化された挙動） | なし。すべての Wine アプリに効く |
+| 0009–0012 | XP の部品が呼ぶのに Wine にない、または stub の API | なし |
+| 0013–0017 | 外部シェルの基盤（opt-in 判定、desktop manager、モジュール名、comctl32 の検索、セッション終了） | あり |
+| 0018–0025 | bridge（WM・proxy）との連携と X11 の表示 | 0018・0019 以外あり |
+| 0026–0031 | ウィンドウの配置、UI 状態、メニュー、WM_PRINT、壁紙 | あり |
+| 0032–0036 | 文字と GDI の画素 | あり |
+| 0037–0040 | user32 / comctl32_v6 のコントロール（Start ボタン、テーマ付きコントロール） | あり |
+| 0041–0053 | uxtheme（枠、テーマ画像、字体、タスクバー） | あり |
 
-同じまとまりの中では、後のパッチが前のパッチのコードを使う順にしてある（例: 0044〜0046 は 0043 の枠の描画を前提にする）。
+同じまとまりの中では、後のパッチが前のパッチのコードを使う順にしてある（例: 0042〜0044 は 0041 の枠の描画を前提にする）。
 
 ## 書式
 
@@ -34,75 +39,113 @@
 
 ## opt-in 判定
 
-外部シェルのための変更は、環境変数 `WIN4WINE_EXTERNAL_SHELL` があるプロセスだけで効く。判定は 0015 が加える
+外部シェルのための変更は、環境変数 `WIN4WINE_EXTERNAL_SHELL` があるプロセスだけで効く。判定は 0013 が加える
 `include/wine/win4wine.h` の `win4wine_external_shell()` に1つにまとめた（Unix ライブラリは Unix の環境、
-PE モジュールはプロセスの環境を読む。以前の個別の判定と同じ）。session、prefix の補助ツール、bridge の
+PE モジュールはプロセスの環境を読む。ntdll は Rtl の関数で読む（段階 5 で追加）。以前の個別の判定と同じ）。session、prefix の補助ツール、bridge の
 試験は値を `1` にする。値は問わない（以前は字体 profile だけが値 `1` を確かめていた）。
 
-opt-in なしで効くのは 0001〜0014 と、0019（X のウィンドウに `_WIN4WINE_CLASS` / `_WIN4WINE_HWND` を付ける）、
-0020（RegisterShellHookWindow を stub から属性の記録にする）。0018 は `WIN4WINE_SESSION_REQUEST` があるときだけ効く。
+opt-in なしで効くのは 0001〜0012 と、0018（X のウィンドウに `_WIN4WINE_CLASS` / `_WIN4WINE_HWND` を付ける）、
+0019（RegisterShellHookWindow を stub から属性の記録にする）。0017 は `WIN4WINE_SESSION_REQUEST` があるときだけ効く。
 
-## 対応表（新 → 旧）
+## 10.0 → 11.0（段階 5、2026-10-10）
 
-| 新 | 内容 | DLL | 旧 |
-|---|---|---|---|
-| 0001 | binutils 2.44 での遅延 import | tools/winebuild, ntdll | 0004 |
-| 0002 | GetThemeSysColor の色番号の対応 | uxtheme | 0014 の metric.c |
-| 0003 | GetThemeFont の NULL DC | uxtheme | 0015 |
-| 0004 | テーマ適用時の system font の高さ | uxtheme | 0018 |
-| 0005 | 字体属性の区切り | uxtheme | 0024 |
-| 0006 | 個別に無効にしたスクロールバー矢印 | uxtheme | 0020 |
-| 0007 | SetWindowTheme の空文字列 | uxtheme | 0043 |
-| 0008 | 共有テーマ画像の排他（読み込みと転送） | uxtheme | 0076（opt-in をやめ、読み込みにも拡張） |
-| 0009 | TransparentBlt の縮小 mode | win32u | 0045 |
-| 0010 | caption の右クリックの離した位置の判定 | win32u | 0047 |
-| 0011 | SCM 準備完了イベント | services | 0005 |
-| 0012 | ドッキングステーションなし | setupapi, cfgmgr32 | 0006 |
-| 0013 | シャットダウン時の更新確認 | wuaueng | 0052 |
-| 0014 | DestroyReasons | user32 | 0053 |
-| 0015 | opt-in 判定のヘッダー | include | 新規 |
-| 0016 | desktop manager がシェルの窓と endpoint を譲る | explorer | 0003, 0009 |
-| 0017 | explorer.exe のモジュール名 | kernelbase | 0007 |
-| 0018 | セッション終了要求の記録 | user32 | 0054 |
-| 0019 | X のウィンドウの Win32 識別子 | winex11 | 0001 |
-| 0020 | シェルフックの登録 | user32 | 0002 |
-| 0021 | 題名の変更の WinEvent | win32u | 0073 |
-| 0022 | 他プロセスのシステムメニュー | win32u | 0010 |
-| 0023 | 他プロセスのウィンドウアイコン | server, win32u | 0025 |
-| 0024 | 作業領域の追従 | winex11, win32u | 0039 |
-| 0025 | 最大化の位置と大きさ | winex11 | 0041 |
-| 0026 | 描かない popup の下の画面を残す | winex11 | 0042, 0055 |
-| 0027 | XP の影 | winex11 | 0072 |
-| 0028 | CW_USEDEFAULT の重ね配置 | win32u | 0049 |
-| 0029 | キーボードの UI 状態 | win32u | 0050 |
-| 0030 | XP の popup メニュー | win32u | 0071 |
-| 0031 | WM_PRINT の子・所有ウィンドウと clip | user32, win32u | 0012, 0017 |
-| 0032 | ReBar の既定の配置 | user32 | 0011 |
-| 0033 | 拡大表示の壁紙 | user32 | 0056 |
-| 0034 | monochrome 文字の送り幅 | win32u | 0030 |
-| 0035 | DrawText の縦中央、日本語の折り返し、アクセスキーの下線 | user32 | 0031, 0066 |
-| 0036 | HALFTONE の部分描画 | win32u | 0036 |
-| 0037 | TransparentBlt の拡大の画素対応 | win32u | 0064 |
-| 0038 | クラシックの caption 記号 | user32 | 0048 |
-| 0039 | クラシックの押しボタンの理想寸法 | user32 | 0008 |
-| 0040 | Start ボタン | user32, comctl32 | 0013, 0033, 0037, 0044 |
-| 0041 | テーマ付きコントロール（アドレスバーを含む） | user32, comctl32 | 0060, 0068 |
-| 0042 | チェックボックスとグループボックスの文字位置 | comctl32 | 0069 |
-| 0043 | Luna の枠（caption、ボタン、アイコン、題名の影） | uxtheme, user32, win32u | 0014（metric.c 以外）, 0022, 0027, 0028, 0032, 0034, 0062, 0065 |
-| 0044 | caption の角の領域 | uxtheme | 0023, 0051 |
-| 0045 | 枠の部分的な描き直し | uxtheme, user32 | 0074, 0075 |
-| 0046 | caption のヘルプボタン | uxtheme, user32 | 0067 |
-| 0047 | テーマ画像の拡大縮小と glyph の配置 | uxtheme | 0046, 0061, 0063 |
-| 0048 | 乗算済みアルファの丸め | uxtheme | 0070 |
-| 0049 | SetWindowTheme の変更番号 | uxtheme | 0059 |
-| 0050 | 日本語 Luna の字体 profile | uxtheme | 0026, 0035, 0040, 0057 の font-profile.c |
-| 0051 | localized msstyles の文字列テーブル | uxtheme | 0058 |
-| 0052 | Start のユーザー名の連続影 | uxtheme | 0057 の draw.c |
-| 0053 | タスクバーの子の背景 | uxtheme | 0016 |
-| 0054 | 時計 | uxtheme | 0019 |
-| 0055 | タスクバーの ReBar のグリップと末尾 | uxtheme | 0021, 0029, 0038 |
+基にする Wine は 11.0（タグ `wine-11.0`、コミット db11d0fe）。11.0 の保守版（11.0.x）はまだ出ておらず、gitlab の
+`stable` ブランチの先頭も 11.0 のリリースのコミットだった。
 
-## 対応表（旧 → 新）
+外した3本（upstream に同じ修正が入った）:
+
+| 10.0 版 | 内容 | 11.0 の該当箇所 |
+|---|---|---|
+| 0001 | binutils 2.44 での遅延 import | `tools/winebuild/import.c` に同名の `output_import_section()` があり、遅延 import の表を同じく `.data$didat` / `.rdata$didat` に置く。`LdrResolveDelayLoadedAPI` の `id` も `INT_PTR` |
+| 0009 | TransparentBlt の縮小 mode | `NtGdiTransparentBlt` が作業 DC に `COLORONCOLOR` を設定する（get_dc_ptr に失敗したときは中止する点だけ違う） |
+| 0021 | 題名の変更の WinEvent | `default_window_proc` の WM_SETTEXT が、すべてのアプリで `EVENT_OBJECT_NAMECHANGE` を出す。残すと opt-in 時に二重に通知される |
+
+加えた1本:
+
+| 11.0 版 | 内容 |
+|---|---|
+| 0016 | 11.0 の wineboot は KnownDLLs と、それらが import する DLL を `\KnownDlls` に登録する。comctl32 も（comdlg32 や shell32 の import として）既知 DLL になり、常に system32 から読まれる。XP Explorer は SxS の activation context なしで動き、exe と同じ `C:\xp` の XP の v6 に頼っているので、XP の v5 を読んで、アイコンの文字の背景、スタートメニューの右列、タスクバーのボタン、フォルダウィンドウのメニューバーが崩れた。opt-in 時は comctl32.dll だけ `\KnownDlls` から取らない（実XPでは SxS のリダイレクトが KnownDlls より先に効く）。判断は利用者（2026-10-10） |
+
+11.0 の構造に合わせて書き直した主なもの（番号は 11.0 版）:
+
+| 11.0 版 | 10.0 版 | 変更 |
+|---|---|---|
+| 0013 | 0015 | `include/Makefile.in` の一覧の位置（11.0 で `wine/wgl_driver.h` が無くなった）。ntdll 用の判定（`RtlQueryEnvironmentVariable_U`）を加えた |
+| 0021 | 0023 | 11.0 は user handle の表を session の共有メモリに置き、型と pid も表にある。サーバーの `alloc_user_handle` 要求の型は upstream が加えたのでパッチから外し、アイコンの画素の写しは表と並ぶ配列に持つ。win32u の `struct user_object` が無くなったので、`release_user_handle_ptr` は他プロセスのアイコンの写しの一覧で判定する。protocol の生成ファイルは `tools/make_requests` で作り直した |
+| 0022 | 0024 | `_NET_ACTIVE_WINDOW` の処理（11.0 で追加）と並べた |
+| 0023 | 0025 | 11.0 の `window_set_config` は最大化した managed のウィンドウの大きさを関数の先頭で戻す。その条件に opt-in を加えた |
+| 0024 | 0026 | 11.0 の `get_window_attributes` は override-redirect を設定しない。背景の pixmap の扱いだけを移した |
+| 0025 | 0027 | 影を消す判定を 11.0 の `window_set_config` の比較の後に置いた |
+| 0027 | 0029 | `wine/win4wine.h` の include（10.0 版では 0021 が加えていた）を加えた |
+| 0029 | 0031 | 11.0 の win32u の DefWindowProc が PRF_CHILDREN で子を印刷するようになった（Z 順の上から、親の clip なし、所有ウィンドウと非クライアント領域はなし）。user32 側の置き換えは引き続き必要。説明を直した |
+| 0033 | 0035 | `wine/heap.h` が無くなったので `malloc` を使う |
+| 0035 | 0037 | upstream の COLORONCOLOR（旧 0009）の上に重ねた |
+| 0038〜0040 | 0040〜0042 | 11.0 で comctl32 が v5（`comctl32.dll`）と v6（`comctl32_v6.dll`）に分かれ、Button、ComboBox、Edit、ListBox、Static は v6 だけにある。変更を `dlls/comctl32_v6/` に移し、`Win4WineRegisterStartButton` と `Win4WineRegisterControl` は `comctl32_v6.spec` から出す。共有の `commctrl.c` と `comctl32.h` の部分は v6 の `#if` の中に置いた。`wine/build.sh` は `win4wine-controls.dll` を `comctl32_v6.dll` から作る |
+| 0039 | 0041 | 11.0 の user32 の `init_class_name` は呼び出し側のバッファへ名前を写すようになった。そのまま使うと NULL へ書き込んで XP Explorer のウィンドウ作成が例外で止まった（「ファイル名を指定して実行」が開かない、タスクバーが崩れるなど）ので、`RtlInitUnicodeString` にした |
+| 0044 | 0046 | 11.0 の user32 は ReleaseCapture などを win32u へ直接転送するので、`NtUserReleaseCapture`、`NtUserPostQuitMessage`、`NtUserGetWindowContextHelpId` を呼ぶ |
+
+ほかのパッチは 11.0 にそのまま当たった（行の位置だけ変わった）。upstream が近くを変えた箇所（0008 の WM_NCRBUTTONDOWN、
+0012 の user32.spec、0037 の user32 の Button など）は、パッチの変更がまだ必要なことを 11.0 のコードで確かめた。
+
+## 対応表（11.0 版 → 10.0 版 → 段階 2 より前）
+
+| 11.0 版 | 内容 | DLL | 10.0 版 | 段階 2 より前 |
+|---|---|---|---|---|
+| 0001 | GetThemeSysColor の色番号の対応 | uxtheme | 0002 | 0014 の metric.c |
+| 0002 | GetThemeFont の NULL DC | uxtheme | 0003 | 0015 |
+| 0003 | テーマ適用時の system font の高さ | uxtheme | 0004 | 0018 |
+| 0004 | 字体属性の区切り | uxtheme | 0005 | 0024 |
+| 0005 | 個別に無効にしたスクロールバー矢印 | uxtheme | 0006 | 0020 |
+| 0006 | SetWindowTheme の空文字列 | uxtheme | 0007 | 0043 |
+| 0007 | 共有テーマ画像の排他（読み込みと転送） | uxtheme | 0008 | 0076（opt-in をやめ、読み込みにも拡張） |
+| 0008 | caption の右クリックの離した位置の判定 | win32u | 0010 | 0047 |
+| 0009 | SCM 準備完了イベント | services | 0011 | 0005 |
+| 0010 | ドッキングステーションなし | setupapi, cfgmgr32 | 0012 | 0006 |
+| 0011 | シャットダウン時の更新確認 | wuaueng | 0013 | 0052 |
+| 0012 | DestroyReasons | user32 | 0014 | 0053 |
+| 0013 | opt-in 判定のヘッダー | include | 0015 | 新規 |
+| 0014 | desktop manager がシェルの窓と endpoint を譲る | explorer | 0016 | 0003, 0009 |
+| 0015 | explorer.exe のモジュール名 | kernelbase | 0017 | 0007 |
+| 0016 | comctl32 を KnownDlls から取らない | ntdll | 新規（段階 5） | — |
+| 0017 | セッション終了要求の記録 | user32 | 0018 | 0054 |
+| 0018 | X のウィンドウの Win32 識別子 | winex11 | 0019 | 0001 |
+| 0019 | シェルフックの登録 | user32 | 0020 | 0002 |
+| 0020 | 他プロセスのシステムメニュー | win32u | 0022 | 0010 |
+| 0021 | 他プロセスのウィンドウアイコン | server, win32u | 0023 | 0025 |
+| 0022 | 作業領域の追従 | winex11, win32u | 0024 | 0039 |
+| 0023 | 最大化の位置と大きさ | winex11 | 0025 | 0041 |
+| 0024 | 描かない popup の下の画面を残す | winex11 | 0026 | 0042, 0055 |
+| 0025 | XP の影 | winex11 | 0027 | 0072 |
+| 0026 | CW_USEDEFAULT の重ね配置 | win32u | 0028 | 0049 |
+| 0027 | キーボードの UI 状態 | win32u | 0029 | 0050 |
+| 0028 | XP の popup メニュー | win32u | 0030 | 0071 |
+| 0029 | WM_PRINT の子・所有ウィンドウと clip | user32, win32u | 0031 | 0012, 0017 |
+| 0030 | ReBar の既定の配置 | user32 | 0032 | 0011 |
+| 0031 | 拡大表示の壁紙 | user32 | 0033 | 0056 |
+| 0032 | monochrome 文字の送り幅 | win32u | 0034 | 0030 |
+| 0033 | DrawText の縦中央、日本語の折り返し、アクセスキーの下線 | user32 | 0035 | 0031, 0066 |
+| 0034 | HALFTONE の部分描画 | win32u | 0036 | 0036 |
+| 0035 | TransparentBlt の拡大の画素対応 | win32u | 0037 | 0064 |
+| 0036 | クラシックの caption 記号 | user32 | 0038 | 0048 |
+| 0037 | クラシックの押しボタンの理想寸法 | user32 | 0039 | 0008 |
+| 0038 | Start ボタン | user32, comctl32_v6 | 0040 | 0013, 0033, 0037, 0044 |
+| 0039 | テーマ付きコントロール（アドレスバーを含む） | user32, comctl32_v6 | 0041 | 0060, 0068 |
+| 0040 | チェックボックスとグループボックスの文字位置 | comctl32_v6 | 0042 | 0069 |
+| 0041 | Luna の枠（caption、ボタン、アイコン、題名の影） | uxtheme, user32, win32u | 0043 | 0014（metric.c 以外）, 0022, 0027, 0028, 0032, 0034, 0062, 0065 |
+| 0042 | caption の角の領域 | uxtheme | 0044 | 0023, 0051 |
+| 0043 | 枠の部分的な描き直し | uxtheme, user32 | 0045 | 0074, 0075 |
+| 0044 | caption のヘルプボタン | uxtheme, user32 | 0046 | 0067 |
+| 0045 | テーマ画像の拡大縮小と glyph の配置 | uxtheme | 0047 | 0046, 0061, 0063 |
+| 0046 | 乗算済みアルファの丸め | uxtheme | 0048 | 0070 |
+| 0047 | SetWindowTheme の変更番号 | uxtheme | 0049 | 0059 |
+| 0048 | 日本語 Luna の字体 profile | uxtheme | 0050 | 0026, 0035, 0040, 0057 の font-profile.c |
+| 0049 | localized msstyles の文字列テーブル | uxtheme | 0051 | 0058 |
+| 0050 | Start のユーザー名の連続影 | uxtheme | 0052 | 0057 の draw.c |
+| 0051 | タスクバーの子の背景 | uxtheme | 0053 | 0016 |
+| 0052 | 時計 | uxtheme | 0054 | 0019 |
+| 0053 | タスクバーの ReBar のグリップと末尾 | uxtheme | 0055 | 0021, 0029, 0038 |
+
+## 対応表（段階 2 より前 → 10.0 版）
 
 | 旧 | 新 | 旧 | 新 | 旧 | 新 | 旧 | 新 |
 |---|---|---|---|---|---|---|---|
@@ -126,7 +169,7 @@ opt-in なしで効くのは 0001〜0014 と、0019（X のウィンドウに `_
 | 0018 | 0004 | 0037 | 0040 | 0056 | 0033 | 0075 | 0045 |
 | 0019 | 0054 | 0038 | 0055 | 0057 | 0050, 0052 | 0076 | 0008 |
 
-## 段階 3・4 での変更（2026-10-10）
+## 段階 3・4 での変更（2026-10-10、番号は 10.0 版）
 
 | 番号 | 変更 |
 |---|---|
@@ -139,8 +182,8 @@ opt-in なしで効くのは 0001〜0014 と、0019（X のウィンドウに `_
 
 - まとまりに合う位置に入れ、既存のパッチを直す変更は、そのパッチに含める。
 - 外部シェルのための挙動は `win4wine_external_shell()` で限る。文書化された Win32 の挙動の修正で、
-  通常の Wine アプリにも正しいものは opt-in にしない（0001〜0014 と同じ扱い）。
-- 未改変の Wine 10.0 に `python3 wine/patch-state.py <source> wine/patches --apply` で全部当たることを確かめる。
+  通常の Wine アプリにも正しいものは opt-in にしない（0001〜0012 と同じ扱い）。
+- 未改変の Wine 11.0 に `python3 wine/patch-state.py <source> wine/patches --apply` で全部当たることを確かめる。
 - 新しいファイルを加えたときや、整理の後は、新しいソースとビルドディレクトリで configure からビルドする。使い回した
-  ビルドディレクトリでは、Makefile の一覧の漏れも古いオブジェクトも見えない（段階 2・4）。
-- 整理の手順と検証の記録は `docs/status.md` の「パッチの整理（2026-10-10、段階 2）」と「パッチの再整理（2026-10-10、段階 4）」。
+  ビルドディレクトリでは、Makefile の一覧の漏れも古いオブジェクトも見えない（段階 2・4・5）。
+- 整理の手順と検証の記録は `docs/status.md` の「パッチの整理（2026-10-10、段階 2）」、「パッチの再整理（2026-10-10、段階 4）」、「Wine 11 への移行（2026-10-10、段階 5）」。

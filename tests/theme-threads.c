@@ -1,7 +1,7 @@
 /* Draw the same theme part from several threads at once and compare every
  * result with a single-threaded reference. Theme images are bitmaps shared by
  * the process, and one that is selected into two DCs at once draws nothing in
- * the second; Wine patch 0008 serializes those blits. Usage: theme-threads
+ * the second; Wine patch 0007 serializes those blits. Usage: theme-threads
  * [THREADS [ROUNDS]]; exits 1 if any draw differs. Needs an active visual
  * style. Public uxtheme calls only. */
 #include <windows.h>
