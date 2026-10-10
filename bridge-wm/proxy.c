@@ -30,6 +30,9 @@ static UINT shell_message;
 static HICON default_icon;
 static int syncing;
 static unsigned sequence;
+static BOOL dirty = TRUE;
+static char frames_text[MAX_CLIENTS * 96];
+static BOOL frames_written;
 
 static void write_command(const char *data)
 {
@@ -155,8 +158,11 @@ static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 return result;
             }
     }
+    /* Border metrics written to frames.tsv follow theme and settings changes. */
+    if (msg == WM_THEMECHANGED || msg == WM_SETTINGCHANGE || msg == WM_DISPLAYCHANGE) dirty = TRUE;
     if (!syncing && xid)
     {
+        if (msg == WM_WINDOWPOSCHANGED) dirty = TRUE;
         if (msg == WM_CLOSE) { command("close", xid); return 0; }
         if (msg == WM_SYSCOMMAND)
         {
@@ -235,6 +241,11 @@ static void shell_events(void)
     for (i = 0; i < previous_count; ++i)
         if (!contains(current, current_count, previous[i])) notify(HSHELL_WINDOWDESTROYED, previous[i]);
     foreground = GetForegroundWindow();
+    /* A native client with X focus is the active task, whether or not its
+     * proxy could take the Win32 foreground. */
+    for (i = 0; i < MAX_CLIENTS; ++i)
+        if (clients[i].xid && clients[i].active && contains(current, current_count, clients[i].hwnd))
+            foreground = clients[i].hwnd;
     if (foreground && !contains(current, current_count, foreground))
     {
         /* An activation can create an XP task too. Only activate identities
@@ -334,16 +345,18 @@ static void client_icon(struct client *c)
 
 static void place_frame(struct client *c)
 {
-    RECT outer, inner;
+    RECT outer, inner, wanted;
     POINT origin = {0, 0};
     GetWindowRect(c->hwnd, &outer);
     GetClientRect(c->hwnd, &inner);
     ClientToScreen(c->hwnd, &origin);
-    SetWindowPos(c->hwnd, NULL, c->x - (origin.x - outer.left),
-                 c->y - (origin.y - outer.top),
-                 c->width + (outer.right - outer.left - inner.right),
-                 c->height + (outer.bottom - outer.top - inner.bottom),
-                 SWP_NOACTIVATE | SWP_NOZORDER);
+    wanted.left = c->x - (origin.x - outer.left);
+    wanted.top = c->y - (origin.y - outer.top);
+    wanted.right = wanted.left + c->width + (outer.right - outer.left - inner.right);
+    wanted.bottom = wanted.top + c->height + (outer.bottom - outer.top - inner.bottom);
+    if (EqualRect(&wanted, &outer)) return;
+    SetWindowPos(c->hwnd, NULL, wanted.left, wanted.top, wanted.right - wanted.left,
+                 wanted.bottom - wanted.top, SWP_NOACTIVATE | SWP_NOZORDER);
 }
 
 static void frame_geometry(void)
@@ -384,26 +397,38 @@ static void frame_geometry(void)
             }
     }
     fclose(file);
-    swprintf(path, MAX_PATH + 32, L"%ls\\frames.tmp", directory);
-    swprintf(target, MAX_PATH + 32, L"%ls\\frames.tsv", directory);
-    file = _wfopen(path, L"wb");
-    if (!file) return;
-    for (i = 0; i < MAX_CLIENTS; ++i)
-        if (clients[i].xid)
+    {
+        static char text[sizeof(frames_text)];
+        size_t length = 0;
+        text[0] = 0;
+        for (i = 0; i < MAX_CLIENTS; ++i)
+            if (clients[i].xid && length < sizeof(text))
+            {
+                RECT outer, inner;
+                WINDOWINFO info = {.cbSize = sizeof(info)};
+                POINT origin = {0, 0};
+                GetWindowRect(clients[i].hwnd, &outer);
+                GetClientRect(clients[i].hwnd, &inner);
+                ClientToScreen(clients[i].hwnd, &origin);
+                GetWindowInfo(clients[i].hwnd, &info);
+                length += snprintf(text + length, sizeof(text) - length, "%lx %lx %ld %ld %ld %ld %d %d %u %u\n",
+                        (unsigned long)(uintptr_t)clients[i].hwnd,
+                        clients[i].xid, origin.x-outer.left, outer.right-origin.x-inner.right,
+                        origin.y-outer.top, outer.bottom-origin.y-inner.bottom, !!GetPropW(clients[i].hwnd, L"Win4WineMaximized"), !!IsIconic(clients[i].hwnd), info.cxWindowBorders, info.cyWindowBorders);
+            }
+        /* Rewriting unchanged pairs would wake the WM for nothing. */
+        if (frames_written && !strcmp(text, frames_text)) return;
+        swprintf(path, MAX_PATH + 32, L"%ls\\frames.tmp", directory);
+        swprintf(target, MAX_PATH + 32, L"%ls\\frames.tsv", directory);
+        if (!(file = _wfopen(path, L"wb"))) return;
+        fputs(text, file);
+        fclose(file);
+        if (MoveFileExW(path, target, MOVEFILE_REPLACE_EXISTING))
         {
-            RECT outer, inner;
-            WINDOWINFO info = {.cbSize = sizeof(info)};
-            POINT origin = {0, 0};
-            GetWindowRect(clients[i].hwnd, &outer);
-            GetClientRect(clients[i].hwnd, &inner);
-            ClientToScreen(clients[i].hwnd, &origin);
-            GetWindowInfo(clients[i].hwnd, &info);
-            fprintf(file, "%lx %lx %ld %ld %ld %ld %d %d %u %u\n", (unsigned long)(uintptr_t)clients[i].hwnd,
-                    clients[i].xid, origin.x-outer.left, outer.right-origin.x-inner.right,
-                    origin.y-outer.top, outer.bottom-origin.y-inner.bottom, !!GetPropW(clients[i].hwnd, L"Win4WineMaximized"), !!IsIconic(clients[i].hwnd), info.cxWindowBorders, info.cyWindowBorders);
+            strcpy(frames_text, text);
+            frames_written = TRUE;
         }
-    fclose(file);
-    MoveFileExW(path, target, MOVEFILE_REPLACE_EXISTING);
+    }
 }
 
 static void snapshot(void)
@@ -455,7 +480,6 @@ static void snapshot(void)
             SetForegroundWindow(c->hwnd);
         }
         c->active = active;
-        if (active) notify(HSHELL_WINDOWACTIVATED, c->hwnd);
     }
     fclose(file);
     for (i = 0; i < MAX_CLIENTS; ++i)
@@ -469,15 +493,28 @@ static void snapshot(void)
     syncing = 0;
 }
 
+static HWND previous_tray;
+static DWORD previous_pid;
+static BOOL attempted;
+
+/* shell_layout runs on a 200 ms timer only while a visible taskbar awaits it. */
+static BOOL shell_layout_pending(void)
+{
+    HWND tray = FindWindowW(L"Shell_TrayWnd", NULL);
+    DWORD pid = 0;
+    if (!tray || !IsWindowVisible(tray)) return FALSE;
+    GetWindowThreadProcessId(tray, &pid);
+    return !attempted || tray != previous_tray || pid != previous_pid;
+}
+
 /* Explorer's initial WM_SIZE can run before its child layout is ready.
  * Synchronize once after the mapped taskbar and its controls settle. The shell
  * decides all child sizes; this message carries only its current client area. */
 static void shell_layout(void)
 {
-    static HWND previous_tray, previous_start, previous_rebar;
-    static DWORD previous_pid;
+    static HWND previous_start, previous_rebar;
     static RECT previous_rect, previous_start_rect, previous_rebar_rect;
-    static BOOL stable, attempted;
+    static BOOL stable;
     HWND tray = FindWindowW(L"Shell_TrayWnd", NULL), start, rebar;
     DWORD pid = 0;
     RECT rect, start_rect, rebar_rect;
@@ -702,12 +739,25 @@ static void switch_events(void)
     else if (switcher.window) ShowWindow(switcher.window, SW_HIDE);
 }
 
+/* Out-of-context WinEvents arrive as messages for this thread. Only top-level
+ * windows can be tasks; a destroyed one is matched against the last list. */
+static void CALLBACK win_event(HWINEVENTHOOK hook, DWORD event, HWND hwnd, LONG object, LONG child,
+                               DWORD thread, DWORD time)
+{
+    (void)hook; (void)thread; (void)time;
+    if (event == EVENT_SYSTEM_FOREGROUND) dirty = TRUE;
+    else if (object != OBJID_WINDOW || child != CHILDID_SELF || !hwnd) return;
+    else if (event == EVENT_OBJECT_DESTROY) dirty |= contains(previous, previous_count, hwnd);
+    else if (GetAncestor(hwnd, GA_PARENT) == GetDesktopWindow()) dirty = TRUE;
+}
+
 int wmain(int argc, WCHAR **argv)
 {
     WNDCLASSW cls = {0};
     MSG msg;
-    ULONGLONG next = 0;
-    HANDLE changes;
+    HANDLE changes, lock;
+    WCHAR path[MAX_PATH + 32];
+    UINT_PTR layout_timer = 0;
     if (argc != 2 || wcslen(argv[1]) >= MAX_PATH) return 2;
     wcscpy(directory, argv[1]);
     shell_message = RegisterWindowMessageW(L"SHELLHOOK");
@@ -722,11 +772,38 @@ int wmain(int argc, WCHAR **argv)
     cls.lpfnWndProc = switch_proc;
     cls.lpszClassName = L"Win4WineSwitch";
     if (!RegisterClassW(&cls)) return 3;
-    /* Wake up as soon as the WM writes the Alt+Tab state. */
+    /* The WM tests this lock to know whether the proxy is running.
+     * wineserver backs it with a POSIX lock that ends with this process. */
+    swprintf(path, MAX_PATH + 32, L"%ls\\proxy.lock", directory);
+    lock = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                       NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (lock == INVALID_HANDLE_VALUE || !LockFile(lock, 0, 0, 1, 0))
+        fprintf(stderr, "proxy lock unavailable: %lu\n", GetLastError());
+    /* Wake when the WM writes a file or a Win32 window changes; never poll. */
     changes = FindFirstChangeNotificationW(directory, FALSE,
                                            FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE);
+    if (changes == INVALID_HANDLE_VALUE) return 4;
+    SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
+    SetWinEventHook(EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
+    SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_HIDE, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
+    SetWinEventHook(EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
     for (;;)
     {
+        switch_events();
+        if (dirty)
+        {
+            dirty = FALSE;
+            snapshot();
+            shell_events();
+        }
+        if (shell_layout_pending() != !!layout_timer)
+        {
+            if (layout_timer) { KillTimer(NULL, layout_timer); layout_timer = 0; }
+            else layout_timer = SetTimer(NULL, 0, 200, NULL);
+        }
+        /* Paint and other messages wait for the frames to move: a native
+         * client that moved first exposes part of its frame, and repainting
+         * that first would hold back the move. */
         while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
         {
             if (msg.message == WM_QUIT)
@@ -739,22 +816,19 @@ int wmain(int argc, WCHAR **argv)
                 }
                 return 0;
             }
+            if (msg.message == WM_TIMER && !msg.hwnd && msg.wParam == layout_timer)
+            {
+                shell_layout();
+                continue;
+            }
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
-        switch_events();
-        if (GetTickCount64() >= next)
+        if (dirty) continue; /* Changes made by this pass. */
+        if (MsgWaitForMultipleObjects(1, &changes, FALSE, INFINITE, QS_ALLINPUT) == WAIT_OBJECT_0)
         {
-            snapshot();
-            shell_events();
-            shell_layout();
-            next = GetTickCount64() + 200;
+            FindNextChangeNotification(changes);
+            dirty = TRUE;
         }
-        if (changes != INVALID_HANDLE_VALUE)
-        {
-            if (MsgWaitForMultipleObjects(1, &changes, FALSE, 100, QS_ALLINPUT) == WAIT_OBJECT_0)
-                FindNextChangeNotification(changes);
-        }
-        else MsgWaitForMultipleObjects(0, NULL, FALSE, 100, QS_ALLINPUT);
     }
 }

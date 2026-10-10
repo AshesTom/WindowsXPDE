@@ -11,7 +11,7 @@ static LRESULT CALLBACK subscriber(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     {
         WCHAR cls[256] = {0};
         GetClassNameW((HWND)lp, cls, 256);
-        printf("event=%u hwnd=%08lx class=%ls\n", (unsigned)wp, (unsigned long)lp, cls);
+        printf("event=%u hwnd=%08lx class=%ls tick=%lu\n", (unsigned)wp, (unsigned long)lp, cls, GetTickCount());
         fflush(stdout);
     }
     return DefWindowProcW(hwnd, msg, wp, lp);

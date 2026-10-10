@@ -259,6 +259,36 @@ classic と Luna は表示設定を保存して専用 Wine セッションを再
 これは proxy と native の組の操作試験であり、スタートメニュー全体、Wine アプリ全体のテーマ、
 native アプリとの clipboard 相互運用の合格を代用しない。
 
+最大化の段階は作業領域が画面より小さいこと（タスクバーがあること）を前提にする。タスクバーのない試験 display では
+Wine が画面全体を覆う最大化枠を全画面として切り詰めるため、`_WIN4WINE_CLASS=Shell_TrayWnd` の dock ウィンドウを
+画面下端に置いてから実行する（変更前の bridge でも同じ）。
+
+## WM / proxy のイベント駆動化（0073〜0076）
+
+既存の環境は Wine（0073〜0076 で win32u・uxtheme・user32 が変わる）、`bridge-wm/build.sh` の proxy、
+`bridge-wm/wm.py` をまとめて更新し、セッションを再起動する。新しい WM は proxy の生存を `proxy.lock` の
+ファイルロックで確かめるため、古い proxy と組み合わせると Alt+Tab が XP の切り替えウィンドウを出さずに順に切り替える。
+古い WM と新しい proxy の組み合わせでは、`frames.tsv` が変化のないとき書かれず、2秒で proxy が止まったと見なされる。
+registry profile は変更なし（version 22）。prefix の再生成や `prefix/stage.py` の再実行は不要。
+
+```sh
+./wine/build.sh > .local/wine-build.log 2>&1
+./bridge-wm/build.sh
+./tests/build.sh
+```
+
+遅れと待機中の起床は、WM と proxy が動いている display で測る。
+
+```sh
+DISPLAY=:93 XP_BRIDGE_DIR=/absolute/private/ipc WINEPREFIX=/same/prefix/as/proxy \
+  python3 tests/wm_latency.py
+```
+
+`XP_LATENCY_ROUNDS`（既定 20）と `XP_IDLE_SECONDS`（既定 10）で回数と待機時間を変えられる。
+native ウィンドウを作って動かすので、作業用の display では実行しない。待機中の値は直前の試験の後処理が
+終わってから測る。`tests/bridge_integration.py` は Win32 ウィンドウの題名変更の通知も検査するため、
+0073 のない Wine では失敗する。
+
 
 ## テーマ適用と system font の往復試験
 

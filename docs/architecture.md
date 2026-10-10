@@ -7,10 +7,20 @@
 `wine/build.sh` は upstream mirror の固定 commit を取得し、`wine/patches/series` を順に適用する。適用済みの判定を行う。Wine の修正には目的、対象 XP 動作、実装根拠・制約を書く。`.local/wine-upstream` の変更を直接の成果物とせず、必ずパッチに反映する。
 
 `bridge-wm/wm.py` は単一 X11 screen の非 reparenting WM。`_WIN4WINE_CLASS` と `_WIN4WINE_HWND` を Wine X11 ドライバから読み、デスクトップ、トレイ、代理ウィンドウを識別する。通常の Wine ウィンドウを二重に代理化しない。desktop を下げ、dock を上げる。dock の strut または位置から `_NET_WORKAREA` を生成する。Alt+Tab、click to focus、EWMH activate/close/maximize、ICCCM iconic state を処理する。
+定期的には起きない。X のイベント（MapRequest、ConfigureNotify、PropertyNotify、FocusIn など）、IPC ディレクトリの
+inotify（proxy の `*.cmd` と `frames.tsv`）、シグナルだけで起き、そのたびに状態を計算し直して内容が変わったファイルだけを書く。
+クライアントの位置・大きさ・題名・transient・`_WIN4WINE_HWND` は ConfigureNotify と PropertyNotify から記憶し、
+`geometry.tsv` を X への問い合わせなしで最初に書く。native ウィンドウが動いた直後の X サーバーは、見えるようになった
+デスクトップの再描画で混んでおり、問い合わせのたびにその後ろで待たされるため。
 
-`bridge-wm/proxy.c` は Wine 上の Win32 プロセス。Linux の通常ウィンドウに `Win4WineProxy` HWND を割り当てる。Win32 のシェルが GetWindowText、IsWindowVisible、IsIconic 等を参照できる。代理 HWND は `WS_OVERLAPPEDWINDOW` を持ち、その X ウィンドウを native クライアントの直下に表示して Win32 のタイトルバーと枠を使う。対応するクライアントがない代理は隠す。shell hook の登録は user32 パッチで HWND の property に保存し、仲介プロセスが SHELLHOOK メッセージを配信する。これは 200ms ポーリングの実装で、完全な Win32 hook 実装ではない。
+`bridge-wm/proxy.c` は Wine 上の Win32 プロセス。Linux の通常ウィンドウに `Win4WineProxy` HWND を割り当てる。Win32 のシェルが GetWindowText、IsWindowVisible、IsIconic 等を参照できる。代理 HWND は `WS_OVERLAPPEDWINDOW` を持ち、その X ウィンドウを native クライアントの直下に表示して Win32 のタイトルバーと枠を使う。対応するクライアントがない代理は隠す。shell hook の登録は user32 パッチで HWND の property に保存し、仲介プロセスが SHELLHOOK メッセージを配信する。完全な Win32 hook 実装ではない。
+proxy も定期的には起きない。IPC ディレクトリの変更通知、out-of-context の WinEvent（前面化、最小化の開始・終了、
+最上位ウィンドウの生成・破棄・表示・非表示、題名の変更）、自分のウィンドウへのメッセージで起き、Win32 の一覧と前回との差を
+SHELLHOOK で配信する。Wine 10 は題名の変更を WinEvent で知らせないため、0073 が外部シェルの opt-in 時だけ
+DefWindowProc の WM_SETTEXT で EVENT_OBJECT_NAMECHANGE を出す。ファイルの同期はメッセージ処理より先に行う
+（先に動いた native が枠の一部を見えるようにし、その再描画を先にすると枠の移動が遅れるため）。
 
-仲介プロセスは、表示済みの `Shell_TrayWnd` と Start/ReBar 子ウィンドウの準備が二回の巡回で安定した後、現在の親 client サイズを使った公開 `WM_SIZE` を一度だけ送る。起動直後に保持された子の ideal 高さを、シェル自身の通常レイアウトで親に合わせ直すためで、子の寸法や字体は指定しない。応答待ちは最大 500ms。Tray HWND/PID の置換・消失で状態をリセットし、一時的な非表示では再送しない。Luna と Classic に適用し、`BCM_GETIDEALSIZE` の測定値は変更しない。
+仲介プロセスは、表示済みの `Shell_TrayWnd` と Start/ReBar 子ウィンドウの準備が 200ms 間隔の二回の確認で安定した後、現在の親 client サイズを使った公開 `WM_SIZE` を一度だけ送る。起動直後に保持された子の ideal 高さを、シェル自身の通常レイアウトで親に合わせ直すためで、子の寸法や字体は指定しない。応答待ちは最大 500ms。Tray HWND/PID の置換・消失で状態をリセットし、一時的な非表示では再送しない。この確認の timer は、表示中の tray がこの同期を待っている間だけ動く。Luna と Classic に適用し、`BCM_GETIDEALSIZE` の測定値は変更しない。
 
 WM は XSETTINGS の selection が空いているときだけその所有者になり、`Gtk/DecorationLayout` を `:` にする。
 GTK のヘッダーバーを使うアプリ（Remmina など）は自前の最小化・最大化・閉じるボタンを出さず、
@@ -30,11 +40,16 @@ steps は Tab の回数（Shift+Tab は負）。proxy は IPC ディレクトリ
 Win32 の Z 順（アクティブなウィンドウが先頭）から候補を集め、選択を描く。確定時は `switch XID(hex)` を送り、
 WM は Wine のウィンドウも含めクリックと同じく活性化する（Wine は管理対象の窓の X フォーカスを WM に任せるため）。
 最小化中の Wine ウィンドウは先に元に戻す。proxy がなければ WM は従来どおり順に切り替える。
+proxy が動いているかは、proxy が `proxy.lock` の先頭1バイトにかけている LockFile で判断する。wineserver はこれを POSIX lock に
+し、proxy の終了で外すので、WM は F_GETLK で確かめられる（以前は `frames.tsv` の更新時刻が2秒以内かで見ていたが、
+変化がないと書かなくなったため）。
 
 枠の同期には次の 2 ファイルを追加する。どちらも同じ IPC ディレクトリで atomic rename し、数値を空白で区切る。
 
 - WM → proxy の `geometry.tsv`: `XID(hex) x y width height maximized(0/1) workX workY workWidth workHeight`。座標とサイズは root 上の native クライアント領域。末尾は現在の作業領域。
 - proxy → WM の `frames.tsv`: `HWND(hex) XID(hex) left right top bottom maximized(0/1) iconic(0/1) borderX borderY`。余白は公開 `GetWindowRect` / `GetClientRect` / `ClientToScreen`、borderは`GetWindowInfo`の測定値。
+
+どちらも内容が変わったときだけ書く（相手を無駄に起こさないため）。proxy は枠の位置が既に合っていれば SetWindowPos しない。
 
 `_WIN4WINE_HWND` と `frames.tsv` の HWND を照合して枠と native クライアントを組にする。
 WM は枠をクライアントのすぐ下へ積み、枠の未使用の Win32 client 領域を native の画面で覆う。
@@ -84,14 +99,15 @@ FocusIn は通常の通知だけを採用する。keyboard grab の NotifyGrab /
 pointer 由来の通知で Alt+Tab の選択を上書きしない。
 
 この方式は Win32 / X11 間の reparent や native クライアントの Win32 化を行わない。
-Win32 HWND と X11 の内容は別ウィンドウで、200ms の同期前後には枠と内容の移動に時間差があり得る。
+Win32 HWND と X11 の内容は別ウィンドウで、枠と内容の移動には時間差がある（Debian VM で中央値約 11 ms）。
 native transient は snapshot の対象外なので、この経路で新たな代理枠を作らない。
 アプリの独自システムメニューや追加 caption button を native 側へ移植する処理もない。
 クリップボードの変換は Wine X11 driver の既存機能に任せ、proxy は独自の clipboard IPC を持たない。
 Microsoft の画像を Python で模写・再配布する方式ではなく、ローカルのテーマを Wine の公開描画 API で使用する。
 
 タイトル変更、破棄、生成、アクティブ変更は SHELLHOOK に変換する。
-通常の Wine HWND も前回のタイトルを比較し、生成後に付いたフォルダ名や移動後の名前を通知する。短命ウィンドウはポーリング間で消えることがある。`WH_SHELL` DLL injection は実装しない。購読先の子ウィンドウも検索し、実 XP の MSTaskSwWClass への通知を確認した。
+通常の Wine HWND も前回のタイトルを比較し、生成後に付いたフォルダ名や移動後の名前を通知する。比較は WinEvent を受けた時に行うので、
+WinEvent の処理より先に生成から破棄まで終わる短命ウィンドウは通知しないことがある。`WH_SHELL` DLL injection は実装しない。購読先の子ウィンドウも検索し、実 XP の MSTaskSwWClass への通知を確認した。
 
 ## セッション
 
@@ -101,7 +117,7 @@ Win7 対応時も WM と IPC を維持し、DLL profile、shell readiness class�
 
 WM は native X クライアントのフォーカス・サイズ変更に合わせて、表示中の子孫へ Expose を送る。
 描画内容は消去しない。Wine HWND のあるクライアントは Wine の surface 管理に任せる。
-ポーリングによる周期的な再描画ではない。ConfigureRequest には root 座標の
+周期的な再描画ではない。ConfigureRequest には root 座標の
 synthetic ConfigureNotify も返す。
 
 XP のタスクボタンが他プロセスの最小化可否を調べるため、Wine 0010 は外部シェル opt-in 時に

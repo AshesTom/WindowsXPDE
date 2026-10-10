@@ -1,0 +1,26 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] win32u: report window title changes to WinEvent hooks in the external shell
+
+Purpose: let the bridge proxy follow Win32 window titles without polling.
+XP behavior: DefWindowProc's WM_SETTEXT raises EVENT_OBJECT_NAMECHANGE for
+the window, and out-of-context WinEvent hooks receive it. Wine 10 raises
+create, destroy, show, hide, foreground and minimize events but not this
+one, so the proxy re-read every title five times a second to send XP's
+taskbar HSHELL_REDRAW.
+Raise the event after DefWindowProc stores a new title, only when
+WIN4WINE_EXTERNAL_SHELL is set. Ordinary Wine applications are unchanged.
+Derived from public WinEvent documentation; no Microsoft disassembly used.
+
+--- a/dlls/win32u/defwnd.c
++++ b/dlls/win32u/defwnd.c
+@@ -2734,6 +2734,10 @@
+         result = set_window_text( hwnd, (void *)lparam, ansi );
+         if (result && (get_window_long( hwnd, GWL_STYLE ) & WS_CAPTION) == WS_CAPTION)
+             handle_nc_paint( hwnd , (HRGN)1 );  /* repaint caption */
++        /* Windows reports the new name to WinEvent hooks. The external
++         * shell's task list follows window titles through this event. */
++        if (result && getenv( "WIN4WINE_EXTERNAL_SHELL" ))
++            NtUserNotifyWinEvent( EVENT_OBJECT_NAMECHANGE, hwnd, OBJID_WINDOW, CHILDID_SELF );
+         break;
+ 
+     case WM_GETTEXTLENGTH:

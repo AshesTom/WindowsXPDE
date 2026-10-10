@@ -1,15 +1,41 @@
 #!/usr/bin/env python3
 """Small single-screen X11 WM and file IPC endpoint for the Win32 shell bridge."""
 import argparse
-import json
+import ctypes
+import fcntl
 import os
 from pathlib import Path
 import select
 import signal
 import struct
-import time
 from Xlib import X, XK, Xatom, Xutil, display, error, protocol
 from icons import payload as icon_payload
+
+IN_CLOSE_WRITE, IN_MOVED_TO = 0x8, 0x80
+
+
+class Inotify:
+    """Wake for the proxy's command and frame files in the IPC directory."""
+
+    def __init__(self, directory):
+        libc = ctypes.CDLL(None, use_errno=True)
+        self.fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+        if self.fd < 0 or libc.inotify_add_watch(self.fd, os.fsencode(directory),
+                                                 IN_CLOSE_WRITE | IN_MOVED_TO) < 0:
+            raise OSError(ctypes.get_errno(), 'inotify')
+
+    def names(self):
+        names = []
+        while True:
+            try:
+                data = os.read(self.fd, 65536)
+            except BlockingIOError:
+                return names
+            offset = 0
+            while offset + 16 <= len(data):
+                length = struct.unpack_from('iIII', data, offset)[3]
+                names.append(data[offset+16:offset+16+length].rstrip(b'\0').decode('utf-8', 'replace'))
+                offset += 16 + length
 
 
 class Manager:
@@ -130,9 +156,13 @@ class Manager:
             w.map()
             return
         if w.id not in self.clients:
-            self.clients[w.id] = {'w': w, 'hidden': False, 'kind': self.kind(w), 'restore': None, 'geometry': None, 'framed': False, 'icon_dirty': True}
+            r = w.get_geometry()
+            self.clients[w.id] = {'w': w, 'hidden': False, 'kind': self.kind(w), 'restore': None, 'size': None,
+                                  'geometry': (r.x, r.y, r.width, r.height, r.border_width),
+                                  'framed': False, 'icon_dirty': True, 'extents': None}
             w.change_attributes(event_mask=X.PropertyChangeMask | X.FocusChangeMask)
             w.grab_button(1, 0, True, X.ButtonPressMask, X.GrabModeSync, X.GrabModeAsync, X.NONE, X.NONE)
+            self.refresh(self.clients[w.id])
         client = self.clients[w.id]
         client['kind'] = self.kind(w)
         if client['kind'] == 'proxy':
@@ -147,12 +177,43 @@ class Manager:
         self.restack()
         self.workarea()
 
+    def refresh(self, c, atom=None):
+        """Cache the client properties that every bridge pass reads.
+
+        Right after a native window moves, the X server is busy repainting
+        what it uncovered, and each round trip waits behind that work. The
+        caches follow PropertyNotify; geometry follows ConfigureNotify.
+        """
+        w = c['w']
+        if atom in (None, self.atom('_WIN4WINE_HWND')):
+            hwnd = self.prop(w, '_WIN4WINE_HWND')
+            c['hwnd'] = int(hwnd[0]) if len(hwnd) else 0
+        if atom in (None, self.atom('_NET_WM_NAME'), self.atom('WM_NAME')):
+            title = self.prop(w, '_NET_WM_NAME')
+            name = bytes(title).decode('utf-8', 'replace') if len(title) else (w.get_wm_name() or '')
+            c['title'] = name.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')[:500]
+        if atom in (None, self.atom('WM_TRANSIENT_FOR')):
+            try:
+                owner = w.get_wm_transient_for()
+            except error.XError:
+                owner = None
+            c['owner'] = owner.id if owner else 0
+
+    def configure(self, c, **values):
+        """Configure a client and tell it its new root geometry (ICCCM)."""
+        c['w'].configure(**values)
+        x, y, width, height, border = c['geometry']
+        c['geometry'] = (values.get('x', x), values.get('y', y), values.get('width', width),
+                         values.get('height', height), values.get('border_width', border))
+        self.configure_notify(c['w'])
+
     def redraw_native(self, w):
         # Wine keeps its own window surfaces. Native clients (notably xterm on
         # the VM's VGA path) can retain stale pixels after resize/activation.
         # Ask exposed descendants to repaint without clearing their contents or
         # injecting input. A terminal's drawing window is a child of its client.
-        if len(self.prop(w, '_WIN4WINE_HWND')):
+        c = self.clients.get(w.id)
+        if not c or c['hwnd']:
             return
         pending = [w]
         for _ in range(2048):
@@ -169,10 +230,10 @@ class Manager:
     def configure_notify(self, w):
         # ICCCM: report root coordinates even when a move/stack request did not
         # generate a size change for the client. Native clients stay root children.
-        r = w.get_geometry()
+        x, y, width, height, border = self.clients[w.id]['geometry']
         w.send_event(protocol.event.ConfigureNotify(event=w, window=w,
-                     above_sibling=X.NONE, x=r.x, y=r.y, width=r.width,
-                     height=r.height, border_width=r.border_width,
+                     above_sibling=X.NONE, x=x, y=y, width=width,
+                     height=height, border_width=border,
                      override=False), event_mask=X.StructureNotifyMask)
 
     def focus(self, w):
@@ -243,8 +304,8 @@ class Manager:
         self.clients.pop(window_id, None)
         self.previous_icons.pop(window_id, None)
         (self.ipc / f'icon-{window_id:x}.argb').unlink(missing_ok=True)
-        # Withdrawals can arrive before the next 200ms proxy snapshot. Hide the
-        # orphan frame immediately and reject any queued activation for it.
+        # Hide the orphan frame before the proxy destroys its HWND, and reject
+        # any activation the proxy has already queued for it.
         for frame_id, native_id in list(self.frames.items()):
             if frame_id == window_id or native_id == window_id:
                 frame = self.clients.get(frame_id)
@@ -280,11 +341,7 @@ class Manager:
                 raised.add(c['w'].id)
         for i, c in list(self.clients.items()):
             if c['kind'] == 'normal' and not c['hidden'] and i not in raised:
-                try:
-                    owner = c['w'].get_wm_transient_for()
-                except error.XError:
-                    owner = None
-                if owner and owner.id in raised:
+                if c['owner'] in raised:
                     c['w'].configure(stack_mode=X.Above)
         for c in self.clients.values():
             if c['kind'] == 'popup' and not c['hidden']:
@@ -306,25 +363,34 @@ class Manager:
             if len(strut) >= 4:
                 left, right, top, bottom = [max(a, b) for a, b in zip((left, right, top, bottom), strut[:4])]
             else:
-                r = w.get_geometry()
-                if r.width >= g.width // 2:
-                    if r.y >= g.height // 2:
-                        bottom = max(bottom, g.height - r.y)
+                x, y, width, height, _ = c['geometry']
+                if width >= g.width // 2:
+                    if y >= g.height // 2:
+                        bottom = max(bottom, g.height - y)
                     else:
-                        top = max(top, r.y + r.height)
-                elif r.x >= g.width // 2:
-                    right = max(right, g.width - r.x)
+                        top = max(top, y + height)
+                elif x >= g.width // 2:
+                    right = max(right, g.width - x)
                 else:
-                    left = max(left, r.x + r.width)
+                    left = max(left, x + width)
         self.area = (left, top, max(1, g.width-left-right), max(1, g.height-top-bottom))
         if list(self.prop(self.root, '_NET_WORKAREA')) != list(self.area):
             self.setprop(self.root, '_NET_WORKAREA', Xatom.CARDINAL, list(self.area))
 
     def bridge_alive(self):
+        # The proxy holds a byte-range lock on proxy.lock while it runs;
+        # wineserver backs it with a POSIX lock and drops it at process exit.
         try:
-            return time.time() - (self.ipc / 'frames.tsv').stat().st_mtime < 2
+            fd = os.open(self.ipc / 'proxy.lock', os.O_RDONLY | os.O_CLOEXEC)
         except OSError:
             return False
+        try:
+            query = struct.pack('hhqqi4x', fcntl.F_WRLCK, os.SEEK_SET, 0, 1, 0)
+            return struct.unpack('hhqqi4x', fcntl.fcntl(fd, fcntl.F_GETLK, query))[0] != fcntl.F_UNLCK
+        except OSError:
+            return False
+        finally:
+            os.close(fd)
 
     def write_switch(self, state):
         temporary = self.ipc / 'switch.tmp'
@@ -377,7 +443,7 @@ class Manager:
 
     def maximize(self, w, restore=False):
         c = self.clients[w.id]
-        if len(self.prop(w, '_WIN4WINE_HWND')):
+        if c['hwnd']:
             # Wine's owner thread supplies its computed outer rectangle. Only
             # acknowledge EWMH state here; resizing it races restore placement.
             atoms = {self.atom('_NET_WM_STATE_MAXIMIZED_VERT'), self.atom('_NET_WM_STATE_MAXIMIZED_HORZ')}
@@ -392,39 +458,36 @@ class Manager:
             c['restore'] = None
         elif not restore:
             if c['restore'] is None:
-                r = w.get_geometry()
-                c['restore'] = (r.x, r.y, r.width, r.height)
+                c['restore'] = c['geometry'][:4]
             x, y, width, height = self.area
             # Fit the complete Wine border inside the work area, using its
             # measured extents rather than assuming classic or Luna metrics.
             frame = next((self.clients[f]['w'] for f, n in self.frames.items() if n == w.id), None)
             if frame:
-                r, outer = w.get_geometry(), frame.get_geometry()
-                left, top = r.x-outer.x, r.y-outer.y
-                width -= outer.width-r.width
-                height -= outer.height-r.height
+                (nx, ny, nwidth, nheight, _), outer = c['geometry'], frame.get_geometry()
+                left, top = nx-outer.x, ny-outer.y
+                width -= outer.width-nwidth
+                height -= outer.height-nheight
                 x += left; y += top
         else:
             self.focus(w)
             return
-        w.configure(x=x, y=y, width=max(1, width), height=max(1, height))
+        self.configure(c, x=x, y=y, width=max(1, width), height=max(1, height))
         atoms = [self.atom('_NET_WM_STATE_MAXIMIZED_VERT'), self.atom('_NET_WM_STATE_MAXIMIZED_HORZ')]
         states = set(self.prop(w, '_NET_WM_STATE')) - set(atoms)
         if not restore:
             states.update(atoms)
         self.setprop(w, '_NET_WM_STATE', Xatom.ATOM, list(states))
-        self.configure_notify(w)
         self.focus(w)
 
-    def positioned(self, w):
+    def positioned(self, c):
         try:
-            hints = w.get_wm_normal_hints()
+            hints = c['w'].get_wm_normal_hints()
         except error.XError:
             return False
         if not hints or not hints.flags & (Xutil.USPosition | Xutil.PPosition):
             return False
-        r = w.get_geometry()
-        return bool(hints.flags & Xutil.USPosition) or (r.x, r.y) != (0, 0)
+        return bool(hints.flags & Xutil.USPosition) or c['geometry'][:2] != (0, 0)
 
     def cascade(self, left, top):
         """Next XP default-window slot, as native client coordinates.
@@ -457,38 +520,36 @@ class Manager:
         for i, c in self.clients.items():
             if c['kind'] != 'proxy':
                 continue
-            hwnd = self.prop(c['w'], '_WIN4WINE_HWND')
-            native_id = handles.get(int(hwnd[0])) if len(hwnd) else None
+            native_id = handles.get(c['hwnd']) if c['hwnd'] else None
             native = self.clients.get(native_id)
-            if native and native['kind'] == 'normal' and not len(self.prop(native['w'], '_WIN4WINE_HWND')):
+            if native and native['kind'] == 'normal' and not native['hwnd']:
                 frames[i] = native_id
                 metrics = extents.get(native_id)
                 if metrics:
                     left, right, top, bottom, maximized = metrics
                     if not native['framed']:
-                        r = native['w'].get_geometry()
-                        if self.positioned(native['w']):
+                        nx, ny = native['geometry'][:2]
+                        if self.positioned(native):
                             # Keep an explicit position, but keep the first
                             # caption visible above content placed at 0,0.
-                            x = max(r.x, self.area[0]+left)
-                            y = max(r.y, self.area[1]+top)
+                            x = max(nx, self.area[0]+left)
+                            y = max(ny, self.area[1]+top)
                         else:
                             x, y = self.cascade(left, top)
-                        if (x, y) != (r.x, r.y):
-                            native['w'].configure(x=x, y=y)
-                            self.configure_notify(native['w'])
+                        if (x, y) != (nx, ny):
+                            self.configure(native, x=x, y=y)
                         native['framed'] = True
-                    self.setprop(native['w'], '_NET_FRAME_EXTENTS', Xatom.CARDINAL, [left, right, top, bottom])
+                    if native['extents'] != [left, right, top, bottom]:
+                        native['extents'] = [left, right, top, bottom]
+                        self.setprop(native['w'], '_NET_FRAME_EXTENTS', Xatom.CARDINAL, native['extents'])
                     if maximized and native['restore'] is not None:
                         x, y, width, height = self.area
                         bx, by = clips.get(native_id, (0, 0))
                         wanted = (x+left-bx, y+top-by, max(1, width-left-right+2*bx), max(1, height-top-bottom+2*by))
-                        r = native['w'].get_geometry()
-                        if (r.x, r.y, r.width, r.height) != wanted:
-                            native['w'].configure(x=wanted[0], y=wanted[1], width=wanted[2], height=wanted[3])
-                            self.configure_notify(native['w'])
-                if native['w'].get_geometry().border_width:
-                    native['w'].configure(border_width=0)
+                        if native['geometry'][:4] != wanted:
+                            self.configure(native, x=wanted[0], y=wanted[1], width=wanted[2], height=wanted[3])
+                if native['geometry'][4]:
+                    self.configure(native, border_width=0)
                 if native['hidden'] or not ready.get(native_id, True):
                     c['w'].unmap()
                 else:
@@ -498,11 +559,15 @@ class Manager:
         if frames != self.frames:
             self.frames = frames
             self.restack()
+        self.write_geometry()
+
+    def write_geometry(self):
+        """Publish native geometry from the cache, without X round trips."""
         geometries = []
         for i, c in self.clients.items():
-            if c['kind'] == 'normal' and not len(self.prop(c['w'], '_WIN4WINE_HWND')):
-                r = c['w'].get_geometry()
-                geometries.append(f'{i:x} {r.x} {r.y} {r.width} {r.height} {int(c["restore"] is not None)} {self.area[0]} {self.area[1]} {self.area[2]} {self.area[3]}\n')
+            if c['kind'] == 'normal' and not c['hwnd']:
+                x, y, width, height, _ = c['geometry']
+                geometries.append(f'{i:x} {x} {y} {width} {height} {int(c["restore"] is not None)} {self.area[0]} {self.area[1]} {self.area[2]} {self.area[3]}\n')
         text = ''.join(geometries)
         if text != self.previous_geometry:
             temporary = self.ipc / 'geometry.tmp'
@@ -524,9 +589,7 @@ class Manager:
             focused_id = 0
         for i, c in self.clients.items():
             w = c['w']
-            if c['kind'] != 'normal' or len(self.prop(w, '_WIN4WINE_HWND')):
-                continue
-            if w.get_wm_transient_for():
+            if c['kind'] != 'normal' or c['hwnd'] or c['owner']:
                 continue
             if c['icon_dirty']:
                 data = icon_payload(self.d, w, self.atom('_NET_WM_ICON'))
@@ -540,20 +603,16 @@ class Manager:
                         target.unlink(missing_ok=True)
                     self.previous_icons[i] = data
                 c['icon_dirty'] = False
-            title = self.prop(w, '_NET_WM_NAME')
-            if len(title):
-                name = bytes(title).decode('utf-8', 'replace')
-            else:
-                name = w.get_wm_name() or ''
-            name = name.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')[:500]
-            lines.append(f'{i:x}\t{int(c["hidden"])}\t{int(i == self.active and i == focused_id)}\t{name}\n')
+            lines.append(f'{i:x}\t{int(c["hidden"])}\t{int(i == self.active and i == focused_id)}\t{c["title"]}\n')
         text = ''.join(lines)
         if text != self.previous_snapshot:
             temp = self.ipc / 'windows.tmp'
             temp.write_text(text, encoding='utf-8')
             temp.replace(self.ipc / 'windows.tsv')
             self.previous_snapshot = text
-        for command in self.ipc.glob('*.cmd'):
+
+    def commands(self):
+        for command in sorted(self.ipc.glob('*.cmd')):
             try:
                 op, value, *args = command.read_text().split()
                 i = int(value, 16)
@@ -561,12 +620,11 @@ class Manager:
                 if op == 'switch' and c and c['kind'] == 'normal':
                     # Alt+Tab chose this window, which may also be a Wine one.
                     self.focus(c['w'])
-                elif c and c['kind'] == 'normal' and not len(self.prop(c['w'], '_WIN4WINE_HWND')):
+                elif c and c['kind'] == 'normal' and not c['hwnd']:
                     if op == 'geometry' and len(args) == 4:
                         x, y, width, height = map(int, args)
                         if width > 0 and height > 0:
-                            c['w'].configure(x=x, y=y, width=width, height=height)
-                            self.configure_notify(c['w'])
+                            self.configure(c, x=x, y=y, width=width, height=height)
                     elif op == 'restore':
                         self.maximize(c['w'], restore=True)
                     else:
@@ -590,11 +648,15 @@ class Manager:
                       ((X.CWX, 'x'), (X.CWY, 'y'), (X.CWWidth, 'width'), (X.CWHeight, 'height'),
                        (X.CWBorderWidth, 'border_width'), (X.CWSibling, 'sibling'), (X.CWStackMode, 'stack_mode'))
                       if e.value_mask & bit}
-            e.window.configure(**values)
-            self.restack()
-            self.workarea()
-            if e.window.id in self.clients:
-                self.configure_notify(e.window)
+            c = self.clients.get(e.window.id)
+            if c:
+                self.configure(c, **values)
+            else:
+                e.window.configure(**values)
+            if e.value_mask & (X.CWSibling | X.CWStackMode):
+                self.restack()
+            if c and c['kind'] == 'dock':
+                self.workarea()
         elif e.type == X.DestroyNotify:
             self.unmanage(e.window.id)
         elif e.type == X.UnmapNotify:
@@ -610,10 +672,13 @@ class Manager:
             if c:
                 if e.atom in (self.atom('_NET_WM_ICON'), self.atom('WM_HINTS')):
                     c['icon_dirty'] = True
-                c['kind'] = self.kind(e.window)
+                self.refresh(c, e.atom)
+                if e.atom in (self.atom('_WIN4WINE_CLASS'), self.atom('_NET_WM_WINDOW_TYPE')):
+                    c['kind'] = self.kind(e.window)
                 if c['kind'] == 'proxy' and e.window.id not in self.frames:
                     e.window.unmap()
-                self.workarea()
+                if c['kind'] == 'dock' or e.atom in (self.atom('_WIN4WINE_CLASS'), self.atom('_NET_WM_WINDOW_TYPE')):
+                    self.workarea()
         elif e.type == X.ButtonPress:
             if e.state & X.Mod1Mask and e.window.id == self.root.id and e.child:
                 child = self.clients.get(e.child.id)
@@ -649,9 +714,10 @@ class Manager:
                 self.workarea()
             elif not e.send_event and e.window.id in self.clients:
                 c = self.clients[e.window.id]
+                c['geometry'] = (e.x, e.y, e.width, e.height, e.border_width)
                 size = (e.width, e.height)
-                if c['geometry'] != size:
-                    c['geometry'] = size
+                if c['size'] != size:
+                    c['size'] = size
                     if c['kind'] == 'normal' and not c['hidden']:
                         self.redraw_native(e.window)
         elif e.type == X.ClientMessage:
@@ -686,19 +752,45 @@ class Manager:
                         self.maximize(e.window, restore=not maximized)
 
     def run(self):
+        """Sleep until an X event, a proxy file or a signal arrives.
+
+        Every change the proxy must see comes from an X event (map, configure,
+        property, focus) or from the proxy's own files, so the bridge state is
+        recomputed only then. Writes happen only when their content changes;
+        the events they cause settle after one more pass.
+        """
+        changes = Inotify(self.ipc)
+        wake_read, wake_write = os.pipe2(os.O_NONBLOCK | os.O_CLOEXEC)
+        signal.set_wakeup_fd(wake_write)
+        dirty = True
         while self.running:
             while self.d.pending_events():
                 try:
                     self.event(self.d.next_event())
                 except error.XError:
                     pass  # A client may disappear between any two requests.
-            try:
-                self.snapshot()
-                self.sync_frames()
-            except error.XError:
-                pass
+                dirty = True
+            if any(name.endswith('.cmd') or name == 'frames.tsv' for name in changes.names()):
+                dirty = True
+            if dirty:
+                dirty = False
+                try:
+                    self.write_geometry()  # First: frames follow their clients.
+                    self.commands()
+                    self.snapshot()
+                    self.sync_frames()
+                except error.XError:
+                    pass
             self.d.flush()
-            select.select([self.d.fileno()], [], [], .1)
+            if self.d.pending_events():
+                continue  # Replies to this pass queued more events.
+            ready = select.select([self.d.fileno(), changes.fd, wake_read], [], [])[0]
+            if wake_read in ready:
+                while True:
+                    try:
+                        os.read(wake_read, 64)
+                    except BlockingIOError:
+                        break
         self.d.close()
 
 

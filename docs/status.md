@@ -18,6 +18,8 @@
 - `tests/extraction_integration.py`: 利用者の抽出済みファイルをローカル fixture として使い、抽出・hash・上書き拒否を確認。
 - `tests/wm_integration.py`: 作業領域、Alt+Tab / 逆順、最小化、最後の1枚の最小化、復元、終了要求。
 - `tests/bridge_integration.py`: 子ウィンドウでの shell-hook 購読、X→代理 HWND、最小化・復元・フォーカス・名前変更・終了・破棄の往復。
+  Win32 ウィンドウの題名変更が HSHELL_REDRAW になること（`tests/title-change.c`）。
+- `tests/wm_latency.py`: 枠の追従・題名の反映・proxy の命令の遅れ（ミリ秒）と、待機中の WM・proxy・wineserver の起床回数と CPU 使用率。
 - `tests/recovery_integration.py`: XP の強制終了・再起動・独立 builtin ブラウザと端末の実表示。Debian VM で成功。
 - `tests/display.c`: system DPI / ThemeActive / ローカル Luna の公開 API を確認。
 - `tests/system-menu.c`: 別プロセスの標準システムメニュー、opt-in の有無、スタイル変更、キャッシュ・revert・破棄。
@@ -789,3 +791,46 @@ Microsoftバイナリ・テーマ・フォントの変更や追加取得、追�
 - 「ファイル名を指定して実行」で C:\ などのフォルダを開くと「関連付けられていません」になった。XP の ShellExecute は
   動詞の command を必要とし、Wine の Folder は DDE だけだったため、registry profile 22 で XP と同じ形の command
   （XP Explorer を起動、シェルが応答すれば DDE を使う）を入れた。
+
+## WM の最適化（2026-10-10、段階 1）
+
+Linux アプリを XP シェルで使うときの遅れを、WM と proxy の定期確認をやめてなくした。`tests/wm_latency.py` で測った値
+（中央値 / 最大、20回）。変更前は直前のコミットの bridge と 0072 までの Wine。
+
+| 項目 | Xvfb 変更前 | Xvfb 変更後 | Debian VM 変更前 | Debian VM 変更後 |
+|---|---|---|---|---|
+| native の移動に枠が追従 | 124.6 / 127.7 ms | 5.7 / 14.1 ms | 148.3 / 249.5 ms | 11.1 / 19.9 ms |
+| native の大きさ変更に枠が追従 | 125.4 / 130.0 ms | 6.9 / 13.2 ms | 138.4 / 149.4 ms | 9.3 / 14.8 ms |
+| native の題名が代理 HWND（タスクバーが読む）に届く | 106.9 / 109.6 ms | 3.4 / 4.5 ms | 106.4 / 107.1 ms | 2.9 / 4.4 ms |
+| proxy の命令（枠のドラッグなど）が native に届く | 77.3 / 90.3 ms | 1.8 / 2.1 ms | 92.6 / 103.3 ms | 7.9 / 9.4 ms |
+| 待機中の WM の起床（コンテキストスイッチ/秒、CPU） | 229.2、2.70% | 0、0% | 555.5、2.75% | 0、0% |
+| 待機中の proxy の起床 | 253.5、1.40% | 0、0% | 1215.2、2.62% | 0、0% |
+| 待機中の wineserver の起床 | 311.0、1.10% | 62.1、0.40% | 1413.1、2.50% | 85.3、0.20% |
+
+Xvfb は Luna の専用 prefix にタスクバー相当の dock を置いた試験 display（Classic でも移動 4.3 ms、大きさ 6.0 ms）。
+Debian VM は LightDM の xp-shell セッション（実際の XP タスクバーあり）。wineserver に残る起床は proxy がなくても
+同程度（72回/秒）で、Wine の常駐プロセスによるもの。Win32 ウィンドウの題名変更が XP のタスクバーへの
+HSHELL_REDRAW になるまで 10〜15 ms（従来は最大 200 ms の巡回）。
+
+- WM: X のイベント、IPC ディレクトリの inotify、シグナルでだけ起きる。クライアントの状態をイベントから記憶し、
+  `geometry.tsv` を X への問い合わせなしで最初に書く。ConfigureRequest は重なり順の指定があるときだけ積み直す。
+  VM では native が動いた直後、1回の処理の約20回の問い合わせがデスクトップの再描画の後ろで待たされ、約60 ms かかっていた。
+- proxy: 変更通知・WinEvent・自分のウィンドウへのメッセージで起きる。`frames.tsv` とコマンドは内容が変わったときだけ書き、
+  枠の位置が合っていれば SetWindowPos しない。生存確認は `proxy.lock` のファイルロック。
+- 0073: 題名の変更を EVENT_OBJECT_NAMECHANGE で知らせる。
+- 0074 / 0075: 移動だけでは Luna の枠を描き直さず、露出が枠の下辺・側辺だけならタイトルバーを描かない。
+  移動のたびの描き直し（約10 ms）と、native が先に動いて見えるようになった枠の再描画（約9 ms）が枠の移動を遅らせていた。
+- 0076: XP Explorer の2つのフォルダウィンドウの間で Alt+Tab すると、タイトルバーが黒くなることがあった。テーマ画像の
+  bitmap はプロセスで共有され、同時に1つの DC にしか選択できないのに、Explorer はウィンドウごとのスレッドで描く。
+  選択の失敗を数えると変更前の bridge でも Alt+Tab 1回あたり8〜11回あり、最後の描画が失敗したときに黒が残る。
+  従来は位置が変わるたびの再描画が上書きして目立たなかった。描画を1つずつにして失敗0回、黒は5回中0回。
+- 試験: `tests/wm_integration.py`、`tests/native_frames.py`（Luna / Classic、VM ではタスクバーの画素も）、
+  `tests/bridge_integration.py`、`tests/xterm_redraw.py` が成功。ログはホストの `.local/wmopt-final-host-tests.log`、
+  VM 内の `/work/.local/vm-native-frames-wmopt.log` / `vm-latency-wmopt.txt`。
+- 非クライアント領域の試験（nonclient-caption、caption-icons、nonclient-theme、caption-text、frame-control）は VM で
+  変更前と同じ結果（handle を除き一致）。nonclient-caption の非アクティブ時6件と nonclient-theme のボタン画素の差は変更前から。
+- Alt+Tab: 2つの「マイ コンピュータ」（Win+E）での切り替えウィンドウは変更前と0画素差。実XPとは、アイコン2つの内側の
+  146画素が各色1だけ違う（変更前も同じ。半透明部分の合成の丸め）。Esc の取り消し、直前のウィンドウへの切り替え、
+  Shift+Tab、Tab 2回の結果と重なり順も変更前と同じ。Alt と Shift を押してから Tab を押す Alt+Shift+Tab が最下位ではなく
+  直前のウィンドウを選ぶのも変更前と同じで、実XPとの比較は未実施。
+

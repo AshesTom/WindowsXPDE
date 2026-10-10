@@ -70,3 +70,7 @@
 0070-uxtheme-external-premultiply.patch
 0071-win32u-external-xp-popup-menus.patch
 0072-winex11-external-drop-shadow.patch
+0073-win32u-external-name-change-event.patch
+0074-uxtheme-external-caption-move.patch
+0075-user32-external-partial-frame-paint.patch
+0076-uxtheme-external-shared-image-lock.patch

@@ -1,0 +1,103 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] uxtheme: blit one shared theme image at a time in the external shell
+
+Purpose: stop captions of XP Explorer windows from being drawn black.
+Theme images are bitmaps loaded once per theme file and shared by every
+thread of the process, and a bitmap can be selected into only one DC at a
+time. XP Explorer paints each folder window on its own thread. When two
+windows painted at once, as when one is activated while another is
+deactivated, the second SelectObject failed and that part was stretched
+from the DC's empty default bitmap. Logging the failed selections showed
+2 to 11 per Alt+Tab between two Explorer windows on the Debian VM, with the
+bridge built before or after its event-driven rewrite; the caption stayed
+black whenever the failed draw was the last one.
+XP behavior: captions always show the theme image.
+Serialize the selection and blit of theme images with a process-wide
+critical section, only when WIN4WINE_EXTERNAL_SHELL is set.
+Derived from public Win32 API behavior; no Microsoft disassembly used.
+
+--- a/dlls/uxtheme/draw.c
++++ b/dlls/uxtheme/draw.c
+@@ -661,6 +661,32 @@
+                   DIB_RGB_COLORS, SRCPAINT);
+ }
+ 
++/* Theme images are bitmaps shared by every thread of the process, and a
++ * bitmap can be selected into only one DC at a time. XP Explorer paints each
++ * folder window on its own thread; when two windows painted their captions at
++ * once, one selection failed and that caption was drawn from an empty DC,
++ * leaving it black. The external shell blits one theme image at a time. */
++static CRITICAL_SECTION image_section;
++static CRITICAL_SECTION_DEBUG image_section_debug =
++{
++    0, 0, &image_section,
++    { &image_section_debug.ProcessLocksList, &image_section_debug.ProcessLocksList },
++      0, 0, { (DWORD_PTR)(__FILE__ ": image_section") }
++};
++static CRITICAL_SECTION image_section = { &image_section_debug, -1, 0, 0, 0, 0 };
++
++static BOOL lock_image(void)
++{
++    if (!GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL", NULL, 0)) return FALSE;
++    EnterCriticalSection(&image_section);
++    return TRUE;
++}
++
++static void unlock_image(BOOL locked)
++{
++    if (locked) LeaveCriticalSection(&image_section);
++}
++
+ /***********************************************************************
+  *      UXTHEME_DrawImageGlyph
+  *
+@@ -682,7 +708,7 @@
+     POINT dstSize;
+     POINT srcSize;
+     POINT topleft;
+-    BOOL hasAlpha, hasDefaultTransparentColour;
++    BOOL hasAlpha, hasDefaultTransparentColour, locked;
+     RECT content;
+     MARGINS margins;
+ 
+@@ -707,6 +733,7 @@
+         hr = HRESULT_FROM_WIN32(GetLastError());
+         return hr;
+     }
++    locked = lock_image();
+     oldSrc = SelectObject(hdcSrc, bmpSrc);
+ 
+     dstSize.x = pRect->right-pRect->left;
+@@ -740,6 +767,7 @@
+     }
+ 
+     SelectObject(hdcSrc, oldSrc);
++    unlock_image(locked);
+     DeleteDC(hdcSrc);
+ 
+     /* Don't transfer alpha values from the glyph when drawing opaque background */
+@@ -888,7 +916,7 @@
+     int sizingtype = ST_STRETCH;
+     INT transparent;
+     COLORREF transparentcolor = 0;
+-    BOOL hasAlpha, hasDefaultTransparentColour;
++    BOOL hasAlpha, hasDefaultTransparentColour, locked;
+ 
+     hr = UXTHEME_LoadImage(hTheme, iPartId, iStateId, pRect, FALSE, &bmpSrc, &rcSrc, &hasAlpha,
+                            &hasDefaultTransparentColour, NULL);
+@@ -898,6 +926,7 @@
+         hr = HRESULT_FROM_WIN32(GetLastError());
+         return hr;
+     }
++    locked = lock_image();
+     oldSrc = SelectObject(hdcSrc, bmpSrc);
+ 
+     rcDst = *pRect;
+@@ -1101,6 +1130,7 @@
+     }
+ done:
+     SelectObject(hdcSrc, oldSrc);
++    unlock_image(locked);
+     DeleteDC(hdcSrc);
+     *pRect = rcDst;
+     return hr;

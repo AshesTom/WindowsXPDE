@@ -1,0 +1,78 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] user32: repaint only the exposed borders of an external-shell themed frame
+
+Purpose: keep WM_NCPAINT cheap when a bridged native window uncovers part
+of its frame.
+XP behavior: WM_NCPAINT repaints the update region it receives.
+Wine sends WM_NCPAINT with RDW_FRAME even when the exposed pixels lie in
+the client area or the side and bottom borders, as when a native client
+moves ahead of its Win32 frame. Patch 0014's hook then repainted the whole
+Luna caption, about 9 ms per exposure, and the frame's next move waited
+for it.
+When the update region does not reach the caption band, draw the themed
+frame into a window DC clipped to that region; patch 0074 then skips the
+caption. Any update that reaches the caption, or the whole window, keeps
+the full repaint. Only for WIN4WINE_EXTERNAL_SHELL, like patch 0014.
+Derived from public Win32 API behavior; no Microsoft disassembly used.
+
+--- a/dlls/user32/defwnd.c
++++ b/dlls/user32/defwnd.c
+@@ -91,6 +91,36 @@
+     if (draw) draw( hwnd, dc );
+ }
+ 
++/* RDW_FRAME sends WM_NCPAINT even when only client pixels or the side and
++ * bottom borders were exposed, as when a bridged native window moves off its
++ * frame. Repaint just that part unless the update reaches the caption. */
++static void external_shell_paint_nonclient( HWND hwnd, HRGN update )
++{
++    RECT window, caption;
++    POINT origin = {0, 0};
++    HRGN clip;
++    HDC dc;
++
++    GetWindowRect( hwnd, &window );
++    ClientToScreen( hwnd, &origin );
++    SetRect( &caption, window.left, window.top, window.right, origin.y );
++    if ((UINT_PTR)update <= 1 || RectInRegion( update, &caption ) ||
++        !(clip = CreateRectRgn( 0, 0, 0, 0 )))
++    {
++        external_shell_draw_nonclient( hwnd, NULL );
++        return;
++    }
++    CombineRgn( clip, update, NULL, RGN_COPY );
++    /* The DC owns the clip region from here on. */
++    if (!(dc = NtUserGetDCEx( hwnd, clip, DCX_USESTYLE | DCX_WINDOW | DCX_INTERSECTRGN )))
++    {
++        DeleteObject( clip );
++        return;
++    }
++    external_shell_draw_nonclient( hwnd, dc );
++    NtUserReleaseDC( hwnd, dc );
++}
++
+ static LRESULT external_shell_nonclient_hit( HWND hwnd, LPARAM point, LRESULT original )
+ {
+     HMODULE theme;
+@@ -350,7 +380,9 @@
+ 
+     /* WM_SETICON repaints the caption with the classic code too, as when a
+      * folder window shows the icon of the folder it navigated to. */
+-    if (msg == WM_NCPAINT || msg == WM_NCACTIVATE || msg == WM_SETTEXT || msg == WM_SETICON)
++    if (msg == WM_NCPAINT)
++        external_shell_paint_nonclient( hwnd, (HRGN)wParam );
++    else if (msg == WM_NCACTIVATE || msg == WM_SETTEXT || msg == WM_SETICON)
+         external_shell_draw_nonclient( hwnd, NULL );
+     else if (msg == WM_PRINT && (lParam & PRF_NONCLIENT) && !(lParam & (PRF_CHILDREN | PRF_OWNED)))
+         external_shell_draw_nonclient( hwnd, (HDC)wParam );
+@@ -432,7 +464,9 @@
+     }
+     /* WM_SETICON repaints the caption with the classic code too, as when a
+      * folder window shows the icon of the folder it navigated to. */
+-    if (msg == WM_NCPAINT || msg == WM_NCACTIVATE || msg == WM_SETTEXT || msg == WM_SETICON)
++    if (msg == WM_NCPAINT)
++        external_shell_paint_nonclient( hwnd, (HRGN)wParam );
++    else if (msg == WM_NCACTIVATE || msg == WM_SETTEXT || msg == WM_SETICON)
+         external_shell_draw_nonclient( hwnd, NULL );
+     else if (msg == WM_PRINT && (lParam & PRF_NONCLIENT) && !(lParam & (PRF_CHILDREN | PRF_OWNED)))
+         external_shell_draw_nonclient( hwnd, (HDC)wParam );

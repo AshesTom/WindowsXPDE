@@ -5,7 +5,8 @@ Purpose: make RegisterShellHookWindow subscriptions visible to the bridge.
 XP behavior: taskbars receive SHELLHOOK messages about application HWNDs.
 The companion proxy dispatches create/destroy/activate/redraw notifications.
 This is an integration shim, not a complete upstream implementation:
-notifications require the bridge and are polled at 200 ms intervals.
+notifications require the bridge, which sends them when WinEvents or its
+IPC files report a change.
 Derived from public Win32 API behavior; no Microsoft disassembly used.
 
 diff --git a/dlls/user32/misc.c b/dlls/user32/misc.c

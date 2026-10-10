@@ -78,7 +78,16 @@ try:
     d.flush()
     wait(lambda: 'class=Win4WineProxy title=Linux renamed' not in inspect('dump'), 'proxy destruction')
     wait(lambda: re.search(r'event=2 hwnd=' + hwnd, (ipc / 'shellhook.log').read_text(), re.I), 'shell destroyed notification')
-    print('PASS: shell hook subscription, proxy creation, minimize, restore, focus, rename, close, destruction')
+    # A Win32 window's new title reaches the taskbar through WinEvents, not polling.
+    task = subprocess.run([wine, str(rootdir / '.local/bridge/title-change-test.exe')], env=env,
+                          stdout=subprocess.PIPE, timeout=20).stdout.decode('ascii', 'replace')
+    task_hwnd = re.search(r'hwnd=([0-9a-f]+)', task).group(1)
+    renamed = int(re.search(r'renamed tick=(\d+)', task).group(1))
+    redraws = [int(tick) for tick in re.findall(r'event=6 hwnd=' + task_hwnd + r' class=\S* tick=(\d+)',
+                                                (ipc / 'shellhook.log').read_text(), re.I) if int(tick) >= renamed]
+    assert redraws, 'Win32 title change sends HSHELL_REDRAW'
+    print(f'Win32 title change reached the shell hook in {redraws[0] - renamed} ms')
+    print('PASS: shell hook subscription, proxy creation, minimize, restore, focus, rename, close, destruction, Win32 rename')
 finally:
     if w:
         w.destroy()
