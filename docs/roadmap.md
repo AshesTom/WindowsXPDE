@@ -110,7 +110,40 @@
 - 未改変の Wine 10.0 に全パッチが当たり、見た目と挙動が整理前と同じ。
 - 段階 2 で作ったパッチの対応表を更新する。
 
-## 段階 5: Mozc（日本語入力）
+## 段階 5: Wine 11 への移行
+
+目的: 基にする Wine を 10.0 から 11.0（2026-01-13 公開の安定版）にする。11.0 では新しい WoW64 が完成し
+（16bit アプリにも対応）、段階 7 の 64bit 対応を 11.0 の上で行う。入力（段階 6 の Mozc）や描画の経路も変わったため、
+その前に移る。
+
+現状:
+- `wine/upstream.env` は `wine-10.0`（b0738596…）。series は 55 本（`docs/patches.md`）。
+- 変更が集中するのは win32u、user32、uxtheme、winex11、comctl32、explorer、kernelbase。11.0 ではとくに winex11
+  （EGL の描画経路、Wayland 対応）と win32u が大きく変わっている。
+- 段階 4 で、新しいソースとビルドディレクトリで configure からビルドする手順と、試験 VM へ install を移す手順
+  （ext4 のイメージを QMP で差し込む）、入れ替えの前後の比較（`.local/vm-cleanup-scenes.sh` の場面、非クライアント領域の試験、
+  chroot の bridge の試験）を整えた（`docs/status.md` の段階 4、`docs/reproduce.md`）。
+
+やること:
+- 11.0 の安定版のタグ（11.x の保守版があれば最新の 11.0.x を検討し、選んだ理由を記録）に `wine/upstream.env` を更新する。
+- 55 本を 11.0 に移植する。段階 2 のまとまりと書式（`docs/patches.md`）を保ち、各パッチの説明（Wine before など）を 11.0 の
+  コードに合わせて直す。11.0 で upstream が直した・不要になった変更は、根拠を確かめてから外し、対応表に残す。
+- 未改変の 11.0 に `wine/patch-state.py --apply` で全部当たることと、新しいソースとビルドディレクトリで configure から
+  ビルドできることを確かめる。
+- 11.0 の Wine で既存の prefix が更新されること（wineboot、registry profile、XP の DLL の配置）を確かめる。新規 prefix の
+  作成（`prefix/create.py`）も試す。必要なら `docs/reproduce.md` に既存環境の移行手順を書く。
+- ビルドは引き続き 32bit（`gcc -m32`、`--without-wayland`）のまま。WoW64 への切り替えは段階 7 で行う。
+
+完了条件:
+- 未改変の Wine 11.0 に全パッチが当たり、新しいビルドディレクトリで警告なくビルドできる（upstream 由来の警告は除く）。
+- 試験 VM で XP シェルが起動し、段階 4 と同じ場面が 10.0 版と同じ見た目になる（差があれば原因と判断を記録）。
+  デスクトップの右クリックメニューと Alt+Tab は実XPと0画素差を保つ。
+- `tests/wm_integration.py`、`tests/native_frames.py`（Luna と Classic）、`tests/xterm_redraw.py`、
+  `tests/bridge_integration.py` と非クライアント領域の試験が 10.0 版と同じ結果になる。
+- `docs/patches.md` に 10.0 → 11.0 の対応（移植・統合・削除）を残し、`docs/status.md`、`docs/dll-policy.md`、
+  `docs/reproduce.md` を更新する。
+
+## 段階 6: Mozc（日本語入力）
 
 目的: XP シェル上の Linux アプリと Wine のアプリの両方で、Mozc で日本語を入力できるようにする。
 
@@ -130,7 +163,7 @@
 - Linux アプリと Wine アプリの両方で、変換・確定ができる。
 - 入力モードが画面上で分かる。
 
-## 段階 6: 64bit（WoW64）対応
+## 段階 7: 64bit（WoW64）対応
 
 目的: 実機に i386 の multiarch（32bit のライブラリ）を入れずに動かせるようにし、64bit の Windows アプリも使えるようにする。
 
@@ -152,7 +185,7 @@
 - 既存の試験と、実XPとの画面比較を通る。
 - 既存の 32bit prefix の更新手順を `docs/reproduce.md` に書く。
 
-## 段階 7: ログイン画面
+## 段階 8: ログイン画面
 
 目的: Linux のログイン画面（LightDM）を XP のようこそ画面の見た目にする。
 
@@ -175,14 +208,14 @@
 - 主要な画面の寸法と配置が実XPと揃っている（差があれば記録する）。
 - 画像が抽出されていない環境では、通常の greeter のまま使える。
 
-## 段階 8: スケーリング（まず X、その後 compositor を検討）
+## 段階 9: スケーリング（まず X、その後 compositor を検討）
 
-### 8a. X11 での DPI 拡大
+### 9a. X11 での DPI 拡大
 - XP 本来の方法（LogPixels）で 120（125%）、144（150%）などに対応する。今の `prefix/display.py` は 96・144・192 だけ。
 - 参照用 XP を同じ DPI にして見た目を比べ、差を詰める。Luna の画像は 96 DPI 用なので、XP と同じ引き伸ばし方になればよい。
 - Linux アプリの倍率（`Xft.dpi` など）を同じ値に揃える。
 
-### 8b. Wayland と自作 compositor の検討
+### 9b. Wayland と自作 compositor の検討
 - モニターごとの倍率や分数スケーリングのために、bridge-wm に代わる Wayland compositor（wlroots 系など）を検討する。
   - Wine と XP のシェルは Xwayland 上で動かし、compositor がその位置指定を受け入れる。
   - Linux アプリは Wayland ネイティブで動かす。
