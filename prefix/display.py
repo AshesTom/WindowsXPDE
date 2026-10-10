@@ -33,7 +33,9 @@ if args.menu:
         raise SystemExit('Build bridge-wm before selecting a Start menu')
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer',
         'NoSimpleStartMenu', int(args.menu == 'classic'), 'REG_DWORD')
-    menu_env = dict(env, WINEDLLOVERRIDES='shell32,shlwapi=n;explorer=b;mscoree,mshtml=')
+    # n,b: in a 64-bit prefix Wine starts the 32-bit helper through the 64-bit
+    # start.exe, which has no native shell32 and must keep the builtin one.
+    menu_env = dict(env, WINEDLLOVERRIDES='shell32,shlwapi=n,b;explorer=b;mscoree,mshtml=')
     subprocess.run([wine, str(helper), args.menu], env=menu_env, check=True)
 reg(r'HKCU\Control Panel\Desktop', 'LogPixels', args.dpi, 'REG_DWORD')
 subprocess.run([wine, str(theme_helper), args.theme],

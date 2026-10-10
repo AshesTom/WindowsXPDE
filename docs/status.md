@@ -23,6 +23,7 @@
   Win32 ウィンドウの題名変更が HSHELL_REDRAW になること（`tests/title-change.c`）。
 - `tests/wm_latency.py`: 枠の追従・題名の反映・proxy の命令の遅れ（ミリ秒）と、待機中の WM・proxy・wineserver の起床回数と CPU 使用率。
 - `tests/recovery_integration.py`: XP の強制終了・再起動・独立 builtin ブラウザと端末の実表示。Debian VM で成功。
+- `tests/gl-perf.c`: OpenGL の描画・転送・読み戻し・バッファの写像・表示の速さ（段階 7。32-bit と 64-bit でビルドして比べる）。
 - `tests/display.c`: system DPI / ThemeActive / ローカル Luna の公開 API を確認。
 - `tests/system-menu.c`: 別プロセスの標準システムメニュー、opt-in の有無、スタイル変更、キャッシュ・revert・破棄。
 - `tests/rebar.c`: 利用者の native v6 ReBar の初期位置・バンド配置、明示 CCS_NOMOVEY の維持。
@@ -1051,3 +1052,62 @@ fcitx5 と Mozc で、XP シェル上の Linux アプリと Wine のアプリの
 - 未改変の 11.0 に `wine/build.sh` で 55 本が当たり、当てたツリーは移植用ブランチと一致した。新しいソースとビルドディレクトリで
   configure から全体をビルドし（`.local/wine-stage6-install`）、警告は upstream の bison の 14 件だけ。
 - Linux アプリを XP の「ファイル名を指定して実行」から Unix のパスで起動することはできない（段階 6 以前から。範囲外）。
+
+## 64bit（WoW64）対応（2026-10-10、段階 7）
+
+Wine を新しい WoW64 方式（`--enable-archs=i386,x86_64`、Unix 側は 64-bit だけ）でビルドし、prefix を 64-bit にした。XP のシェルは
+32-bit のまま WoW64 で動く。パッチは 56 本（0017 を加え、0026 と 0027 を直した。対応は `docs/patches.md` の「段階 7」）。判断は
+`docs/dll-policy.md`、手順と既存の 32-bit prefix の移行は `docs/reproduce.md`。
+
+- ビルド: chroot に 64-bit の開発ファイルと x86_64 の MinGW を足した。configure の結果（見つからない開発ファイル）は 32-bit の
+  ビルドと同じ。未改変の 11.0 に `wine/build.sh` で 56 本が当たり、当てたツリーは移植用ブランチと一致した。新しいソースと
+  ビルドディレクトリで configure から全体をビルドし（`.local/wine-stage7b-install`）、警告は upstream の bison の 14 件だけ。
+  install に `i386-unix` は無い。プローブは i686 と x86_64 の両方で `-Werror` のまま通る（`WIN4WINE_PROBES`）。
+- prefix（`prefix/create.py`、`prefix/stage.py`、`prefix/registry.py`）: XP の DLL は `syswow64`、`win4wine-controls.dll` は
+  両方の架構、XP シェルのための登録は 32-bit の view（`Wow6432Node`）。registry profile は 23 のまま。
+- 既存の 32-bit prefix は WoW64 の Wine では動かない（`is a 32-bit installation`、`WINEARCH=win32` も不可）。`prefix/migrate.py`
+  で新しい 64-bit の prefix に HKCU と利用者のファイルを移す。試験 VM の `prefix-final`（段階 6 まで使っていた prefix）を
+  `prefix-final64` に移し、chroot のクラシックの試験用 prefix も同じ手順で移した。
+- 見つかって直した問題:
+  - XP の shlwapi が `ProcessWow64Information` で WOW64 を調べ、XP の shell32 が別の処理に入って、スタートメニューの「プリンタと FAX」の
+    アイコンが一般のフォルダになった（アイコンの場所が `shell32.dll,-138` から `C:\windows\system32\SHELL32.dll,3` に変わった）。
+    `tests/folder-icons.c` と公開 API の呼び出しの記録（`+relay`、`+reg`）で、レジストリと読み込む DLL は同じで、WOW64 の問い合わせの後に
+    分かれることを確かめた。0017 で XP Explorer にだけ WOW64 を知らせないようにした（利用者の判断）。
+  - メニューとスタートメニューの影の画素が壁紙の上で1段階ずれた（右クリックメニューで 17 画素、スタートメニューで 13 画素）。
+    0026 の影の計算が、32-bit の Unix 側では x87 の拡張精度、64-bit では float で丸められていた。旧版の画素は正確な計算と、新版は
+    float の計算と一致した。double にすると、すべての濃さと 0〜255 の組み合わせで正確な計算と同じになる。
+  - 0027 の XP の形式の `cbSize` が 64-bit のアプリでは 976 になる（XP は 952）。構造体の大きさから求めるようにした。
+  - 新しい prefix で、Wine 自身の最初の wineboot が create.py の写した XP の comctl32（v5）を Wine のものに書き換えた（試験 VM）。
+    create.py は wineboot の後に wineserver の終了を待ち、stage.py は comctl32 も入れ直す。
+  - 環境変数で XP の DLL を `=n` にすると、WoW64 では 64-bit の `start.exe` が起動に失敗する。`=n,b` にした（`prefix/display.py`）。
+- 前後の比較（試験 VM。段階 6 の 32-bit のビルドと `prefix-final`、段階 7 のビルドと `prefix-final64`。フォルダの表示の状態
+  （`ShellNoRoam` の Bags、`Streams`）を同じ写しに戻してから撮った。`localres/stage7/s7b*`（段階 6）・`s7i*`（段階 7））:
+  デスクトップ、スタートメニュー、デスクトップの右クリックメニュー、「ファイル名を指定して実行」、フォルダウィンドウ（1枚、2枚）、
+  Alt+Tab の切り替えウィンドウ、切り替えた後、全部閉じた後の9場面が、2回とも時計を除いて0画素差。右クリックメニューと Alt+Tab は
+  段階 3〜6 で確かめた実XPとの比較（右クリックメニューは0画素差、Alt+Tab はアイコンの内側の 146 画素が各色1違う）をそのまま保つ
+  （今回、参照用 XP VM では撮り直していない）。
+- i386 のライブラリなし: 試験 VM で `/usr/lib/i386-linux-gnu` と `/usr/lib32` を空のディレクトリで覆い（bind mount、後で外した）、
+  32-bit のビルドの Wine が起動できない状態にしてセッションを起動した。上の9場面は覆う前と0画素差、セッションのプロセス
+  （wineserver、Wine の explorer、XP Explorer、proxy、WM、tray、fcitx5）は i386 のライブラリを1つも写像していない。
+  通知アイコンの試験と 32-bit のアプリの OpenGL（64-bit の Mesa を使う）も動いた。
+- 試験:
+  - VM の非クライアント領域の試験（nonclient-caption、caption-icons、nonclient-theme、caption-text、frame-control）は段階 6 と
+    handle を除いて一致（既知の失敗も同じ）。
+  - chroot の Xvfb で `tests/wm_integration.py`、`tests/native_frames.py`（Luna とクラシック）、`tests/xterm_redraw.py`、
+    `tests/bridge_integration.py`、`tests/recovery_integration.py` が成功（`.local/stage7-bridge-tests.log`、`.local/s7-recovery.log`）。
+    数値は段階 5 と同じ（段階 6 の記録の `.local/stage6-bridge-tests.log` のクラシックの値は、試験用 prefix を作り直す前の実行のもの）。
+    復旧用の prefix は 64-bit で作られる。`tests/font_rendering.py` と `tests/patch_state.py` も成功。
+  - `tests/notify-icon.c` は 32-bit と 64-bit のどちらからも PASS。`tests/foreign-icons.c`、`system-menu.c`、`ui-state.c`、
+    `default-position.c` は 64-bit でも PASS で、出力は 32-bit と同じ。
+- OpenGL（試験 VM、llvmpipe、`tests/gl-perf.c`、1項目2秒、VM の負荷で回ごとに揺れるので同じ回の中で比べる）: 32-bit のアプリは、
+  クライアントのメモリからの描画が 32-bit のビルドより約 25% 速く、`glReadPixels` は約2倍、テクスチャとバッファの転送と表示
+  （SwapBuffers）は同等。`glMapBuffer` での書き込みだけが 28〜41% 遅い（3回。WoW64 は 4GB より上の写像を 32-bit のアプリのために
+  写し直す。64-bit のアプリでは 32-bit のビルドの約7倍）。
+
+| 項目（MiB/s・frame/s） | 32-bit ビルド | WoW64・32-bit | WoW64・64-bit |
+|---|---|---|---|
+| 1回目 map-write | 2609 | 1647 | 21924 |
+| 2回目 map-write | 2642 | 1902 | 17834 |
+| 2回目 read-pixels | 2906 | 6107 | 5840 |
+| 2回目 buffer-upload | 30811 | 38831 | 33111 |
+| 2回目 present | 226 | 229 | 215 |

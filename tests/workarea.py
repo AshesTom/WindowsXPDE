@@ -42,7 +42,7 @@ def main():
         if args.prefix_template:
             shutil.copytree(args.prefix_template, prefix, symlinks=True)
         env = os.environ.copy()
-        env.update(WINEPREFIX=str(prefix), WINEARCH="win32", WINEDEBUG="-all",
+        env.update(WINEPREFIX=str(prefix), WINEARCH="win64", WINEDEBUG="-all",
                    WINEDLLOVERRIDES="mscoree,mshtml=")
         env.pop("WIN4WINE_EXTERNAL_SHELL", None)
         if not args.opt_out:

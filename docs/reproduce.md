@@ -22,7 +22,7 @@ export WINE=/work/.local/wine-install/bin/wine
 export WINEPREFIX=/work/.local/prefix-clean
 ```
 
-出力先は既存ディレクトリを拒否する。やり直すときは別名で作る。既存 prefix を無条件で消す手順は用意しない。`.local/wine-build/config.log` には構成・依存の実測が残る。ビルドは 32-bit Unix ライブラリと i686 MinGW を使う。DirectX ヘルパーの版違いと Wine 回帰テストのビルドを省く。通常の Wine テストを追加する場合は別 build directory を使う。
+出力先は既存ディレクトリを拒否する。やり直すときは別名で作る。既存 prefix を無条件で消す手順は用意しない。`.local/wine-build/config.log` には構成・依存の実測が残る。ビルドは Wine の新しい WoW64 方式で、64-bit の Unix ライブラリと i686・x86_64 の MinGW を使う（段階 7。i386 のライブラリは要らない）。DirectX ヘルパーの版違いと Wine 回帰テストのビルドを省く。通常の Wine テストを追加する場合は別 build directory を使う。
 
 新規 prefix は自作 `theme-settings.exe` で Wine の保存済み classic metrics も復元する。
 旧手順の `ThemeActive=0` だけでは Luna の caption height が残り、クラシックのボタンが縦長になる。
@@ -88,7 +88,7 @@ XP_BRIDGE_DIR=/work/.local/ipc-clean python3 tests/wm_integration.py
 
 ## ログイン用 Xsession
 
-実機 Debian 13 / Ubuntu 24.04 に Xorg、ディスプレイマネージャ、python3-xlib、xterm を導入し、上記と同じ 32-bit ビルド依存を入れて Wine をビルドする。ホスト上の prefix はその利用者のホームを `--home` で指定する。chroot の `/work` パスの prefix はホスト用に流用しない。
+実機 Debian 13 / Ubuntu 24.04 に Xorg、ディスプレイマネージャ、python3-xlib、xterm を導入し、上記と同じビルド依存（64-bit の開発ファイルと i686・x86_64 の MinGW、`scripts/debian.sh` の init の一覧）を入れて Wine をビルドする。ホスト上の prefix はその利用者のホームを `--home` で指定する。chroot の `/work` パスの prefix はホスト用に流用しない。
 
 `~/.config/win4wine/session.json` に、その実機上の絶対パスで設定する。
 
@@ -496,3 +496,75 @@ WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/notify-icon-test.exe
 試験用の prefix を別の install で使うと、prefix の更新が走り、その途中の「Wine Mono Installer」の窓が bridge の試験の X 画面に出て
 フォーカスを奪う（段階 6 で `wm_integration.py` などが失敗した）。install を替えたら先に
 `WINEDLLOVERRIDES='mscoree,mshtml=' wine wineboot -u` で更新しておく。
+
+## 64bit（WoW64）対応（段階 7）
+
+段階 7 で Wine を新しい WoW64 方式（`--enable-archs=i386,x86_64`）でビルドするようにした。Unix 側は 64-bit だけなので、
+実機に i386 の multiarch（32-bit のライブラリ）は要らない。32-bit の XP シェルと 32-bit のアプリは WoW64 で動き、64-bit の
+Windows アプリも使える。パッチは 56 本になり、0017 以降の番号が変わった（`docs/patches.md` の「段階 7」）。前の series を
+当てたソースツリーには重ねられないので、新しいソースとビルドディレクトリで configure からビルドする。
+
+```sh
+# chroot の依存（作り直す場合は scripts/debian.sh init。既存の chroot には足す）
+sudo chroot .local/debian apt-get install --no-install-recommends libx11-dev libxext-dev libxrender-dev \
+  libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev libfreetype-dev libfontconfig-dev libgnutls28-dev \
+  libgl-dev libasound2-dev libdbus-1-dev libudev-dev gcc-mingw-w64-x86-64
+git clone --branch wine-11.0 <未改変の Wine 11.0 のリポジトリ> .local/wine-stage7-src
+./scripts/debian.sh run bash -c 'cd /work && WINE_SOURCE=/work/.local/wine-stage7-src \
+  WINE_BUILD=/work/.local/wine-stage7-build WINE_INSTALL=/work/.local/wine-stage7-install ./wine/build.sh'
+./scripts/debian.sh run bash -c 'cd /work && bridge-wm/build.sh && tests/build.sh'
+```
+
+install には `lib/wine/x86_64-unix`、`x86_64-windows`、`i386-windows` ができ、`i386-unix` は無い。`win4wine-controls.dll` は
+両方の PE の `comctl32_v6.dll` から作る。bridge（proxy・inspect・補助ツール）とプローブは 32-bit のまま。プローブを 64-bit でも
+作るときは `MINGW_CC=x86_64-w64-mingw32-gcc MINGW_WINDRES=x86_64-w64-mingw32-windres WIN4WINE_PROBES=/work/.local/bridge64 tests/build.sh`。
+
+prefix の構成（`prefix/create.py` が作る 64-bit の prefix）:
+
+- XP の DLL（shell32、shdocvw、browseui、shlwapi、comctl32 の v5 など）は `C:\windows\syswow64` に置く。32-bit の XP シェルからは
+  `system32` に見える。`system32` は 64-bit の Wine の DLL のまま（64-bit のアプリは Wine の shell32 などを使う）。
+- `win4wine-controls.dll` は `system32`（x86_64）と `syswow64`（i386）の両方。
+- registry profile の COM の登録、名前空間の名前、`LogonType` などは 32-bit の view（`HKCR\CLSID` と `HKLM\Software` の
+  `Wow6432Node`）に書く（`prefix/registry.py` の `shell_view` が `wine reg` に `/reg:32` を付ける）。HKCU は両方の view で共通。
+  registry profile の版は 23 のまま。
+- `C:\xp`、`winsxs` の XP の v6、字体、テーマの置き場所は変わらない。
+
+既存の 32-bit prefix はこのビルドでは動かない（`is a 32-bit installation, it cannot support 64-bit applications`。
+`WINEARCH=win32` も WoW64 では使えない）。新しい 64-bit の prefix へ移す。
+
+1. セッションを止め、古い prefix の wineserver が終わったことを確かめる。
+2. 移す。古い prefix は読むだけで変えない（32-bit のビルドに戻せば、そのまま使える）。
+
+   ```sh
+   ./prefix/migrate.py /path/to/old-prefix /path/to/new-prefix --wine /path/to/wine-stage7-install/bin/wine
+   ```
+
+   `migrate.py` は、古い prefix の `xp-shell.json` の抽出物（`--assets` で変えられる）と H: のホームで `create.py` を実行し、
+   古い prefix の HKCU（`user.reg`。テーマ、DPI、スタートメニュー、タスクバー、フォルダの表示などの設定）と、`drive_c/users`
+   （デスクトップ、スタートメニュー、お気に入り、AppData、壁紙の変換結果）、`drive_c/ProgramData`（共通のスタートメニュー、
+   ユーザー画像）を写す。`windows/Fonts` と `C:\xp\native` に手で足したファイルも写す（新しい側にあるものは上書きしない）。
+   ホームへのリンク（Downloads など）はリンクのまま写し、リンクの先には書き込まない。最後に `stage.py` と同じ配置を行う。
+   古い prefix に入れた Windows のアプリ（`Program Files` と HKLM の登録）は移さない。新しい prefix に入れ直す。
+3. `~/.config/win4wine/session.json` の `wine` を WoW64 の install、`prefix` を新しい prefix にする。
+4. セッションを起動する。
+
+`WINEDLLOVERRIDES` で XP の DLL を `=n` にして 32-bit のプログラムを起動すると、WoW64 では Wine が 64-bit の `start.exe` を
+経由して起動し直し、その `start.exe` が 64-bit の native の shell32 を探して失敗する。XP の DLL を指定するときは `=n,b` にする
+（32-bit のプロセスは XP の DLL、64-bit の `start.exe` は Wine の DLL を読む）。
+
+```sh
+WINEDLLOVERRIDES='shell32,shdocvw,browseui,shlwapi,comctl32,linkinfo,browselc,shdoclc=n,b' \
+  "$WINE" .local/bridge/desktop-menu-test.exe 'Z:\tmp\desktop-menu.txt' --trace
+```
+
+試験:
+
+```sh
+# XP シェルのセッションで。64-bit のアプリからの通知アイコン（0027）
+WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge64/notify-icon-test.exe
+# OpenGL の転送の速さ（引数は1項目の秒数）
+"$WINE" .local/bridge/gl-perf-test.exe 2
+```
+
+試験 VM では `.local/vm-stage7-install.sh` が install と更新したファイルを ext4 のイメージで写す（段階 6 の install は
+`wine-final-install`、移す前の prefix は `prefix-final` のまま残る）。

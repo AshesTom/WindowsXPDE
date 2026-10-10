@@ -8,6 +8,16 @@ FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
 
+def shell_view(args):
+    """Address the XP shell's registry view in `wine reg ...` arguments.
+
+    The XP shell is a 32-bit process. In a 64-bit (WoW64) prefix it sees the
+    32-bit view of HKCR\\CLSID and HKLM\\Software, while `wine reg` runs the
+    64-bit reg.exe; HKCU and the rest of HKCR are shared by both views. In a
+    32-bit prefix there is one view and the option changes nothing."""
+    return (*args, '/reg:32') if args and args[0] == 'reg' else args
+
+
 def font_profile_defaults():
     """Our opt-in profile, measured with public APIs on the user's Japanese XP.
 

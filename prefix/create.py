@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a dedicated win32 prefix from locally extracted XP files."""
+"""Create a dedicated 64-bit (WoW64) prefix from locally extracted XP files."""
 import argparse
 import json
 import os
@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 import registry
+import stage
 
 
 def create(assets, dest, home, wine):
@@ -15,9 +16,9 @@ def create(assets, dest, home, wine):
     if dest.exists():
         raise SystemExit(f'Refusing existing prefix: {dest}')
     wine_path = Path(shutil.which(wine) or wine).resolve(strict=True)
-    controls = wine_path.parent.parent / 'lib/wine/i386-windows/win4wine-controls.dll'
-    if not controls.is_file():
-        raise SystemExit('Build the patched Wine first: missing self-built themed controls module')
+    lib = wine_path.parent.parent / 'lib/wine'
+    if not all((lib / arch / 'win4wine-controls.dll').is_file() for arch in ('i386-windows', 'x86_64-windows')):
+        raise SystemExit('Build the patched WoW64 Wine first: missing self-built themed controls modules')
     theme_helper = Path(__file__).resolve().parents[1] / '.local/bridge/theme-settings.exe'
     if not theme_helper.is_file():
         raise SystemExit('Run bridge-wm/build.sh first: missing self-built theme settings helper')
@@ -31,19 +32,26 @@ def create(assets, dest, home, wine):
         if not (assets / name).is_file():
             raise SystemExit(f'Missing {name}: re-extract local media for the Japanese classic baseline')
     dest.parent.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ, WINEPREFIX=str(dest), WINEARCH='win32',
+    # The XP shell runs as a 32-bit process; 64-bit applications use Wine's own DLLs.
+    env = dict(os.environ, WINEPREFIX=str(dest), WINEARCH='win64',
                WINEDLLOVERRIDES='mscoree,mshtml=;uxtheme=b', WINEDEBUG=os.environ.get('WINEDEBUG', '-all'))
     def run(*args):
-        subprocess.run([wine, *args], env=env, check=True)
+        subprocess.run([wine, *registry.shell_view(args)], env=env, check=True)
     def exists(key, name):
-        return subprocess.run([wine, 'reg', 'query', key, '/v', name], env=env,
+        return subprocess.run([wine, *registry.shell_view(('reg', 'query', key, '/v', name))], env=env,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
     # Disable optional runtime installers: never obtain Microsoft binaries.
     run('wineboot', '-u')
-    system = dest / 'drive_c/windows/system32'
+    # A new prefix also runs Wine's own initial wineboot, which may still be
+    # writing the 32-bit system directory; wait until every process ends.
+    subprocess.run([str(wine_path.with_name('wineserver')), '-w'], env=env, check=True)
+    system = stage.shell_system(dest)
+    if system.name != 'syswow64':
+        raise SystemExit('Expected a 64-bit prefix: use the WoW64 build of the patched Wine')
     xp = dest / 'drive_c/xp'
     xp.mkdir()
-    shutil.copyfile(controls, system / 'win4wine-controls.dll')
+    for source, directory in stage.controls_targets(dest, wine_path):
+        shutil.copyfile(source / 'win4wine-controls.dll', directory / 'win4wine-controls.dll')
     shutil.copyfile(assets / 'windows/explorer.exe', xp / 'xp-explorer.exe')
     native = xp / 'native'
     native.mkdir()

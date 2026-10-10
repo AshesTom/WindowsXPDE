@@ -26,9 +26,10 @@ class FontRendering(unittest.TestCase):
                 wine = base / 'runtime/bin/wine'
                 wine.parent.mkdir(parents=True)
                 wine.touch()
-                controls = wine.parent.parent / 'lib/wine/i386-windows/win4wine-controls.dll'
-                controls.parent.mkdir(parents=True)
-                controls.touch()
+                for arch in ('i386-windows', 'x86_64-windows'):
+                    controls = wine.parent.parent / 'lib/wine' / arch / 'win4wine-controls.dll'
+                    controls.parent.mkdir(parents=True)
+                    controls.touch()
                 files = ['windows/explorer.exe', 'fonts/msgothic.ttc', 'themes/Luna/luna.msstyles']
                 files += ['system32/' + name + '.dll' for name in
                           ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'comctl32', 'linkinfo', 'browselc', 'shdoclc')]
@@ -41,7 +42,8 @@ class FontRendering(unittest.TestCase):
 
                 def fake_run(command, **kwargs):
                     if command[1:3] == ['wineboot', '-u']:
-                        for directory in ('drive_c/windows/system32', 'drive_c/windows/Fonts', 'dosdevices'):
+                        for directory in ('drive_c/windows/system32', 'drive_c/windows/syswow64',
+                                          'drive_c/windows/Fonts', 'dosdevices'):
                             (dest / directory).mkdir(parents=True, exist_ok=True)
                     if command[1:3] == ['reg', 'query']:
                         return subprocess.CompletedProcess(command, 0 if existing is not None else 1)

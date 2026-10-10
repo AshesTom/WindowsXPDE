@@ -24,15 +24,14 @@ case ${1:-help} in
             sudo debootstrap --variant=minbase trixie "$fs" http://deb.debian.org/debian
         fi
         mounts
-        sudo chroot "$fs" dpkg --add-architecture i386
         sudo chroot "$fs" apt-get update
+        # WoW64 Wine: 64-bit Unix libraries only, i686 and x86_64 MinGW for the PE modules.
         sudo chroot "$fs" apt-get install -y --no-install-recommends \
-            build-essential gcc-multilib g++-multilib flex bison pkg-config git ca-certificates \
+            build-essential flex bison pkg-config git ca-certificates \
             python3 python3-xlib cabextract p7zip-full xvfb xauth xterm x11-utils xdotool imagemagick \
-            libx11-dev libx11-dev:i386 libxext-dev:i386 libxrender-dev:i386 libxrandr-dev:i386 \
-            libxi-dev:i386 libxcursor-dev:i386 libxinerama-dev:i386 libfreetype-dev:i386 \
-            libfontconfig-dev:i386 libgnutls28-dev:i386 libgl-dev:i386 libasound2-dev:i386 \
-            libdbus-1-dev:i386 libudev-dev:i386 gcc-mingw-w64-i686
+            libx11-dev libxext-dev libxrender-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev \
+            libfreetype-dev libfontconfig-dev libgnutls28-dev libgl-dev libasound2-dev libdbus-1-dev \
+            libudev-dev gcc-mingw-w64-i686 gcc-mingw-w64-x86-64
         if ! sudo chroot "$fs" getent passwd "$(id -u)" >/dev/null; then
             sudo chroot "$fs" useradd -m -u "$(id -u)" builder
         fi

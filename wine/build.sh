@@ -12,18 +12,22 @@ fi
 python3 "$root/wine/patch-state.py" "$src" "$root/wine/patches" --apply
 mkdir -p "$build" "$install"
 cd "$build"
-export PKG_CONFIG_LIBDIR=${PKG_CONFIG_LIBDIR:-/usr/lib/i386-linux-gnu/pkgconfig:/usr/share/pkgconfig}
 # DirectX helper version copies are outside the XP desktop milestones.
 extra=()
 for version in {24..43}; do extra+=("--disable-d3dx9_$version"); done
 for version in {33..43}; do extra+=("--disable-d3dx10_$version"); done
 for version in {33..42} 46 47; do extra+=("--disable-d3dcompiler_$version"); done
-"$src/configure" --prefix="$install" --without-wayland --disable-tests "${extra[@]}" CC='gcc -m32' CXX='g++ -m32'
+# New WoW64: 64-bit Unix libraries only, with i386 and x86_64 PE modules, so
+# the host needs no i386 libraries and runs 32-bit and 64-bit applications.
+"$src/configure" --prefix="$install" --enable-archs=i386,x86_64 --without-wayland --disable-tests "${extra[@]}"
 make -j"${JOBS:-6}"
 make install
 # Isolate Wine's themed controls from the XP common-control module. Since
 # Wine 11 they are in comctl32_v6; comctl32 is the version 5 module.
-controls_tmp=$(mktemp "$install/lib/wine/i386-windows/win4wine-controls.dll.XXXXXX")
-cp -p -- "$install/lib/wine/i386-windows/comctl32_v6.dll" "$controls_tmp"
-mv -f -- "$controls_tmp" "$install/lib/wine/i386-windows/win4wine-controls.dll"
+# Both architectures: 64-bit applications in the session load it too.
+for arch in i386 x86_64; do
+    controls_tmp=$(mktemp "$install/lib/wine/$arch-windows/win4wine-controls.dll.XXXXXX")
+    cp -p -- "$install/lib/wine/$arch-windows/comctl32_v6.dll" "$controls_tmp"
+    mv -f -- "$controls_tmp" "$install/lib/wine/$arch-windows/win4wine-controls.dll"
+done
 "$install/bin/wine" --version

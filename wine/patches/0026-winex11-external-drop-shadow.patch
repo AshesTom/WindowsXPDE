@@ -15,20 +15,21 @@ beneath the shadow strips when the window is mapped, darken it with that
 profile and show it in two input-transparent override-redirect windows
 mapped just before the window; they go when it is unmapped, moved or
 destroyed. A popup mapped while its class lacked the style gets its shadow,
-stacked under it, when its position next changes.
+stacked under it, when its position next changes. The darkening is computed
+in double so that the 32-bit (x87) and 64-bit (SSE) builds round alike.
 Evidence: the ratios under the desktop's context menu equal XP's within 0.005.
 Scope: only with WIN4WINE_EXTERNAL_SHELL.
 Old patches: 0072.
 ---
- dlls/winex11.drv/window.c | 135 ++++++++++++++++++++++++++++++++++++++++++++++
+ dlls/winex11.drv/window.c | 136 ++++++++++++++++++++++++++++++++++++++++++++++
  dlls/winex11.drv/x11drv.h |   2 +
- 2 files changed, 137 insertions(+)
+ 2 files changed, 138 insertions(+)
 
 diff --git a/dlls/winex11.drv/window.c b/dlls/winex11.drv/window.c
-index 6eb70e8..87bc90a 100644
+index 6eb70e8..eb5d533 100644
 --- a/dlls/winex11.drv/window.c
 +++ b/dlls/winex11.drv/window.c
-@@ -1400,6 +1400,133 @@ static void window_set_net_wm_state( struct x11drv_win_data *data, UINT new_stat
+@@ -1400,6 +1400,134 @@ static void window_set_net_wm_state( struct x11drv_win_data *data, UINT new_stat
      }
  }
  
@@ -64,13 +65,13 @@ index 6eb70e8..87bc90a 100644
 +
 +/* darkness at (i, k) of the right (part 0) or bottom (part 1) shadow, whose
 + * pixel (0, 0) lies at offset 'along' from the start of the shadow strip */
-+static float shadow_darkness( int part, int i, int k, int length )
++static double shadow_darkness( int part, int i, int k, int length )
 +{
 +    int across = part ? k : i, along = part ? i : k;
 +    float fade = along < 6 ? shadow_fade[along] : 1.0f;
 +
 +    if (part == 0 && along >= length - 5) fade = min( fade, shadow_corner[along - (length - 5)] );
-+    return shadow_edge[across] * fade;
++    return (double)shadow_edge[across] * fade;
 +}
 +
 +static Window create_shadow( Display *display, Window above, int part, int x, int y, int width, int height )
@@ -99,7 +100,8 @@ index 6eb70e8..87bc90a 100644
 +        for (int i = 0; i < cx; i++)
 +        {
 +            unsigned long pixel = XGetPixel( image, i, k );
-+            float keep = 1.0f - shadow_darkness( part, i + x - left, k + y - top, part ? width : height );
++            /* in double: 32-bit (x87) and 64-bit builds then round alike */
++            double keep = 1.0 - shadow_darkness( part, i + x - left, k + y - top, part ? width : height );
 +            unsigned int r = ((pixel >> 16) & 0xff) * keep, g = ((pixel >> 8) & 0xff) * keep, b = (pixel & 0xff) * keep;
 +            XPutPixel( image, i, k, (pixel & ~0xffffffUL) | (r << 16) | (g << 8) | b );
 +        }
@@ -162,7 +164,7 @@ index 6eb70e8..87bc90a 100644
  static void window_set_config( struct x11drv_win_data *data, RECT rect, BOOL above )
  {
      UINT style = NtUserGetWindowLongW( data->hwnd, GWL_STYLE ), mask = 0;
-@@ -1425,6 +1552,8 @@ static void window_set_config( struct x11drv_win_data *data, RECT rect, BOOL abo
+@@ -1425,6 +1553,8 @@ static void window_set_config( struct x11drv_win_data *data, RECT rect, BOOL abo
      data->desired_state.above = above;
      if (!data->whole_window) return; /* no window, nothing to update */
      if (EqualRect( old_rect, new_rect ) && (old_above || !above || data->managed)) return; /* rects are the same, no need to be raised, nothing to update */
@@ -171,7 +173,7 @@ index 6eb70e8..87bc90a 100644
      if (window_needs_config_change_delay( data ))
      {
          TRACE( "window %p/%lx is updating _NET_WM_STATE/_MOTIF_WM_HINTS, delaying request\n", data->hwnd, data->whole_window );
-@@ -1630,11 +1759,13 @@ static void window_set_wm_state( struct x11drv_win_data *data, UINT new_state, B
+@@ -1630,11 +1760,13 @@ static void window_set_wm_state( struct x11drv_win_data *data, UINT new_state, B
      case MAKELONG(WithdrawnState, IconicState):
      case MAKELONG(WithdrawnState, NormalState):
      case MAKELONG(IconicState, NormalState):
@@ -185,7 +187,7 @@ index 6eb70e8..87bc90a 100644
          if (data->embedded) set_xembed_flags( data, 0 );
          else if (!data->managed) XUnmapWindow( data->display, data->whole_window );
          else XWithdrawWindow( data->display, data->whole_window, data->vis.screen );
-@@ -2645,6 +2776,7 @@ void X11DRV_DestroyWindow( HWND hwnd )
+@@ -2645,6 +2777,7 @@ void X11DRV_DestroyWindow( HWND hwnd )
  
      if (!(data = get_win_data( hwnd ))) return;
  
@@ -193,7 +195,7 @@ index 6eb70e8..87bc90a 100644
      destroy_whole_window( data, FALSE );
      if (thread_data->last_focus == hwnd) thread_data->last_focus = 0;
      if (thread_data->last_xic_hwnd == hwnd) thread_data->last_xic_hwnd = 0;
-@@ -3356,6 +3488,9 @@ void X11DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UIN
+@@ -3356,6 +3489,9 @@ void X11DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UIN
          update_net_wm_states( data );
      }
  

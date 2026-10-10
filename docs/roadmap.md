@@ -173,6 +173,10 @@
 
 ## 段階 7: 64bit（WoW64）対応
 
+状態: 2026-10-10 完了。WoW64 のビルドと 64bit の prefix に移り、パッチは 56 本（0017 を加え、0026・0027 を直した）。
+結果は `docs/status.md` の「64bit（WoW64）対応（2026-10-10、段階 7）」、判断は `docs/dll-policy.md`、既存の 32bit prefix の
+移行（`prefix/migrate.py`）は `docs/reproduce.md`。
+
 目的: 実機に i386 の multiarch（32bit のライブラリ）を入れずに動かせるようにし、64bit の Windows アプリも使えるようにする。
 
 現状:

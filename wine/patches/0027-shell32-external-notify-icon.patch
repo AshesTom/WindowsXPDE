@@ -15,13 +15,14 @@ Change: with the external shell, send the XP layout and keep the caller's
 icon handle; the taskbar reads it as another process's icon (0021).
 Evidence: tests/notify-icon.c adds, checks and removes an icon on XP and
 on Wine.
-Scope: only with WIN4WINE_EXTERNAL_SHELL. The layout has 32-bit handles.
+Scope: only with WIN4WINE_EXTERNAL_SHELL. The layout has 32-bit handles and
+the XP size in 32-bit and 64-bit processes alike.
 ---
- dlls/shell32/systray.c | 61 ++++++++++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 61 insertions(+)
+ dlls/shell32/systray.c | 62 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 62 insertions(+)
 
 diff --git a/dlls/shell32/systray.c b/dlls/shell32/systray.c
-index c74d017..66bac1a 100644
+index c74d017..38e9c70 100644
 --- a/dlls/shell32/systray.c
 +++ b/dlls/shell32/systray.c
 @@ -31,6 +31,7 @@
@@ -32,7 +33,7 @@ index c74d017..66bac1a 100644
  
  WINE_DEFAULT_DEBUG_CHANNEL(systray);
  
-@@ -173,6 +174,64 @@ static void fill_icon_info( const BITMAP *mask, const BITMAP *color, LONG mask_b
+@@ -173,6 +174,65 @@ static void fill_icon_info( const BITMAP *mask, const BITMAP *color, LONG mask_b
      DeleteObject( icon_info->hbmMask );
  }
  
@@ -68,7 +69,8 @@ index c74d017..66bac1a 100644
 +
 +    data.signature = 0x34753423;
 +    data.message = message;
-+    data.cbSize = NOTIFYICONDATAW_V3_SIZE;
++    /* The XP size, also in a 64-bit process. */
++    data.cbSize = sizeof(data) - FIELD_OFFSET( struct external_shell_notify, cbSize );
 +    data.hWnd = HandleToLong( nid->hWnd );
 +    data.uID = nid->uID;
 +    data.uFlags = nid->uFlags;
@@ -97,7 +99,7 @@ index c74d017..66bac1a 100644
  /*************************************************************************
   * Shell_NotifyIconW			[SHELL32.298]
   */
-@@ -211,6 +270,8 @@ BOOL WINAPI Shell_NotifyIconW(DWORD dwMessage, PNOTIFYICONDATAW nid)
+@@ -211,6 +271,8 @@ BOOL WINAPI Shell_NotifyIconW(DWORD dwMessage, PNOTIFYICONDATAW nid)
          return FALSE;
      }
  

@@ -2,7 +2,7 @@
 
 `extract/extract.py SOURCE OUTPUT` はローカル ISO または XP Windows ディレクトリから選択したファイルのみを抽出する。ネットワーク処理はない。出力と出典・ハッシュは `.local/` に置く。フォント・アイコンの資源を再配布せず、DLL 内のアイコンもそのままローカルで利用する。
 
-`prefix/create.py ASSETS PREFIX` は Wine が生成するクリーンな win32 レジストリに、winxp、ホームの H: マッピング、Personal フォルダ、クラシック表示を設定する。XP explorer は `C:\xp` に置き、builtin explorer を保存する。
+`prefix/create.py ASSETS PREFIX` は Wine が生成するクリーンな 64-bit（WoW64）の prefix（段階 7 より前は win32）のレジストリに、winxp、ホームの H: マッピング、Personal フォルダ、クラシック表示を設定する。XP explorer は `C:\xp` に置き、builtin explorer を保存する。
 
 `wine/build.sh` は upstream mirror の固定 commit を取得し、`wine/patches/series` を順に適用する。適用済みの判定を行う。Wine の修正には目的、対象 XP 動作、実装根拠・制約を書く。`.local/wine-upstream` の変更を直接の成果物とせず、必ずパッチに反映する。パッチの並び、書式、opt-in 判定、旧番号との対応は `docs/patches.md`。
 

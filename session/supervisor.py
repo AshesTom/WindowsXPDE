@@ -32,9 +32,11 @@ class Session:
         self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
         runtime = Path(os.environ.get('XDG_RUNTIME_DIR', '/tmp'))
         self.ipc = Path(tempfile.mkdtemp(prefix=f'win4wine-{os.getuid()}-', dir=runtime))
-        self.env = dict(os.environ, WINEPREFIX=str(self.prefix), WINEARCH='win32',
+        self.env = dict(os.environ, WINEPREFIX=str(self.prefix),
                         WIN4WINE_EXTERNAL_SHELL='1', WINEDEBUG=config.get('debug', '+timestamp,+seh,+loaddll'),
                         WINEDLLOVERRIDES='explorer=b;xp-explorer=n;mscoree,mshtml=;uxtheme=b')
+        # The prefix decides its architecture; the recovery prefix takes Wine's default.
+        self.env.pop('WINEARCH', None)
         # Wine derives its user locale and ANSI code page from the Unix locale.
         # A Japanese XP shell expects Japanese formats and code page 932 even
         # when the Linux session itself runs in another locale.

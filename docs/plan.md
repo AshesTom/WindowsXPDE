@@ -13,7 +13,7 @@ M5: Luna と 144/192 DPI の実測。
 
 ## 初期判断
 - ホストは Ubuntu 26.04。指定された Debian 13 を `.local/debian` に作成し、その中で検証する。ホスト GUI は変更しない。
-- XP ISO は日本語版 GRTMPVOL_JA の x86。32-bit Wine を使う。Wine 10.0 の tag/commit を固定する。
+- XP ISO は日本語版 GRTMPVOL_JA の x86。32-bit Wine を使う。Wine 10.0 の tag/commit を固定する。（段階 5 で Wine 11.0、段階 7 で WoW64 のビルドと 64-bit の prefix に移った。XP のシェルは 32-bit のまま。）
 - Xorg を基準にする。Xwayland は compositor の window 管理との調停が必要なので保留。
 - 名前空間と関連付けは Wine が生成するレジストリを土台にする。ユーザーの SOFTWARE/SYSTEM は丸ごと移植しない。サービス、ドライバ、認証、マシン固有設定を混入させるため。
 - XP explorer は `C:\xp\explorer.exe` に隔離し、Wine builtin explorer をフォールバック用に保存する。

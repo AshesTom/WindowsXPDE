@@ -16,8 +16,9 @@ prefix = Path(config['prefix']).resolve(strict=True)
 if not (prefix / 'xp-shell.json').is_file():
     raise SystemExit('Expected a dedicated test prefix')
 state = Path(config.get('state', str(Path.home() / '.local/state/win4wine'))) / 'status.json'
-env = dict(os.environ, WINEPREFIX=str(prefix), WINEARCH='win32',
+env = dict(os.environ, WINEPREFIX=str(prefix),
            WINEDLLOVERRIDES='mscoree,mshtml=', WINEDEBUG='-all')
+env.pop('WINEARCH', None)  # The existing prefix decides.
 d = display.Display()
 
 def wait(predicate, label, timeout=60):

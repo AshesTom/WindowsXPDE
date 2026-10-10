@@ -11,6 +11,19 @@ import subprocess
 import tempfile
 import registry
 
+def shell_system(prefix):
+    """The system directory of the 32-bit XP shell: syswow64 in a 64-bit prefix."""
+    wow64 = prefix / 'drive_c/windows/syswow64'
+    return wow64 if wow64.is_dir() else prefix / 'drive_c/windows/system32'
+
+def controls_targets(prefix, wine):
+    """Our themed controls module per architecture of the prefix."""
+    windows = prefix / 'drive_c/windows'
+    lib = wine.parent.parent / 'lib/wine'
+    if (windows / 'syswow64').is_dir():
+        return ((lib / 'x86_64-windows', windows / 'system32'), (lib / 'i386-windows', windows / 'syswow64'))
+    return ((lib / 'i386-windows', windows / 'system32'),)
+
 def prepare(prefix, wine):
     inf = wine.parent.parent / 'share/wine/wine.inf'
     timestamp = prefix / '.update-timestamp'
@@ -19,14 +32,15 @@ def prepare(prefix, wine):
     wine_current = inf.is_file() and current == str(int(inf.stat().st_mtime))
     if wine_current and version.is_file() and version.read_text().strip() == str(registry.VERSION):
         return
-    env = dict(os.environ, WINEPREFIX=str(prefix), WINEARCH='win32',
+    env = dict(os.environ, WINEPREFIX=str(prefix),
                WINEDLLOVERRIDES='explorer,shell32,shdocvw,browseui,shlwapi,comctl32,uxtheme=b;mscoree,mshtml=',
                WINEDEBUG=os.environ.get('WINEDEBUG', '-all'))
+    env.pop('WINEARCH', None)  # The existing prefix decides.
     def run(*args):
-        subprocess.run([str(wine), *args], env=env, check=True, timeout=120,
+        subprocess.run([str(wine), *registry.shell_view(args)], env=env, check=True, timeout=120,
                        stdout=subprocess.DEVNULL)
     def exists(key, name):
-        return subprocess.run([str(wine), 'reg', 'query', key, '/v', name], env=env,
+        return subprocess.run([str(wine), *registry.shell_view(('reg', 'query', key, '/v', name))], env=env,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                               timeout=120).returncode == 0
     # Wine upgrades may replace both DLL images and shell COM registrations.
@@ -50,14 +64,14 @@ def stage(prefix, wine=None):
     for name in ('browselc', 'shdoclc'):
         if not (prefix / f'drive_c/xp/native/{name}.dll').is_file():
             raise SystemExit(f'Missing {name}.dll: re-extract local XP media and add it to C:\\xp\\native')
-    system = prefix / 'drive_c/windows/system32'
-    if wine:
-        source = wine.parent.parent / 'lib/wine/i386-windows/win4wine-controls.dll'
+    system = shell_system(prefix)
+    for lib, directory in controls_targets(prefix, wine) if wine else ():
+        source = lib / 'win4wine-controls.dll'
         if not source.is_file():
             raise SystemExit('Rebuild patched Wine: missing self-built themed controls module')
-        target = system / 'win4wine-controls.dll'
+        target = directory / 'win4wine-controls.dll'
         if not target.is_file() or not filecmp.cmp(source, target, shallow=False):
-            with tempfile.NamedTemporaryFile(dir=system, prefix='.wine-controls-', delete=False) as temp:
+            with tempfile.NamedTemporaryFile(dir=directory, prefix='.wine-controls-', delete=False) as temp:
                 path = Path(temp.name)
             try:
                 shutil.copyfile(source, path)
@@ -65,8 +79,11 @@ def stage(prefix, wine=None):
             finally:
                 path.unlink(missing_ok=True)
     # msgina supplies XP's own shut down dialog and mydocs the icons of My
-    # Documents and My Pictures; older extractions lack them.
-    for name in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'linkinfo', 'browselc', 'shdoclc', 'msgina', 'mydocs'):
+    # Documents and My Pictures; older extractions lack them. comctl32 is
+    # XP's version 5 that create.py places; a new prefix's own first wineboot
+    # could still replace it (seen once in the WoW64 test VM).
+    for name in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'comctl32', 'linkinfo', 'browselc', 'shdoclc',
+                 'msgina', 'mydocs'):
         source = prefix / f'drive_c/xp/native/{name}.dll'
         target = system / f'{name}.dll'
         if name in ('msgina', 'mydocs') and not source.is_file():
@@ -107,7 +124,8 @@ def stage_media(prefix, wine=None):
     converter = Path(__file__).resolve().parents[1] / '.local/bridge/wallpaper-convert.exe'
     if wine and jpeg.is_file() and converter.is_file() and not bitmap.exists():
         bitmap.parent.mkdir(parents=True, exist_ok=True)
-        env = dict(os.environ, WINEPREFIX=str(prefix), WINEARCH='win32', WINEDEBUG='-all')
+        env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all')
+        env.pop('WINEARCH', None)
         try:
             subprocess.run([str(wine), str(converter), 'Z:' + str(jpeg).replace('/', '\\'),
                             'Z:' + str(bitmap).replace('/', '\\')], env=env, check=False, timeout=120,
@@ -156,7 +174,7 @@ def stage_folders(prefix, wine):
     user's home, and a desktop.ini other than ours is kept as it is.
     """
     user = pwd.getpwuid(os.getuid()).pw_name
-    mydocs = (prefix / 'drive_c/windows/system32/mydocs.dll').is_file()
+    mydocs = (shell_system(prefix) / 'mydocs.dll').is_file()
     marked = []
     for relative, sections in SPECIAL_FOLDERS:
         relative = relative.format(user=user)
@@ -182,7 +200,8 @@ def stage_folders(prefix, wine):
     icon = prefix / '.xp-mydocs-icon'
     if not marked and (not mydocs or icon.is_file()):
         return
-    env = dict(os.environ, WINEPREFIX=str(prefix), WINEARCH='win32', WINEDEBUG='-all')
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all')
+    env.pop('WINEARCH', None)
     try:
         # The shell reads desktop.ini only in system or read-only folders.
         for folder in marked:
@@ -193,9 +212,9 @@ def stage_folders(prefix, wine):
                 subprocess.run([str(wine), 'attrib', flag, folder + '\\desktop.ini'], env=env, check=False,
                                timeout=120, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if mydocs:
-            subprocess.run([str(wine), 'reg', 'add',
-                            r'HKCR\CLSID\{450D8FBA-AD25-11D0-98A8-0800361B1103}\DefaultIcon', '/ve', '/t',
-                            'REG_EXPAND_SZ', '/d', r'%SystemRoot%\system32\mydocs.dll,0', '/f'],
+            subprocess.run([str(wine), *registry.shell_view((
+                            'reg', 'add', r'HKCR\CLSID\{450D8FBA-AD25-11D0-98A8-0800361B1103}\DefaultIcon',
+                            '/ve', '/t', 'REG_EXPAND_SZ', '/d', r'%SystemRoot%\system32\mydocs.dll,0', '/f'))],
                            env=env, check=False, timeout=120, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             icon.write_text('1\n')
     finally:

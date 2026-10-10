@@ -849,3 +849,37 @@ opt-in のプロセスだけに効かせる。
 **判断: Linux アプリの字体は session.json の `linux_font` で選べるようにし、既定を prefix の MS UI Gothic にする（利用者の判断）。**
 fontconfig の設定は状態ディレクトリに作って `FONTCONFIG_FILE` で渡し、システムと利用者の設定は include で残す。MS の字体の
 ファイルは prefix の中のものを参照するだけで、リポジトリには入れない。代わりの日本語の字体として fonts-ipafont-gothic も入れた。
+
+## 64bit（WoW64）対応（段階 7、2026-10-10）
+
+**判断: Wine は新しい WoW64 方式（`--enable-archs=i386,x86_64`）でビルドする。** Unix 側は 64-bit だけになり、実機に i386 の
+ライブラリが要らない。32-bit だけのビルドの手順は残さない（git の履歴にある）。configure の結果（見つからない開発ファイル）は
+32-bit のビルドと同じ。
+**判断: prefix は 64-bit にし、XP の DLL は `syswow64` に置く。** `system32` は 64-bit の Wine の DLL のまま残し、64-bit のアプリは
+Wine の shell32 などを使う。XP の DLL の override は今までどおり XP Explorer の AppDefaults だけ native で、32-bit のプロセスが
+`system32` を開くと `syswow64` に振り向けられるので、XP の参照（`%SystemRoot%\system32\SHELL32.dll,...` など）は書き換えない。
+**判断: XP シェルのための登録は 32-bit の view にだけ書く。** Wine は Windows と同じく `HKCR\CLSID` と `HKLM\Software` を
+`Wow6432Node` に分け（`HKCR` の `Folder` や `.exe` などと HKCU は共通）、`wine reg` は 64-bit の reg.exe なので `/reg:32` を付ける。
+XP の DLL を指す COM の登録や XP の shell32 の文字列の参照を 64-bit の view に書くと、64-bit のプロセスが読めない DLL や
+Wine の shell32 にない番号を指すことになる。
+**判断: 既存の 32-bit prefix は新しい 64-bit の prefix へ移す（`prefix/migrate.py`）。** WoW64 の Wine は 32-bit の prefix を
+動かせず、prefix の架構は Wine で変えられない。HKCU は両方の view で共通なので `user.reg` をそのまま写し（ファイルの架構の行だけ
+変える）、利用者のファイルは `drive_c/users` と `drive_c/ProgramData` を写す。入れたアプリは HKLM の登録と `Program Files`
+の置き場所（32-bit は `Program Files (x86)`）が変わるので移さない。古い prefix は変えずに残す。
+**判断: XP Explorer のプロセスにだけ WOW64 を知らせない（0017、利用者の判断）。** XP の shlwapi は
+`NtQueryInformationProcess(ProcessWow64Information)`（`IsOS(OS_WOW6432)` と同じ問い合わせ）で WOW64 かを調べ、XP の shell32 は
+WOW64 では別の処理に入る。スタートメニューの「プリンタと FAX」のアイコンの場所が `shell32.dll,-138` ではなく
+`C:\windows\system32\SHELL32.dll,3`（一般のフォルダ）になった。公開 API の呼び出しの記録（`+relay`）と `tests/folder-icons.c` で
+調べ、XP の DLL の中は見ていない。XP のシェルは 32-bit の Windows のために作られたので、その上の挙動に合わせる。範囲は opt-in で、
+かつ実行ファイルが `xp-explorer.exe` のプロセスだけ（XP の DLL を native で読むのはこのプロセスだけ）。ファイルシステムと
+レジストリの振り向けは変えない。セッションのほかのプロセスや、そこから起動する 32-bit のインストーラーなどは WOW64 を正しく知る。
+**判断: 0026（XP の影）は double で計算する。** 32-bit のビルドの Unix 側は x87 の拡張精度、64-bit は SSE の float で、影の濃さを
+掛けて切り捨てるときに壁紙の画素が1段階ずれた。double にすると、すべての濃さと 0〜255 の組み合わせで拡張精度と同じ値になる
+（段階 3 で実XPと0画素差だった値のまま）。ほかの Unix 側のパッチの浮動小数点（0037 の HALFTONE）は画面に差が出なかった。
+**判断: 0027（通知アイコン）の XP の形式の大きさは構造体から求める。** `NOTIFYICONDATAW_V3_SIZE` は 64-bit では 976 で、XP の
+Explorer が受け取る 952 と違う。handle はもともと 32-bit に詰めている（user の handle は 32-bit に収まる）。
+**判断: `create.py` は最初の wineboot の後で wineserver の終了を待ち、`stage.py` は XP の comctl32（v5）も入れ直す。** 新しい
+prefix では Wine の起動処理が自分の wineboot も走らせ、試験 VM では create.py が XP の comctl32 を写した後でそれが Wine の
+comctl32 を書いた。
+**判断: XP の DLL を環境変数で native にするときは `n,b` にする。** WoW64 では 32-bit のプログラムが 64-bit の `start.exe` を経て
+起動し直され、`=n` だけだと `start.exe` が 64-bit の native の shell32 を探して起動に失敗する（`prefix/display.py`、文書の試験の例）。
