@@ -41,6 +41,8 @@ version 15/16 は壁紙（Bliss を XP と同じく Wallpaper1.bmp に変換、�
 画像は再抽出（30ファイル）で入り、session 開始時の stage で `C:\windows\Web\Wallpaper` とユーザー画像へ置く。
 version 12/13 は XP Explorer にだけ msgina を native で読ませ、`Logon User Name` に利用者名を入れる。
 （msgina.dll は再抽出で `C:\xp\native` に入る。無い既存 prefix ではシャットダウンは従来どおり使えない。）
+特殊フォルダの名前とアイコン（desktop.ini、マイ ドキュメントの DefaultIcon）は session 開始時の stage が入れる。
+mydocs.dll は再抽出（31ファイル）で入る。既存 prefix では `C:\xp\native` に置くとマイ ピクチャのアイコンも入る。
 version 11 は日本語 XP のデスクトップアイコン横間隔78px（`IconSpacing=-1170`）を一度だけ設定する。
 version 10 は My Computer 等の LocalizedString/InfoTip を XP shell32 のリソース参照にする。
 version 9 は XP shdocvw の Explorer Band（`{EFA24E64-B078-11D0-89E4-00C04FC9E26E}`）を登録し、

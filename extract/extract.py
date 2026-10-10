@@ -12,7 +12,9 @@ import xml.etree.ElementTree as ET
 FILES = {
     'explorer.exe': 'windows',
     **dict.fromkeys(('shell32.dll', 'browseui.dll', 'shdocvw.dll', 'shlwapi.dll',
-                     'browselc.dll', 'shdoclc.dll', 'msgina.dll', 'comctl32.dll', 'linkinfo.dll', 'uxtheme.dll', 'shellstyle.dll', 'explorer.exe.manifest'), 'system32'),
+                     'browselc.dll', 'shdoclc.dll', 'msgina.dll', 'comctl32.dll', 'linkinfo.dll', 'uxtheme.dll', 'shellstyle.dll', 'explorer.exe.manifest',
+                     # Only the icons of My Documents and My Pictures are read from mydocs.dll.
+                     'mydocs.dll'), 'system32'),
     **dict.fromkeys(('tahoma.ttf', 'tahomabd.ttf', 'msgothic.ttc', 'marlett.ttf',
                      'trebuc.ttf', 'trebucbd.ttf', 'trebucit.ttf', 'trebucbi.ttf'), 'fonts'),
     'luna.msstyles': 'themes/Luna', 'luna.theme': 'themes',

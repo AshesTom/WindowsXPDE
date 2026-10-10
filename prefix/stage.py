@@ -64,11 +64,12 @@ def stage(prefix, wine=None):
                 os.replace(path, target)
             finally:
                 path.unlink(missing_ok=True)
-    # msgina supplies XP's own shut down dialog; older extractions lack it.
-    for name in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'linkinfo', 'browselc', 'shdoclc', 'msgina'):
+    # msgina supplies XP's own shut down dialog and mydocs the icons of My
+    # Documents and My Pictures; older extractions lack them.
+    for name in ('shell32', 'shdocvw', 'browseui', 'shlwapi', 'linkinfo', 'browselc', 'shdoclc', 'msgina', 'mydocs'):
         source = prefix / f'drive_c/xp/native/{name}.dll'
         target = system / f'{name}.dll'
-        if name == 'msgina' and not source.is_file():
+        if name in ('msgina', 'mydocs') and not source.is_file():
             continue
         if target.is_file() and filecmp.cmp(source, target, shallow=False):
             continue
@@ -118,6 +119,71 @@ def stage_media(prefix, wine=None):
             subprocess.run([server, '-w'], env=env, check=False, timeout=15)
 
 
+# XP's default user marks its special folders in desktop.ini, as read on the
+# reference machine: [DeleteOnCopy] names a folder by its CSIDL while it keeps
+# its created name, and [.ShellClassInfo] gives its icon and tip.
+SPECIAL_FOLDERS = (
+    ('Pictures', [('DeleteOnCopy', [('Owner', None), ('Personalized', '39'), ('PersonalizedName', None)]),
+                  ('.ShellClassInfo', [('InfoTip', '@Shell32.dll,-12688'),
+                                       ('IconFile', r'%SystemRoot%\system32\mydocs.dll'), ('IconIndex', '-101')])]),
+    ('Music', [('DeleteOnCopy', [('Owner', None), ('Personalized', '13'), ('PersonalizedName', None)]),
+               ('.ShellClassInfo', [('InfoTip', '@Shell32.dll,-12689'),
+                                    ('IconFile', r'%SystemRoot%\system32\SHELL32.dll'), ('IconIndex', '-237')])]),
+    ('AppData/Roaming/Microsoft/Windows/Recent',
+     [('.ShellClassInfo', [('InfoTip', '@Shell32.dll,-12692'), ('IconFile', r'%SystemRoot%\system32\SHELL32.dll'),
+                           ('IconIndex', '-21'), ('LocalizedResourceName', '@shell32.dll,-12691')])]),
+    ('Favorites',
+     [('.ShellClassInfo', [('IconFile', r'%SystemRoot%\system32\SHELL32.dll'), ('IconIndex', '-173'),
+                           ('LocalizedResourceName', '@shell32.dll,-12693')])]),
+)
+
+def stage_folders(prefix, wine):
+    """Give the prefix's own special folders XP's names and icons.
+
+    Only real directories inside the prefix are marked, never a link to the
+    user's home, and an existing desktop.ini is kept.
+    """
+    user = pwd.getpwuid(os.getuid()).pw_name
+    profile = prefix / f'drive_c/users/{user}'
+    mydocs = (prefix / 'drive_c/windows/system32/mydocs.dll').is_file()
+    marked = []
+    for relative, sections in SPECIAL_FOLDERS:
+        folder = profile / relative
+        ini = folder / 'desktop.ini'
+        if not folder.is_dir() or folder.is_symlink() or ini.exists() or ini.is_symlink():
+            continue
+        if any(value.endswith('mydocs.dll') for _, entries in sections for _, value in entries if value) and not mydocs:
+            continue
+        lines = []
+        for section, entries in sections:
+            lines.append(f'[{section}]')
+            for key, value in entries:
+                lines.append(f'{key}={value or (user if key == "Owner" else folder.name)}')
+        ini.write_text('\r\n'.join(lines) + '\r\n', encoding='ascii')
+        marked.append('C:\\users\\' + user + '\\' + relative.replace('/', '\\'))
+    icon = prefix / '.xp-mydocs-icon'
+    if not marked and (not mydocs or icon.is_file()):
+        return
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEARCH='win32', WINEDEBUG='-all')
+    try:
+        # The shell reads desktop.ini only in system or read-only folders.
+        for folder in marked:
+            subprocess.run([str(wine), 'attrib', '+s', folder], env=env, check=False, timeout=120,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run([str(wine), 'attrib', '+h', '+s', folder + '\\desktop.ini'], env=env, check=False,
+                           timeout=120, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if mydocs:
+            subprocess.run([str(wine), 'reg', 'add',
+                            r'HKCR\CLSID\{450D8FBA-AD25-11D0-98A8-0800361B1103}\DefaultIcon', '/ve', '/t',
+                            'REG_EXPAND_SZ', '/d', r'%SystemRoot%\system32\mydocs.dll,0', '/f'],
+                           env=env, check=False, timeout=120, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            icon.write_text('1\n')
+    finally:
+        server = str(wine.with_name('wineserver'))
+        subprocess.run([server, '-k'], env=env, check=False, timeout=15)
+        subprocess.run([server, '-w'], env=env, check=False, timeout=15)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('prefix', type=Path)
@@ -130,3 +196,5 @@ if __name__ == '__main__':
         prepare(prefix, args.wine.resolve(strict=True))
     stage(prefix, args.wine.resolve(strict=True) if args.wine else None)
     stage_media(prefix, args.wine.resolve(strict=True) if args.wine else None)
+    if args.wine:
+        stage_folders(prefix, args.wine.resolve(strict=True))

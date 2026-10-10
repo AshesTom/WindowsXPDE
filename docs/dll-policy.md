@@ -687,3 +687,16 @@ XP は層状ウィンドウで背景と合成する。ここでは表示時点�
 内容が残る。メニューのように短時間で閉じるウィンドウを想定し、移動したら影を消す。対象は caption も
 サイズ変更枠もない最上位のポップアップに限る（スタートメニューは activate されて管理対象になるが、これに含める）。
 
+
+## 39. 特殊フォルダの名前とアイコン
+
+Start パネルの「マイ ピクチャ」「マイ ミュージック」が Wine のフォルダ名（Pictures/Music）と普通のフォルダの
+アイコンで、「マイ ドキュメント」「最近使ったファイル」もアイコンが違った。実XPでは `tests/folder-icons.c` で、
+各フォルダの desktop.ini が `[DeleteOnCopy]` の Personalized（CSIDL）と PersonalizedName（作成時の名前）で
+名前を、`[.ShellClassInfo]` でアイコンと説明を与え、マイ ドキュメントは CLSID の DefaultIcon が mydocs.dll,0 だった。
+**判断: stage が prefix 内の実フォルダにだけ、実XPと同じ項目の desktop.ini を書き、システム属性を付ける。**
+利用者のホーム（H:\ のマイ ドキュメントや XDG へのリンク）には書かず、既存の desktop.ini は残す。
+値は設定項目と番号だけで、XP のファイルは複製しない。
+**判断: 利用者の XP メディアの mydocs.dll を無改変で抽出し、アイコンの読み出し元にだけ使う。**
+COM の登録は Wine のままで、mydocs.dll のコードは読み込まない。無い既存 prefix ではマイ ピクチャの desktop.ini と
+マイ ドキュメントのアイコンを入れない。
