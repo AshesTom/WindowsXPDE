@@ -384,14 +384,8 @@ registry profile を version 23 にした。既存の prefix はセッション�
 更新するので、`prefix/registry.py` を更新してセッションを起動し直せばよい（手で行う場合は
 `./prefix/stage.py --wine "$WINE" "$WINEPREFIX"`）。prefix の再生成は不要。bridge（WM・proxy）は変更なし。
 
-Wine は 0035（user32 の DrawText）だけが変わった（アクセスキーの下線の長さ）。0035 だけが `dlls/user32/text.c` を変えるので、
-全パッチを当てたソースツリーでは、そのファイルを新しい 0035 を当てたものに置き換え、更新時刻を新しくしてから
-user32 をビルドし、`user32.dll` を入れ替える。ビルドディレクトリを作り直す場合は「パッチの整理（段階 2）後の更新」の手順。
-
-```sh
-make -C "$WINE_BUILD" -j8 dlls/user32/all
-cp "$WINE_BUILD/dlls/user32/i386-windows/user32.dll" "$WINE_INSTALL/lib/wine/i386-windows/user32.dll"
-```
+Wine は 0035（user32 の DrawText、アクセスキーの下線の長さ）が変わった。段階 4 で 0015 も変わったので、Wine の更新は
+下の「パッチの再整理（段階 4）後の更新」の手順で行う。
 
 比較用のプローブは `./tests/build.sh` で `.local/bridge/desktop-menu-test.exe` と `.local/bridge/text-underline-test.exe` になる。実XPでは参照用 VM のフロッピーから
 `A:\DM.EXE COM1 --trace` のように実行し、出力は仮想シリアルへ出る。Wine では XP Explorer と同じく XP の shell 一式を
@@ -401,3 +395,19 @@ native で読み込ませる（読み込ませないと Wine の shell32 がメ�
 WINEDLLOVERRIDES='shell32,shdocvw,browseui,shlwapi,comctl32,linkinfo,browselc,shdoclc=n' \
   "$WINE" .local/bridge/desktop-menu-test.exe 'Z:\tmp\desktop-menu.txt' --trace
 ```
+
+
+## パッチの再整理（段階 4）後の更新
+
+段階 4 で 0015（`include/Makefile.in` に `wine/win4wine.h` を加える）と、段階 3 で 0035 が変わった。前の series を当てたソースツリーには
+`wine/patch-state.py` で重ねられない（0015 と 0035 が「適用済み」と判定されない）。段階 2 と同じく、新しいソースとビルドディレクトリを
+別名で作り、configure から全体をビルドする。ビルドディレクトリは使い回さない。
+
+```sh
+WINE_SOURCE=/work/.local/wine-upstream-stage4 WINE_BUILD=/work/.local/wine-build-stage4 \
+  WINE_INSTALL=/work/.local/wine-install-stage4 ./wine/build.sh > .local/wine-build-stage4.log 2>&1
+```
+
+`WINE_SOURCE` が無ければ `wine/build.sh` が upstream から取得する。手元の未改変の Wine のリポジトリを `git clone` して
+渡してもよい（作業ツリーの変更は複製されない）。新しい install に切り替えるときは、既存の prefix の wineserver を止めてから `lib/wine` と `bin` をまとめて入れ替える。
+registry profile は version 23（段階 3）。bridge（WM・proxy）は変更なし。

@@ -7,13 +7,27 @@ Change: wine/win4wine.h provides win4wine_external_shell(), true when
 WIN4WINE_EXTERNAL_SHELL is in the environment (with any value). Unix
 libraries read the Unix environment, PE modules the process environment,
 as the individual checks did. The session sets it to 1 for the XP shell,
-its helpers and the bridge proxy.
+its helpers and the bridge proxy. The header is listed in
+include/Makefile.in so that makedep finds it in a fresh build tree.
 Scope: no behaviour by itself. Ordinary Wine applications do not set the
 variable and keep Wine's behaviour in every later patch that uses it.
 ---
+ include/Makefile.in     |  1 +
  include/wine/win4wine.h | 31 +++++++++++++++++++++++++++++++
- 1 file changed, 31 insertions(+)
+ 2 files changed, 32 insertions(+)
 
+diff --git a/include/Makefile.in b/include/Makefile.in
+index d56bc51..dbcd9fa 100644
+--- a/include/Makefile.in
++++ b/include/Makefile.in
+@@ -954,6 +954,7 @@ SOURCES = \
+ 	wine/vulkan_driver.h \
+ 	wine/wgl.h \
+ 	wine/wgl_driver.h \
++	wine/win4wine.h \
+ 	wine/winbase16.h \
+ 	wine/windef16.h \
+ 	wine/wine_common_ver.rc \
 diff --git a/include/wine/win4wine.h b/include/wine/win4wine.h
 new file mode 100644
 index 0000000..69eb777

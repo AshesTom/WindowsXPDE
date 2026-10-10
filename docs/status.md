@@ -930,3 +930,26 @@ Wine のパッチは変えていない。
   Wine は位置がずれる。メニューは項目の文字をタブで分けて描くので、メニューの見た目には出ない。
 - メニューのリソースから来た区切り（表示メニューの ID 0x0d・0x08・0x03）の状態が、実XPは MFS_GRAYED（3）、Wine は0。
   shell32 のメニューは MENUEX 形式と見られ、Wine の MENUEX の読み込みは区切りに状態を足さない。描画には影響しない。
+
+
+## パッチの再整理（2026-10-10、段階 4）
+
+段階 3 の変更はパッチとしては 0035（DrawText、アクセスキーの下線）への追加だけで、段階 2 のまとまり（0034〜0038 の文字と GDI）と
+書式のまま組み込めた。レジストリの変更（profile 23）は prefix 側。パッチの数と順は変わらない（55 本）。
+
+- 段階 2 では、整理後の series を構成し直したビルドディレクトリで検証していたため、未改変のソースから configure すると
+  失敗することに気づかなかった。0015 が加える `include/wine/win4wine.h` が `include/Makefile.in` の一覧に無く、makedep が
+  「wine/win4wine.h: No such file or directory」で止まる（最初の利用者の comctl32 の button.c）。0015 で一覧にも加えた。
+- 新しい series は未改変の Wine 10.0 に `wine/patch-state.py --apply` で全部当たり、もう一度実行すると適用済みと判定される。
+  当てたソースツリーは段階 3 までの検証に使ったツリーと完全に一致した（`include/Makefile.in` を除く）。`tests/patch_state.py` も成功。
+- 新しいソースとビルドディレクトリで全体をビルドした（`.local/wine-stage4-install`、警告は upstream の import library の2件だけ）。
+  Wine のビルドはビルドのパスなどを含み、ファイルの一致では比べられないので、段階 2 と同じく挙動で比べた。
+- 試験 VM の `lib/wine` と `bin` をこのビルドに入れ替えた（`share` は prefix の更新を避けて残した。前のものは `.stage3` として残す）。
+  入れ替えの前後でセッションを起動し直して同じ場面を各2回撮り（`.local/vm-cleanup-scenes.sh`、画像は `localres/cleanup/s4b*`・`s4a*`）、
+  デスクトップ、スタートメニュー、デスクトップの右クリックメニュー、「ファイル名を指定して実行」、全部閉じた後は時計を除いて0画素差
+  （スタートメニューの1回は、前後に関係なくパネルの影の現れ方の時間差で2000画素違った）。フォルダウィンドウはウィンドウの
+  位置でそろえ、角とマウスポインタの周りを除いて0画素差。Alt+Tab の切り替えウィンドウも0画素差。
+- VM の非クライアント領域の試験（nonclient-caption、caption-icons、nonclient-theme、caption-text、frame-control）の出力は、段階 2 の
+  クリーンビルドと handle を除いて一致（既知の失敗も同じ）。chroot の Xvfb で `tests/wm_integration.py`、`tests/native_frames.py`
+  （Luna と Classic）、`tests/xterm_redraw.py`、`tests/bridge_integration.py` が成功（`.local/stage4-bridge-tests.log`）。
+- 段階 3 のプローブ（`tests/desktop-menu.c`、`tests/text-underline.c`）の結果も、差分ビルドで確かめたときと同じ。
