@@ -8,6 +8,8 @@ for every size from 2 to 9 stretched into 1 to 12. Wine went through its
 StretchBlt, which differs at exact boundaries (2 into 3 gave 0 0 1 instead
 of 0 1 1). For the opted-in external shell, copy whole source columns and
 rows with that rule; tests/stretch-map.c --verify checks all 96 cases.
+Empty rectangles keep the generic path, which succeeds without copying:
+explorer stops painting the Start panel when an empty nine-grid band fails.
 
 diff --git a/dlls/win32u/bitblt.c b/dlls/win32u/bitblt.c
 index 813f411..d079d21 100644
@@ -58,13 +60,17 @@ index 813f411..d079d21 100644
  /******************************************************************************
   *           NtGdiTransparentBlt    (win32u.@)
   */
-@@ -903,8 +941,16 @@ BOOL WINAPI NtGdiTransparentBlt( HDC hdcDest, int xDest, int yDest, int widthDes
+@@ -903,8 +941,20 @@ BOOL WINAPI NtGdiTransparentBlt( HDC hdcDest, int xDest, int yDest, int widthDes
          dc_work->attr->stretch_blt_mode = COLORONCOLOR;
          release_dc_ptr( dc_work );
      }
 -    if (!NtGdiStretchBlt( hdcWork, 0, 0, widthDest, heightDest, hdcSrc, xSrc, ySrc,
 -                          widthSrc, heightSrc, SRCCOPY, 0 ))
-+    if (getenv( "WIN4WINE_EXTERNAL_SHELL" ) && (widthDest != widthSrc || heightDest != heightSrc))
++    /* Empty rectangles take the generic path, which succeeds without copying;
++     * XP's explorer stops painting the Start panel when the empty bands of its
++     * nine-grid images fail. */
++    if (getenv( "WIN4WINE_EXTERNAL_SHELL" ) && widthDest && heightDest && widthSrc && heightSrc &&
++        (widthDest != widthSrc || heightDest != heightSrc))
 +    {
 +        if (!transparent_stretch_xp( hdcWork, widthDest, heightDest, hdcSrc, xSrc, ySrc, widthSrc, heightSrc ))
 +        {
