@@ -1,29 +1,36 @@
 From: Codex <codex@localhost>
-Subject: [PATCH] user32: centre and break DrawText lines like XP in the external shell
+Subject: [PATCH] user32: centre, break and underline DrawText like XP in the external shell
 
-Purpose: place single-line text and wrap Japanese text where XP does.
+Purpose: place single-line text, wrap Japanese text and draw access key
+underlines where XP does.
 XP behavior: DT_VCENTER halves the remaining height once (tests/text-vcenter.c).
 With the Japanese ANSI code page, DT_WORDBREAK breaks before or after a
 double-byte character, and between single-byte ones at spaces and after
 !%),.:;?]}; when the next line would start with one of XP's line-start
 characters (、。」） and so on) the break moves back one character, except
 when the moved character is one too and follows a double-byte character
-that is not (tests/text-wrap.c).
+that is not (tests/text-wrap.c). The access key underline spans the
+underlined character's whole advance, from the extent before it to one
+pixel before the extent through it, clipped at the rectangle's right edge
+(tests/text-underline.c).
 Wine before: rounded the vertical offset twice, and broke lines only at
 spaces and where ScriptBreak marked the overflowing character, so Japanese
 text without spaces ran past the right edge: the Run dialog's prompt lost
-"ット" of "インターネット".
+"ット" of "インターネット". Its underline stopped one pixel short, so every
+menu's access key underline was 1px shorter than XP's.
 Change: the same as XP; Japanese breaking only with code page 932.
 Evidence: tests/text-wrap.c gives XP's wrap positions for four strings at
 28 widths, and its character, triple and pair tests equal XP's.
+tests/text-underline.c gives XP's underline for ten strings in five fonts
+and five clipped or aligned cases; Wine now gives the same ends.
 Scope: only with WIN4WINE_EXTERNAL_SHELL.
 Old patches: 0031, 0066.
 ---
- dlls/user32/text.c | 58 ++++++++++++++++++++++++++++++++++++++++++++--
- 1 file changed, 56 insertions(+), 2 deletions(-)
+ dlls/user32/text.c | 60 ++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 58 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/user32/text.c b/dlls/user32/text.c
-index 1896627..ebf6ce5 100644
+index 1896627..1557703 100644
 --- a/dlls/user32/text.c
 +++ b/dlls/user32/text.c
 @@ -38,6 +38,7 @@
@@ -96,7 +103,16 @@ index 1896627..ebf6ce5 100644
      sla = heap_alloc(sizeof(SCRIPT_LOGATTR) * *len_str);
  
      memset(&sa, 0, sizeof(SCRIPT_ANALYSIS));
-@@ -987,8 +1036,13 @@ INT WINAPI DrawTextExW( HDC hdc, LPWSTR str, INT i_count,
+@@ -833,6 +882,8 @@ static void TEXT_DrawUnderscore (HDC hdc, int x, int y, const WCHAR *str, int of
+     prefix_x = x + size.cx;
+     GetTextExtentPointW (hdc, str, offset+1, &size);
+     prefix_end = x + size.cx - 1;
++    /* XP's underline covers the character's whole advance (tests/text-underline.c). */
++    if (win4wine_external_shell()) prefix_end++;
+     /* The above method may eventually be slightly wrong due to kerning etc. */
+ 
+     /* Check for clipping */
+@@ -987,8 +1038,13 @@ INT WINAPI DrawTextExW( HDC hdc, LPWSTR str, INT i_count,
  
  	if (flags & DT_SINGLELINE)
  	{

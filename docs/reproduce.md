@@ -380,11 +380,20 @@ Wine10の即時GdiFlush画面反映stubは別件として扱う。bridgeのgeome
 
 ## デスクトップの右クリックメニューの区切り線（段階 3）後の更新
 
-registry profile を version 23 にした。Wine、bridge（WM・proxy）は変更なし。既存の prefix はセッションの開始時に stage が
-profile の版の違いを見つけて更新するので、`prefix/registry.py` を更新してセッションを起動し直すだけでよい（手で行う場合は
-`./prefix/stage.py --wine "$WINE" "$WINEPREFIX"`）。prefix の再生成は不要。
+registry profile を version 23 にした。既存の prefix はセッションの開始時に stage が profile の版の違いを見つけて
+更新するので、`prefix/registry.py` を更新してセッションを起動し直せばよい（手で行う場合は
+`./prefix/stage.py --wine "$WINE" "$WINEPREFIX"`）。prefix の再生成は不要。bridge（WM・proxy）は変更なし。
 
-比較用のプローブは `./tests/build.sh` で `.local/bridge/desktop-menu-test.exe` になる。実XPでは参照用 VM のフロッピーから
+Wine は 0035（user32 の DrawText）だけが変わった（アクセスキーの下線の長さ）。0035 だけが `dlls/user32/text.c` を変えるので、
+全パッチを当てたソースツリーでは、そのファイルを新しい 0035 を当てたものに置き換え、更新時刻を新しくしてから
+user32 をビルドし、`user32.dll` を入れ替える。ビルドディレクトリを作り直す場合は「パッチの整理（段階 2）後の更新」の手順。
+
+```sh
+make -C "$WINE_BUILD" -j8 dlls/user32/all
+cp "$WINE_BUILD/dlls/user32/i386-windows/user32.dll" "$WINE_INSTALL/lib/wine/i386-windows/user32.dll"
+```
+
+比較用のプローブは `./tests/build.sh` で `.local/bridge/desktop-menu-test.exe` と `.local/bridge/text-underline-test.exe` になる。実XPでは参照用 VM のフロッピーから
 `A:\DM.EXE COM1 --trace` のように実行し、出力は仮想シリアルへ出る。Wine では XP Explorer と同じく XP の shell 一式を
 native で読み込ませる（読み込ませないと Wine の shell32 がメニューを作る）。
 
