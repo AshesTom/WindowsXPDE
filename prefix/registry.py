@@ -3,7 +3,7 @@ import os
 import pwd
 import struct
 
-VERSION = 22
+VERSION = 23
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -181,6 +181,12 @@ def install(run, exists):
         key = 'HKCR\\CLSID\\' + clsid + '\\InprocServer32'
         run('reg', 'add', key, '/ve', '/t', 'REG_SZ', '/d', dll, '/f')
         run('reg', 'add', key, '/v', 'ThreadingModel', '/t', 'REG_SZ', '/d', 'Apartment', '/f')
+    # XP registers the New menu handler with flags=0. Without the value XP
+    # shell32 puts the handler's New item at the start of the folder's
+    # background menu instead of in the handler group, and its cleanup then
+    # drops the separator after Paste Shortcut (tests/desktop-menu.c).
+    run('reg', 'add', r'HKCR\CLSID\{D969A300-E7FF-11d0-A93B-00A0C90F2719}', '/v', 'flags',
+        '/t', 'REG_DWORD', '/d', '0', '/f')
 
     for dll in ('browselc', 'shdoclc'):
         run('reg', 'add', r'HKCU\Software\Wine\DllOverrides', '/v', dll, '/d', 'builtin', '/f')

@@ -40,6 +40,8 @@ version 21 は Folder の explore 動詞（Win+E と「エクスプローラ」�
 コントロール パネルの名前（XP shell32 の文字列 4161）を入れる。
 version 22 は Folder の open / explore に XP と同じ形の command（`C:\xp\xp-explorer.exe /idlist,%I,%L`）を加え、
 「ファイル名を指定して実行」からフォルダを開けるようにする。
+version 23 は「新規作成」のハンドラー（{D969A300-…}）の CLSID に XP と同じ `flags=0` を加え、デスクトップの右クリックメニューの
+「ショートカットの貼り付け」と「新規作成」の間に区切り線を出す。
 version 17 は日本語 Luna profile に Start のユーザー名と「すべてのプログラム」の字体を加える。
 version 15/16 は壁紙（Bliss を XP と同じく Wallpaper1.bmp に変換、拡大表示）と `LogonType=1` を一度だけ設定する。
 画像は再抽出（30ファイル）で入り、session 開始時の stage で `C:\windows\Web\Wallpaper` とユーザー画像へ置く。
@@ -374,3 +376,19 @@ Wine最大化試験は所有process内の通常位置も検査し、独自WM_GET
 NOREDRAW試験は下地保持・明示owner描画・通常paint復帰・画面端・layered除外を検査する。
 Wine10の即時GdiFlush画面反映stubは別件として扱う。bridgeのgeometry.tsv / frames.tsvは
 0041対応と同時に形式を更新したため、Wine・WM・proxy・inspectをまとめて更新して再起動する。
+
+
+## デスクトップの右クリックメニューの区切り線（段階 3）後の更新
+
+registry profile を version 23 にした。Wine、bridge（WM・proxy）は変更なし。既存の prefix はセッションの開始時に stage が
+profile の版の違いを見つけて更新するので、`prefix/registry.py` を更新してセッションを起動し直すだけでよい（手で行う場合は
+`./prefix/stage.py --wine "$WINE" "$WINEPREFIX"`）。prefix の再生成は不要。
+
+比較用のプローブは `./tests/build.sh` で `.local/bridge/desktop-menu-test.exe` になる。実XPでは参照用 VM のフロッピーから
+`A:\DM.EXE COM1 --trace` のように実行し、出力は仮想シリアルへ出る。Wine では XP Explorer と同じく XP の shell 一式を
+native で読み込ませる（読み込ませないと Wine の shell32 がメニューを作る）。
+
+```sh
+WINEDLLOVERRIDES='shell32,shdocvw,browseui,shlwapi,comctl32,linkinfo,browselc,shdoclc=n' \
+  "$WINE" .local/bridge/desktop-menu-test.exe 'Z:\tmp\desktop-menu.txt' --trace
+```

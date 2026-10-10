@@ -40,6 +40,7 @@ compile "$root/.local/bridge/shell-names-test.exe" -municode "$root/tests/shell-
 compile "$root/.local/bridge/desktop-icons.exe" -municode "$root/tests/desktop-icons.c" -ladvapi32 -lshell32
 compile "$root/.local/bridge/text-widths-test.exe" -municode "$root/tests/text-widths.c" -lgdi32 -luser32
 compile "$root/.local/bridge/folder-icons-test.exe" -municode "$root/tests/folder-icons.c" -lshell32 -lole32 -luuid
+compile "$root/.local/bridge/desktop-menu-test.exe" -municode "$root/tests/desktop-menu.c" -lshell32 -lole32 -luuid -ladvapi32 -luser32
 compile "$root/.local/bridge/reg-dump-test.exe" -municode "$root/tests/reg-dump.c" -ladvapi32
 compile "$root/.local/bridge/string-id-test.exe" -municode "$root/tests/string-id.c"
 compile "$root/.local/bridge/transparent-shrink-test.exe" -municode "$root/tests/transparent-shrink.c" -lmsimg32 -lgdi32
