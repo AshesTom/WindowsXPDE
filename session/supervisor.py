@@ -16,6 +16,8 @@ import time
 from xml.sax.saxutils import escape
 from Xlib import X, display, error
 
+import dpi
+
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = Path.home() / '.config/win4wine/session.json'
 IM_VARIABLES = ('XMODIFIERS', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'SDL_IM_MODULE', 'CLUTTER_IM_MODULE')
@@ -62,11 +64,14 @@ class Session:
             if not any(os.environ.get(name) for name in IM_VARIABLES):
                 self.env.update(XMODIFIERS='@im=fcitx', GTK_IM_MODULE='fcitx', QT_IM_MODULE='fcitx',
                                 SDL_IM_MODULE='fcitx')
+        # Linux applications take the XP shell's DPI (LogPixels) too.
+        self.dpi = dpi.prefix_dpi(self.prefix)
+        self.env.update(dpi.environment(self.dpi))
         # XP's cursors (greeter/install.sh installs them as an X cursor theme): winex11
         # shows Windows' standard cursors through the theme, Linux applications use it too.
         self.cursor_theme = config.get('cursor_theme', 'win4wine-xp')
         if self.cursor_theme and self.find_cursor_theme(self.cursor_theme):
-            self.env.update(XCURSOR_THEME=self.cursor_theme, XCURSOR_SIZE='32')
+            self.env.update(XCURSOR_THEME=self.cursor_theme)
         else:
             self.cursor_theme = None
         self.linux_font = config.get('linux_font', 'MS UI Gothic')
@@ -89,6 +94,7 @@ class Session:
         if self.failures < 1 or self.readiness_timeout <= 0:
             raise SystemExit('Invalid recovery limits')
         self.d = display.Display()
+        dpi.set_xft_dpi(self.d, self.dpi)
         self.class_atom = self.d.intern_atom('_WIN4WINE_CLASS')
         # The supervisor sleeps until a top-level window changes, a child
         # exits or a signal comes; signal handlers write to this pipe.
@@ -121,7 +127,9 @@ class Session:
         text = ('<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n<fontconfig>\n'
                 '  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>\n'
                 f'  <dir>{escape(str(self.prefix / "drive_c/windows/Fonts"))}</dir>\n'
-                f'{aliases}</fontconfig>\n')
+                f'{aliases}'
+                '  <match target="pattern"><edit name="dpi" mode="assign">'
+                f'<double>{self.dpi}</double></edit></match>\n</fontconfig>\n')
         target = directory / 'fonts.conf'
         tmp = directory / 'fonts.tmp'
         tmp.write_text(text)
@@ -228,7 +236,8 @@ class Session:
         self.hide_welcome()
         log = (self.state / 'welcome.log').open('ab', buffering=0)
         self.logs.append(log)
-        self.welcome = subprocess.Popen([sys.executable, str(ROOT / 'greeter/xp-splash.py'), mode],
+        self.welcome = subprocess.Popen([sys.executable, str(ROOT / 'greeter/xp-splash.py'), mode,
+                                         '--dpi', str(self.dpi)],
                                         stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
                                         start_new_session=True)
 

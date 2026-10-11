@@ -48,6 +48,9 @@ SHADOW_OFFSET = (3, 1)
 SHADOW_KERNEL = (1, 2, 3, 2, 1)
 SHADOW_STRENGTH = 0.318
 SIZE = 40  # the image, with room for the shadow
+# XP's cursors above 144 DPI (SM_CXCURSOR 64): each pixel doubled, the
+# shadow as at 32 (measured at 192 DPI, largest error 0.002 in alpha).
+LARGE, LARGE_SIZE = 64, 72
 
 
 def group_entries(data):
@@ -105,22 +108,27 @@ def decode(data):
     return width, height, hot_x, hot_y, rows, True
 
 
-def with_shadow(width, height, rows, shadowed=True):
+def doubled(width, height, rows):
+    """The cursor with each pixel doubled, as XP shows it at 64."""
+    return 2 * width, 2 * height, [[row[x // 2] for x in range(2 * width)] for row in rows for _ in (0, 1)]
+
+
+def with_shadow(width, height, rows, shadowed=True, size=SIZE):
     """The cursor over its soft shadow, in a SIZE x SIZE image (straight alpha)."""
     dx, dy = SHADOW_OFFSET
     reach = len(SHADOW_KERNEL) // 2
     total = sum(SHADOW_KERNEL) ** 2
-    mask = [[rows[y][x][3] / 255 if 0 <= y < height and 0 <= x < width else 0 for x in range(SIZE)]
-            for y in range(SIZE)]
+    mask = [[rows[y][x][3] / 255 if 0 <= y < height and 0 <= x < width else 0 for x in range(size)]
+            for y in range(size)]
     out = []
-    for y in range(SIZE):
+    for y in range(size):
         row = []
-        for x in range(SIZE):
+        for x in range(size):
             shadow = 0
             for j, wy in enumerate(SHADOW_KERNEL):
                 for i, wx in enumerate(SHADOW_KERNEL):
                     sx, sy = x - dx + i - reach, y - dy + j - reach
-                    if 0 <= sx < SIZE and 0 <= sy < SIZE:
+                    if 0 <= sx < size and 0 <= sy < size:
                         shadow += wx * wy * mask[sy][sx]
             shadow = shadow / total * SHADOW_STRENGTH if shadowed else 0
             r, g, b, a = rows[y][x] if y < height and x < width else (0, 0, 0, 0)
@@ -135,15 +143,23 @@ def with_shadow(width, height, rows, shadowed=True):
     return out
 
 
-def xcursor(width, height, hot_x, hot_y, rows):
-    """An Xcursor file with one image (premultiplied ARGB)."""
-    pixels = bytearray()
-    for row in rows:
-        for r, g, b, a in row:
-            pixels += struct.pack('<I', a << 24 | (r * a // 255) << 16 | (g * a // 255) << 8 | (b * a // 255))
-    # Nominal size 32: XP's cursors are 32x32; the image is larger only for the shadow.
-    image = struct.pack('<IIIIIIIII', 36, 0xfffd0002, 32, 1, width, height, hot_x, hot_y, 0) + pixels
-    return struct.pack('<4sIII', b'Xcur', 16, 0x10000, 1) + struct.pack('<III', 0xfffd0002, 32, 28) + image
+def xcursor(*images):
+    """An Xcursor file with images (nominal, width, height, hot x, hot y, rows), premultiplied ARGB."""
+    chunks = []
+    for nominal, width, height, hot_x, hot_y, rows in images:
+        pixels = bytearray()
+        for row in rows:
+            for r, g, b, a in row:
+                pixels += struct.pack('<I', a << 24 | (r * a // 255) << 16 | (g * a // 255) << 8 | (b * a // 255))
+        # The nominal size is XP's cursor size; the image is larger only for the shadow.
+        chunks.append((nominal, struct.pack('<IIIIIIIII', 36, 0xfffd0002, nominal, 1, width, height, hot_x, hot_y, 0)
+                       + pixels))
+    position = 16 + 12 * len(chunks)
+    table = b''
+    for nominal, chunk in chunks:
+        table += struct.pack('<III', 0xfffd0002, nominal, position)
+        position += len(chunk)
+    return struct.pack('<4sIII', b'Xcur', 16, 0x10000, len(chunks)) + table + b''.join(c for _, c in chunks)
 
 
 def cursors(user32):
@@ -161,7 +177,10 @@ def write_theme(user32, directory):
     directory = Path(directory)
     (directory / 'cursors').mkdir(parents=True, exist_ok=True)
     for _, names, (width, height, hot_x, hot_y, rows, shadowed) in cursors(user32):
-        data = xcursor(SIZE, SIZE, hot_x, hot_y, with_shadow(width, height, rows, shadowed))
+        large = doubled(width, height, rows)
+        data = xcursor((32, SIZE, SIZE, hot_x, hot_y, with_shadow(width, height, rows, shadowed)),
+                       (LARGE, LARGE_SIZE, LARGE_SIZE, 2 * hot_x, 2 * hot_y,
+                        with_shadow(*large, shadowed, size=LARGE_SIZE)))
         first = directory / 'cursors' / names[0]
         first.write_bytes(data)
         for alias in names[1:]:

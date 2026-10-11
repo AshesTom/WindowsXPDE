@@ -6,7 +6,8 @@ python3 tests/cursor_theme.py ASSETS   (extract/extract.py's output, with resour
 Every name that winex11 asks for Windows' standard cursors
 (dlls/winex11.drv/mouse.c) must be in the theme; the arrow's hot spot is its
 tip; the shadow is at most 0.318 of black, as measured on the reference XP,
-and the inverting I-beam has none but a white edge.
+and the inverting I-beam has none but a white edge. XP's 64 (above 144 DPI)
+is the 32 with each pixel doubled, under the same shadow.
 """
 import argparse
 from pathlib import Path
@@ -24,12 +25,14 @@ TOOLKITS = ('default', 'text', 'pointer', 'wait', 'progress', 'help', 'crosshair
             'ns-resize', 'nwse-resize', 'nesw-resize')
 
 
-def read(path):
+def read(path, index=0):
+    """Image INDEX of an Xcursor file: nominal size, width, height, hot spot and pixels."""
     data = path.read_bytes()
     magic, header, version, count = struct.unpack_from('<4sIII', data)
-    assert magic == b'Xcur' and count == 1
-    _, kind, nominal, _, width, height, hot_x, hot_y, _ = struct.unpack_from('<9I', data, 28)
-    pixels = struct.unpack_from(f'<{width * height}I', data, 28 + 36)
+    assert magic == b'Xcur' and index < count
+    _, _, position = struct.unpack_from('<III', data, 16 + 12 * index)
+    _, kind, nominal, _, width, height, hot_x, hot_y, _ = struct.unpack_from('<9I', data, position)
+    pixels = struct.unpack_from(f'<{width * height}I', data, position + 36)
     return nominal, width, height, hot_x, hot_y, pixels
 
 
@@ -57,6 +60,13 @@ def main():
         # Under the arrow's body the blurred shadow is full: 0.318 of black, as on XP (32%).
         check(bool(shadow) and 75 <= max(shadow) <= 82,
               f'arrow shadow: {len(shadow)} pixels, darkest alpha {max(shadow) if shadow else None}')
+        nominal, width, height, hot_x2, hot_y2, large = read(theme / 'cursors/left_ptr', 1)
+        check((nominal, width, height, hot_x2, hot_y2) == (64, 72, 72, 2 * hot_x, 2 * hot_y),
+              f'large arrow: nominal {nominal}, image {width}x{height}, hot spot {hot_x2},{hot_y2}')
+        small = read(theme / 'cursors/left_ptr')[5]
+        opaque = [(x, y) for y in range(32) for x in range(32) if small[y * 40 + x] >> 24 == 255]
+        check(all(large[(2 * y + j) * 72 + 2 * x + i] == small[y * 40 + x]
+                  for x, y in opaque for i in (0, 1) for j in (0, 1)), 'large arrow: each opaque pixel doubled')
         _, width, height, _, _, pixels = read(theme / 'cursors/xterm')
         partial = [p for p in pixels if 0 < p >> 24 < 255]
         check(not partial, f'I-beam (inverting) without shadow: {len(partial)} partly transparent pixels')

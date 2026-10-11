@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
-"""Set classic/Luna and DPI in a dedicated prefix; restart the session afterwards."""
+"""Set classic/Luna, the Start menu and the DPI of a dedicated prefix; only what is given changes.
+
+Restart the session afterwards."""
 import argparse
 import os
 from pathlib import Path
 import subprocess
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--theme', choices=('classic', 'luna'), default='classic')
+parser.add_argument('--theme', choices=('classic', 'luna'))
 parser.add_argument('--menu', choices=('classic', 'xp'), help='Start menu layout, independent of theme')
-parser.add_argument('--dpi', type=int, choices=(96, 144, 192), default=96)
+def dpi(value):
+    # XP offers 96 (normal) and 120 (large); its custom setting takes 20% to 500% of 96.
+    value = int(value)
+    if not 19 <= value <= 480:
+        raise argparse.ArgumentTypeError('DPI must be between 19 and 480, as XP allows')
+    return value
+parser.add_argument('--dpi', type=dpi, help='96, 120, 144, 192 or any value from 19 to 480')
 parser.add_argument('--font-rendering', choices=('xp', 'wine'),
                     help='Prefix-wide Wine synthetic bold/italic antialiasing policy')
 args = parser.parse_args()
@@ -18,7 +26,7 @@ if not (prefix / 'xp-shell.json').is_file():
 if args.theme == 'luna' and not (prefix / 'drive_c/windows/Resources/Themes/Luna/luna.msstyles').is_file():
     raise SystemExit('Luna must be extracted from your local XP media first')
 theme_helper = Path(__file__).resolve().parents[1] / '.local/bridge/theme-settings.exe'
-if not theme_helper.is_file():
+if args.theme and not theme_helper.is_file():
     raise SystemExit('Build bridge-wm before selecting a theme')
 wine = os.environ.get('WINE', 'wine')
 env = dict(os.environ, WINEDLLOVERRIDES='explorer,shell32,shdocvw,browseui,shlwapi,uxtheme=b;mscoree,mshtml=')
@@ -37,7 +45,9 @@ if args.menu:
     # start.exe, which has no native shell32 and must keep the builtin one.
     menu_env = dict(env, WINEDLLOVERRIDES='shell32,shlwapi=n,b;explorer=b;mscoree,mshtml=')
     subprocess.run([wine, str(helper), args.menu], env=menu_env, check=True)
-reg(r'HKCU\Control Panel\Desktop', 'LogPixels', args.dpi, 'REG_DWORD')
-subprocess.run([wine, str(theme_helper), args.theme],
-               env=dict(env, WIN4WINE_EXTERNAL_SHELL='1'), check=True)
+if args.dpi:
+    reg(r'HKCU\Control Panel\Desktop', 'LogPixels', args.dpi, 'REG_DWORD')
+if args.theme:
+    subprocess.run([wine, str(theme_helper), args.theme],
+                   env=dict(env, WIN4WINE_EXTERNAL_SHELL='1'), check=True)
 print('Display settings saved. Restart the dedicated Wine session to apply.')

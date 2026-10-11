@@ -2,7 +2,7 @@
 # Set up the XP shell session on this Debian 13 machine, from a fresh install.
 #
 #   scripts/setup.sh --media PATH [--greeter | --no-greeter] [--theme luna|classic]
-#                    [--wine-install DIR | --jobs N]
+#                    [--dpi N] [--wine-install DIR | --jobs N]
 #
 #   --media PATH   the user's Windows XP SP3 (x86) ISO or Windows directory
 #   --greeter      also make LightDM show XP's Welcome screen (greeter/), with XP's
@@ -12,6 +12,9 @@
 #   --theme T      luna (XP's default, the default here, with XP's Start menu) or
 #                  classic (with the classic Start menu), for a new prefix; given
 #                  explicitly, it is applied to an existing prefix too
+#   --dpi N        the screen's DPI as XP sets it (LogPixels): 96 (normal), 120 (large)
+#                  or any value from 19 to 480; for the XP shell, the Linux
+#                  applications in its session and the Welcome screen
 #   --wine-install DIR
 #                  use a Wine built elsewhere with this repository's patches (the
 #                  .local/wine-install of another Debian 13 machine, copied anywhere)
@@ -31,6 +34,7 @@ greeter=no
 jobs=$(nproc)
 theme=luna
 theme_given=no
+dpi=
 prebuilt=
 while (($#)); do
     case $1 in
@@ -39,6 +43,7 @@ while (($#)); do
         --no-greeter) greeter=no; shift ;;
         --jobs) jobs=${2:?--jobs needs a number}; shift 2 ;;
         --theme) theme=${2:?--theme needs luna or classic}; theme_given=yes; shift 2 ;;
+        --dpi) dpi=${2:?--dpi needs a number}; shift 2 ;;
         --wine-install) prebuilt=$(realpath -e -- "${2:?--wine-install needs a directory}"); shift 2 ;;
         -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
         *) printf 'Unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
@@ -46,6 +51,8 @@ while (($#)); do
 done
 [[ -n $media ]] || { printf 'Give the XP media with --media (see --help)\n' >&2; exit 2; }
 [[ $theme == luna || $theme == classic ]] || { printf -- '--theme is luna or classic\n' >&2; exit 2; }
+[[ -z $dpi || ( $dpi =~ ^[0-9]+$ && $dpi -ge 19 && $dpi -le 480 ) ]] ||
+    { printf -- '--dpi is a number from 19 to 480\n' >&2; exit 2; }
 media=$(realpath -e -- "$media")
 [[ $EUID -ne 0 ]] || { printf 'Run this as the user who will log in, not as root\n' >&2; exit 2; }
 [[ $root != *[[:space:]]* ]] || { printf 'The checkout path must not contain spaces: %s\n' "$root" >&2; exit 2; }
@@ -152,6 +159,12 @@ if [[ $theme_given == yes ]]; then
     "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
     printf 'Theme: %s\n' "$theme"
 fi
+if [[ -n $dpi ]]; then
+    WINEPREFIX=$prefix WINE=$wine python3 "$root/prefix/display.py" --dpi "$dpi" >> "$local/prefix.log" 2>&1 ||
+        { tail -20 "$local/prefix.log" >&2; printf 'Setting the DPI failed; see .local/prefix.log\n' >&2; exit 1; }
+    "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
+    printf 'DPI: %s\n' "$dpi"
+fi
 
 step 'Session'
 config=${XDG_CONFIG_HOME:-$HOME/.config}/win4wine/session.json
@@ -172,6 +185,16 @@ fi
 step 'Login screen and cursors'
 if [[ $greeter == yes ]]; then
     "$root/greeter/install.sh" "$assets"
+    if [[ -n $dpi ]]; then
+        # XP's Welcome screen takes the machine's DPI.
+        sudo python3 - "$dpi" <<'EOF'
+import json, sys
+path = '/etc/win4wine/greeter.json'
+config = json.load(open(path))
+config['dpi'] = int(sys.argv[1])
+open(path, 'w').write(json.dumps(config) + '\n')
+EOF
+    fi
 else
     # XP's cursors for the session only; LightDM, if any, keeps its own greeter.
     theme=$(mktemp -d)
