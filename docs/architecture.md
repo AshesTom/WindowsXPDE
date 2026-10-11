@@ -140,6 +140,7 @@ Wine と Linux アプリの環境に入れ、fcitx5 を起動して見張る（1
 `null` で無効）は、prefix の `windows/Fonts` を加え、sans-serif・Sans・system-ui にその字体を優先する fontconfig の設定を
 状態ディレクトリに作り、`FONTCONFIG_FILE` で渡す。システムと利用者の fontconfig の設定は include で引き続き効く。
 
+ログは状態ディレクトリの `NAME.log` に書き、起動のたびに前回のものを `NAME.log.1` にする。
 `session.json` の `linux_menu`（既定 `true`）が有効なら、XP Explorer を起動する前に `session/linux_apps.py` で Linux の
 アプリをスタートメニューへ入れ、その後は `--watch` で見張る（下の「Linux アプリのスタートメニュー」）。Wine と Linux アプリの
 `PATH` の先頭にはセッションの Wine の `bin` を置き、端末で打つ `wine` がセッションと同じ Wine と prefix を使うようにする。

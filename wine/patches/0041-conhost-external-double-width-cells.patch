@@ -11,24 +11,35 @@ Wine before: every cell was as wide as the font's widest character (a
 FIXME), so Latin text stood one full-width cell per letter. Characters
 that no key gives, such as those an IME commits, were dropped from the
 console input, so Japanese could not be typed into cmd.
+Japanese XP's default console has 8x18 cells drawn with the 16-pixel MS
+Gothic glyphs (its raster font for half-width ones): a half-width glyph one
+pixel right of its cell and one pixel down, a double-width one at the left
+and two pixels down. Sizes chosen in the properties make cells of half the
+height's width (6x12 to 12x24). The cursor's 25% of 18 rows is 5 rows.
 Change: for the console window (not a Unix terminal) with a DBCS output
 code page, cells are tmAveCharWidth wide; write_char stores a two-byte
 character in two cells, the line editor counts its width as two, the
 window draws it once over both cells (a lone half is blank), and copying
-the selection takes it once. WM_CHAR characters without a key are queued
-with virtual key 0.
+the selection takes it once. The registry's cell width now reaches the
+font: the font is as high as the cell or twice its width, whichever is
+smaller, and a smaller font is drawn at XP's offsets in its cells. The
+cursor's height is rounded up. WM_CHAR characters without a key are
+queued with virtual key 0.
 Evidence: in the test VM, cmd shows "Microsoft Windows 5.1.2600" and echo
 output at half-width spacing, and Japanese typed with Mozc is echoed,
-inserted and edited in the command line without overlapping.
+inserted and edited in the command line without overlapping. A probe that
+writes Japanese, full-width and half-width text with WriteConsoleW gives
+the same pixels on the reference XP and in Wine (8x18 cells, text and
+cursor); GetConsoleFontSize and GetTextMetrics were measured on both.
 Scope: only with WIN4WINE_EXTERNAL_SHELL in the console's environment.
 ---
- programs/conhost/conhost.c | 65 ++++++++++++++++++++++++++++++++++++++--------
- programs/conhost/conhost.h |  5 ++++
- programs/conhost/window.c  | 57 +++++++++++++++++++++++++++++++---------
- 3 files changed, 104 insertions(+), 23 deletions(-)
+ programs/conhost/conhost.c |  67 +++++++++++++++++----
+ programs/conhost/conhost.h |   7 ++-
+ programs/conhost/window.c  | 146 +++++++++++++++++++++++++++++++++++++--------
+ 3 files changed, 182 insertions(+), 38 deletions(-)
 
 diff --git a/programs/conhost/conhost.c b/programs/conhost/conhost.c
-index 8298743..3f54143 100644
+index 8298743..348b6a8 100644
 --- a/programs/conhost/conhost.c
 +++ b/programs/conhost/conhost.c
 @@ -26,6 +26,7 @@
@@ -166,10 +177,28 @@ index 8298743..3f54143 100644
          if (offset > ctx->home_x)
          {
              int deltay;
+@@ -2092,7 +2135,7 @@ static NTSTATUS set_output_info( struct screen_buffer *screen_buffer,
+         if (!height) height = 12;
+         if (info->font_weight >= FW_SEMIBOLD) weight = FW_BOLD;
+ 
+-        update_console_font( screen_buffer->console, face_name, face_name_size, height, weight );
++        update_console_font( screen_buffer->console, face_name, face_name_size, height, 0, weight );
+     }
+ 
+     if (is_active( screen_buffer ))
 diff --git a/programs/conhost/conhost.h b/programs/conhost/conhost.h
-index d348515..8145054 100644
+index d348515..55cd99c 100644
 --- a/programs/conhost/conhost.h
 +++ b/programs/conhost/conhost.h
+@@ -144,7 +144,7 @@ NTSTATUS change_screen_buffer_size( struct screen_buffer *screen_buffer, int new
+ 
+ /* window.c */
+ void update_console_font( struct console *console, const WCHAR *face_name, size_t face_name_size,
+-                          unsigned int height, unsigned int weight );
++                          unsigned int height, unsigned int width, unsigned int weight );
+ BOOL init_window( struct console *console );
+ void init_message_window( struct console *console );
+ void update_window_region( struct console *console, const RECT *update );
 @@ -161,6 +161,11 @@ static inline unsigned int get_bounded_cursor_x( struct screen_buffer *screen_bu
      return min( screen_buffer->cursor_x, screen_buffer->width - 1 );
  }
@@ -183,7 +212,7 @@ index d348515..8145054 100644
  
  /* strings */
 diff --git a/programs/conhost/window.c b/programs/conhost/window.c
-index f8fc701..74f86c7 100644
+index f8fc701..c52b706 100644
 --- a/programs/conhost/window.c
 +++ b/programs/conhost/window.c
 @@ -25,6 +25,7 @@
@@ -194,7 +223,16 @@ index f8fc701..74f86c7 100644
  
  WINE_DEFAULT_DEBUG_CHANNEL(console);
  
-@@ -452,6 +453,7 @@ static void save_config( const WCHAR *key_name, const struct console_config *con
+@@ -50,6 +51,8 @@ struct console_window
+     unsigned int      ui_charset;      /* default UI charset */
+     WCHAR            *config_key;      /* config registry key name */
+     LONG              ext_leading;     /* external leading for font */
++    LONG              pad_top;         /* empty rows above and below the font in a cell (wide_cells) */
++    LONG              pad_bottom;
+ 
+     BOOL              quick_edit;      /* whether mouse ops are sent to app or used for content selection */
+     unsigned int      menu_mask;       /* MK_CONTROL MK_SHIFT mask to drive submenu opening */
+@@ -452,6 +455,7 @@ static void save_config( const WCHAR *key_name, const struct console_config *con
  static void fill_mem_dc( struct console *console, const RECT *update )
  {
      unsigned int i, j, k;
@@ -202,7 +240,7 @@ index f8fc701..74f86c7 100644
      unsigned int attr;
      char_info_t *cell;
      HFONT old_font;
-@@ -463,25 +465,43 @@ static void fill_mem_dc( struct console *console, const RECT *update )
+@@ -463,34 +467,81 @@ static void fill_mem_dc( struct console *console, const RECT *update )
      if (!console->window->font || !console->window->bitmap)
          return;
  
@@ -246,14 +284,71 @@ index f8fc701..74f86c7 100644
 +                line[n] = cell[k].attr & halves ? ' ' : cell[k].ch;
 +                dx[n++] = console->active->font.width;
              }
-+            if (k > update->right + 1) k = update->right + 1;
-             ExtTextOutW( console->window->mem_dc, i * console->active->font.width,
+-            ExtTextOutW( console->window->mem_dc, i * console->active->font.width,
 -                         j * console->active->font.height, 0, NULL, line, k - i, dx );
-+                         j * console->active->font.height, 0, NULL, line, n, dx );
-             if (console->window->ext_leading &&
-                 (brush = CreateSolidBrush( console->active->color_map[(attr >> 4) & 0x0F] )))
+-            if (console->window->ext_leading &&
+-                (brush = CreateSolidBrush( console->active->color_map[(attr >> 4) & 0x0F] )))
++            if (k > update->right + 1) k = update->right + 1;
++            if (console->window->pad_top || console->window->pad_bottom)
              {
-@@ -723,7 +743,8 @@ static HFONT select_font_config( struct console_config *config, unsigned int cp,
+-                r.left   = i * console->active->font.width;
+-                r.top    = (j + 1) * console->active->font.height - console->window->ext_leading;
+-                r.right  = k * console->active->font.width;
+-                r.bottom = (j + 1) * console->active->font.height;
+-                FillRect( console->window->mem_dc, &r, brush );
+-                DeleteObject( brush );
++                /* A font smaller than its cells (update_console_font): the
++                 * Japanese XP console draws a half-width character one pixel
++                 * right of its cell and centred, a double-width one at the
++                 * cells' left and bottom (measured on the reference machine
++                 * in its default 8x18 cells with the 16 pixel font). */
++                unsigned int m, x = i * console->active->font.width;
++                if ((brush = CreateSolidBrush( console->active->color_map[(attr >> 4) & 0x0F] )))
++                {
++                    SetRect( &r, x, j * console->active->font.height, k * console->active->font.width,
++                             (j + 1) * console->active->font.height );
++                    FillRect( console->window->mem_dc, &r, brush );
++                    DeleteObject( brush );
++                }
++                SetBkMode( console->window->mem_dc, TRANSPARENT );
++                for (m = 0; m < n; x += dx[m++])
++                {
++                    BOOL two = dx[m] > (INT)console->active->font.width;
++                    if (line[m] == ' ') continue;
++                    ExtTextOutW( console->window->mem_dc, x + (two ? 0 : 1), j * console->active->font.height +
++                                 console->window->pad_top + (two ? console->window->pad_bottom : 0),
++                                 0, NULL, &line[m], 1, NULL );
++                }
++                SetBkMode( console->window->mem_dc, OPAQUE );
++            }
++            else
++            {
++                ExtTextOutW( console->window->mem_dc, i * console->active->font.width,
++                             j * console->active->font.height, 0, NULL, line, n, dx );
++                if (console->window->ext_leading &&
++                    (brush = CreateSolidBrush( console->active->color_map[(attr >> 4) & 0x0F] )))
++                {
++                    r.left   = i * console->active->font.width;
++                    r.top    = (j + 1) * console->active->font.height - console->window->ext_leading;
++                    r.right  = k * console->active->font.width;
++                    r.bottom = (j + 1) * console->active->font.height;
++                    FillRect( console->window->mem_dc, &r, brush );
++                    DeleteObject( brush );
++                }
+             }
+             i = k - 1;
+         }
+@@ -530,6 +581,9 @@ static void shape_cursor( struct console *console )
+         ptr = calloc( w16b, console->active->font.height );
+         if (!ptr) return;
+         nbl = max( (console->active->font.height * size) / 100, 1 );
++        /* XP rounds up: 25% of an 18-pixel cell is 5 rows (reference machine). */
++        if (win4wine_external_shell())
++            nbl = min( max( (console->active->font.height * size + 99) / 100, 1 ), console->active->font.height );
+         for (j = console->active->font.height - nbl; j < console->active->font.height; j++)
+         {
+             for (i = 0; i < console->active->font.width; i++)
+@@ -723,7 +777,8 @@ static HFONT select_font_config( struct console_config *config, unsigned int cp,
      lstrcpyW( config->face_name, lf->lfFaceName );
  
      /* FIXME: use maximum width for DBCS codepages since some chars take two cells */
@@ -263,7 +358,34 @@ index f8fc701..74f86c7 100644
          config->cell_width  = tm.tmMaxCharWidth;
  
      return font;
-@@ -795,7 +816,7 @@ static BOOL set_console_font( struct console *console, const LOGFONTW *logfont )
+@@ -750,7 +805,16 @@ static void fill_logfont( LOGFONTW *lf, const WCHAR *face_name, size_t face_name
+     lf->lfFaceName[face_name_size / sizeof(WCHAR)] = 0;
+ }
+ 
++static BOOL set_console_font_cell( struct console *console, const LOGFONTW *logfont, unsigned int cell_height );
++
+ static BOOL set_console_font( struct console *console, const LOGFONTW *logfont )
++{
++    return set_console_font_cell( console, logfont, 0 );
++}
++
++/* CELL_HEIGHT, if larger than the font, gives the rows of a cell; the font
++ * sits in their middle (wide_cells, see update_console_font). */
++static BOOL set_console_font_cell( struct console *console, const LOGFONTW *logfont, unsigned int cell_height )
+ {
+     struct font_info *font_info = &console->active->font;
+     HFONT font, old_font;
+@@ -761,7 +825,8 @@ static BOOL set_console_font( struct console *console, const LOGFONTW *logfont )
+ 
+     TRACE( "%s\n", debugstr_logfont( logfont, 0 ));
+ 
+-    if (console->window->font && logfont->lfHeight == console->active->font.height &&
++    if (console->window->font && !cell_height && !console->window->pad_top && !console->window->pad_bottom &&
++        logfont->lfHeight == console->active->font.height &&
+         logfont->lfWeight == console->active->font.weight &&
+         !logfont->lfItalic && !logfont->lfUnderline && !logfont->lfStrikeOut &&
+         console->active->font.face_len == wcslen( logfont->lfFaceName ) &&
+@@ -795,12 +860,19 @@ static BOOL set_console_font( struct console *console, const LOGFONTW *logfont )
      memcpy( font_info->face_name, face_name, font_info->face_len * sizeof(WCHAR) );
  
      /* FIXME: use maximum width for DBCS codepages since some chars take two cells */
@@ -272,7 +394,50 @@ index f8fc701..74f86c7 100644
          font_info->width  = tm.tmMaxCharWidth;
  
      if (console->window->font) DeleteObject( console->window->font );
-@@ -1016,6 +1037,7 @@ static void copy_selection( struct console *console )
+     console->window->font = font;
+     console->window->ext_leading = tm.tmExternalLeading;
++    console->window->pad_top = console->window->pad_bottom = 0;
++    if (cell_height > font_info->height)
++    {
++        console->window->pad_top = (cell_height - font_info->height) / 2;
++        console->window->pad_bottom = cell_height - font_info->height - console->window->pad_top;
++        font_info->height = cell_height;
++    }
+ 
+     if (console->window->bitmap)
+     {
+@@ -899,16 +971,28 @@ static void set_first_font( struct console *console, struct console_config *conf
+ }
+ 
+ /* Sets the font specified in the LOGFONT as the new console font */
++/* WIDTH is the cell width asked for, or 0. With double-width cells (an
++ * external shell), the font's height is that of the cell or twice its width,
++ * whichever is smaller, and the rest of the cell is split above and below,
++ * as the Japanese XP console lays out its default 8x18 cells with the 16
++ * pixel font (measured on the reference machine; there, sizes chosen in the
++ * properties are cells of half the height's width, which this keeps). */
+ void update_console_font( struct console *console, const WCHAR *face_name, size_t face_name_size,
+-                          unsigned int height, unsigned int weight )
++                          unsigned int height, unsigned int width, unsigned int weight )
+ {
++    unsigned int cell_height = 0;
+     LOGFONTW lf;
+ 
+     if (!console->window) return;
+ 
++    if (wide_cells( console ) && width && 2 * width < height)
++    {
++        cell_height = height;
++        height = 2 * width;
++    }
+     fill_logfont( &lf, face_name, face_name_size, height, weight );
+ 
+-    set_console_font( console, &lf );
++    set_console_font_cell( console, &lf, cell_height );
+ }
+ 
+ /* get a cell from a relative coordinate in window (takes into account the scrolling) */
+@@ -1016,6 +1100,7 @@ static void copy_selection( struct console *console )
      mem = GlobalAlloc( GMEM_MOVEABLE, (w + 1) * h * sizeof(WCHAR) );
      if (mem && (p = buf = GlobalLock( mem )))
      {
@@ -280,7 +445,7 @@ index f8fc701..74f86c7 100644
          int x, y;
          COORD c;
  
-@@ -1026,11 +1048,16 @@ static void copy_selection( struct console *console )
+@@ -1026,11 +1111,16 @@ static void copy_selection( struct console *console )
          {
              WCHAR *end;
  
@@ -299,7 +464,7 @@ index f8fc701..74f86c7 100644
              while (end > p && *(end - 1) == ' ')
                  end--;
              *end = (y < c.Y + h - 1) ? '\n' : '\0';
-@@ -1216,7 +1243,13 @@ static void record_char_input( struct console *console, WCHAR ch, LPARAM lparam
+@@ -1216,7 +1306,13 @@ static void record_char_input( struct console *console, WCHAR ch, LPARAM lparam
      INPUT_RECORD ir;
      SHORT sh = VkKeyScanW( ch );
  
@@ -314,3 +479,12 @@ index f8fc701..74f86c7 100644
      ir.EventType = KEY_EVENT;
      ir.Event.KeyEvent.bKeyDown          = TRUE;
      ir.Event.KeyEvent.wRepeatCount      = 0;
+@@ -1820,7 +1916,7 @@ static void apply_config( struct console *console, const struct console_config *
+                 console->active->font.face_len * sizeof(WCHAR) ))
+     {
+         update_console_font( console, config->face_name, wcslen(config->face_name) * sizeof(WCHAR),
+-                             config->cell_height, config->font_weight );
++                             config->cell_height, config->cell_width, config->font_weight );
+     }
+ 
+     update_window( console );

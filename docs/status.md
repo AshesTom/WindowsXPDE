@@ -1195,3 +1195,20 @@ Wine を新しい WoW64 方式（`--enable-archs=i386,x86_64`、Unix 側は 64-b
   フォーカスを足した）、`tests/native_frames.py`（Luna とクラシック）、`tests/xterm_redraw.py`、`tests/bridge_integration.py`、
   `tests/patch_state.py` が成功（`.local/s9-bridge-tests.log`）。クラシックの native_frames は1回、列挙の途中で消えたウィンドウに
   当たって失敗した（試験の競合。その後2回成功。試験で消えたウィンドウを飛ばすようにした）。
+
+## cmd の字体とセッションのログ（2026-10-11）
+
+- 実XP（参照用 XP VM）の日本語のコンソールの既定を測った。`HKCU\Console` の `FaceName` と `FontSize` は空で、升目は 8×18
+  （`GetConsoleFontSize`）、OEM の字体は `vga932.fon`（GRE_Initialize）、932 の既定の TrueType は「ＭＳ ゴシック」
+  （Console\TrueTypeFont）。大きさを指定すると升目は高さの半分の幅になる（6×12、7×14、8×16、9×18、10×20、12×24）。
+  `GetTextMetrics` の ＭＳ ゴシック の寸法は実XPと Wine で同じ。
+- `WriteConsoleW` で日本語・全角・半角を書くプローブの画面を比べると、実XPの 8×18 の升目の字は 16px の ＭＳ ゴシック と画素が
+  同じで、半角は升目の1px 右・1px 下、全角は左・2px 下に置かれる（半角はラスター字体 vga932.fon から来る）。カーソルは
+  25% で下の5行（Wine は切り捨てて4行）。
+- registry profile 24 で `HKCU\Console` を MS Gothic、8×18 にし（一度だけ）、0041 で升目の幅を字体に渡して、字の大きさを
+  「升目の高さと幅の2倍の小さいほう」にし、小さい字は実XPの位置に描く。カーソルの行数は切り上げる。試験 VM でプローブの行と
+  カーソルの升目が実XPと0画素差（`localres/s8/xp-jt.png`、`cur*.png`）。cmd での Mozc の入力・挿入・echo も確かめた。
+- セッションのログ: supervisor が起動のたびに前回のログを `NAME.log.1` にして新しく書き始める。試験 VM では
+  `xp-shell.log` と `proxy.log` が合わせて 461MB になっていた（試験のために `+relay` にした分を含む）。
+- 試験 VM の片付け（利用者の判断）: 今のセッションが使う Wine・prefix・XP の素材・bridge と、場面の比較などの補助だけを残し、
+  古い Wine と prefix（10.0、段階 5、段階 6 の 32-bit、古いビルド）と調査の残りを消した。空きは 1.2GB から 8.3GB。

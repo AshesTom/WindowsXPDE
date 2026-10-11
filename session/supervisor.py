@@ -30,6 +30,11 @@ class Session:
             raise SystemExit('Build bridge-wm first')
         self.state = Path(config.get('state', str(Path.home() / '.local/state/win4wine')))
         self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
+        # The logs only grow while a session runs (Wine's debug channels and
+        # restarts append). Each session starts them anew and keeps the
+        # previous session's as NAME.log.1.
+        for log in self.state.glob('*.log'):
+            log.replace(log.with_name(log.name + '.1'))
         runtime = Path(os.environ.get('XDG_RUNTIME_DIR', '/tmp'))
         self.ipc = Path(tempfile.mkdtemp(prefix=f'win4wine-{os.getuid()}-', dir=runtime))
         self.env = dict(os.environ, WINEPREFIX=str(self.prefix),

@@ -628,3 +628,9 @@ WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/foreign-icons-test.exe --owner '
 ./scripts/debian.sh run bash -c 'cd /work && bridge-wm/build.sh'
 # wm_integration は Windows キー、Win+R、Ctrl+Esc の proxy への受け渡しと、デスクトップのクリックのフォーカスも検査する
 ```
+
+## cmd の字体とセッションのログ（2026-10-11）
+
+registry profile は 24 になった。次にセッションを起動すると `stage.py` が適用し、`HKCU\Console` を MS Gothic の 8×18 にする
+（一度だけ。その後に変えた字体は残る）。0041 が変わったので Wine を作り直す（新しいソースとビルドディレクトリで）。
+セッションのログ（`~/.local/state/win4wine/*.log`）は起動のたびに前回の分が `*.log.1` になる。

@@ -3,7 +3,7 @@ import os
 import pwd
 import struct
 
-VERSION = 23
+VERSION = 24
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
 
@@ -149,6 +149,19 @@ def install(run, exists):
         run('reg', 'add', r'HKCU\Control Panel\Desktop', '/v', 'UserPreferencesMask',
             '/t', 'REG_BINARY', '/d', 'be3e0780', '/f')
         run('reg', 'add', marker, '/v', 'UserPreferences', '/t', 'REG_DWORD', '/d', '1', '/f')
+    # Japanese XP's console font. XP leaves HKCU\Console's values empty and
+    # draws 8x18 cells (GetConsoleFontSize on the reference machine) with the
+    # glyphs of MS Gothic at 16 pixels (pixel-equal; the half-width ones come
+    # from its raster font vga932.fon). Wine's conhost would pick the first
+    # fixed-pitch font, which has no Japanese glyphs; with these values and
+    # Wine patch 0041 it lays the 16-pixel font out in 8x18 cells as XP does.
+    # The English family name keeps reg.exe's command line ASCII. Seed once.
+    if not exists(marker, 'ConsoleFont'):
+        console = r'HKCU\Console'
+        for name, kind, value in (('FaceName', 'REG_SZ', 'MS Gothic'), ('FontSize', 'REG_DWORD', '0x00120008'),
+                                  ('FontFamily', 'REG_DWORD', '0x36'), ('FontWeight', 'REG_DWORD', '400')):
+            run('reg', 'add', console, '/v', name, '/t', kind, '/d', value, '/f')
+        run('reg', 'add', marker, '/v', 'ConsoleFont', '/t', 'REG_DWORD', '/d', '1', '/f')
     for clsid, name, tip in NAMESPACE_STRINGS:
         key = 'HKCR\\CLSID\\' + clsid
         if name:
