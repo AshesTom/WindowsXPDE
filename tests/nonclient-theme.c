@@ -3,6 +3,17 @@
 #include <uxtheme.h>
 #include <vssym32.h>
 #include <stdio.h>
+/* GetDpiForWindow and SetProcessDPIAware are not on XP, which has no DPI
+ * virtualisation: every process there sees the screen's DPI. */
+static UINT window_dpi(HWND hwnd)
+{
+    HDC dc=GetDC(hwnd);UINT dpi=GetDeviceCaps(dc,LOGPIXELSX);ReleaseDC(hwnd,dc);return dpi;
+}
+static BOOL dpi_aware(void)
+{
+    BOOL (WINAPI *set)(void)=(void *)GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetProcessDPIAware");
+    return !set||set();
+}
 
 static int cleanup_failed;
 static BOOL destroy_during_region;
@@ -113,12 +124,12 @@ static int check_button_pixels(HWND hwnd, HTHEME theme, const RECT *window,
     DrawThemeBackground(theme,expected,WP_CAPTION,active?CS_ACTIVE:CS_INACTIVE,&caption,NULL);
     for(i=0;i<3;i++)
     {
-        int margin=MulDiv(1,GetDpiForWindow(hwnd),96),gap=MulDiv(2,GetDpiForWindow(hwnd),96);
+        int margin=MulDiv(1,window_dpi(hwnd),96),gap=MulDiv(2,window_dpi(hwnd),96);
         RECT button={first[i]+(i!=1?margin:0),top+gap,
                      last[i]-(i==1?gap-margin:i==2?gap:0),0};
         SIZE image;
         GetThemePartSize(theme,NULL,WP_CLOSEBUTTON,CBS_NORMAL,NULL,TS_TRUE,&image);
-        button.bottom=button.top+MulDiv(image.cy,GetDpiForWindow(hwnd),96);
+        button.bottom=button.top+MulDiv(image.cy,window_dpi(hwnd),96);
         int state=disabled&(1u<<i)?CBS_DISABLED:CBS_NORMAL;
         if(!active&&SUCCEEDED(GetThemeInt(theme,parts[i],state,TMT_IMAGECOUNT,&count))&&count>=8) state+=4;
         DrawThemeBackground(theme,expected,parts[i],state,&button,NULL);
@@ -148,7 +159,7 @@ int wmain(void)
     UINT dpi;
     unsigned long active_hash,inactive_hash,disabled_hash;
     int image_count;
-    if (!SetProcessDPIAware() || !IsThemeActive()) return 2;
+    if (!dpi_aware() || !IsThemeActive()) return 2;
     theme = OpenThemeData(NULL, L"Window");
     if (!theme || FAILED(GetThemePartSize(theme, NULL, WP_CLOSEBUTTON, CBS_NORMAL,
                                           NULL, TS_TRUE, &image))) return 3;
@@ -159,7 +170,7 @@ int wmain(void)
     hwnd = CreateWindowW(wc.lpszClassName, L"Caption geometry", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                           80, 80, 400, 200, NULL, NULL, wc.hInstance, NULL);
     if (!hwnd) return 5;
-    dpi = GetDpiForWindow(hwnd);
+    dpi = window_dpi(hwnd);
     width = MulDiv(image.cx, dpi, 96); height = MulDiv(image.cy, dpi, 96);
     gap = MulDiv(2, dpi, 96);
     padding = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYCAPTION) - 1;

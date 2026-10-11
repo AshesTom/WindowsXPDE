@@ -1212,3 +1212,117 @@ Wine を新しい WoW64 方式（`--enable-archs=i386,x86_64`、Unix 側は 64-b
   `xp-shell.log` と `proxy.log` が合わせて 461MB になっていた（試験のために `+relay` にした分を含む）。
 - 試験 VM の片付け（利用者の判断）: 今のセッションが使う Wine・prefix・XP の素材・bridge と、場面の比較などの補助だけを残し、
   古い Wine と prefix（10.0、段階 5、段階 6 の 32-bit、古いビルド）と調査の残りを消した。空きは 1.2GB から 8.3GB。
+
+## 後回しの候補、Linux のトレイアイコン（XEmbed）、Qt の日本語入力（2026-10-11、段階 8）
+
+段階 1〜7 と 2026-10-11 の作業で残した差と不足を片付けた。パッチは 59 本（0041 を加え、0032 と 0037 を直した。対応は
+`docs/patches.md` の「段階 8」）。仕組みは `docs/architecture.md`、判断は `docs/dll-policy.md`、手順は `docs/reproduce.md`。
+
+### Linux のトレイアイコン（XEmbed）
+
+- `bridge-wm/tray.py` が、ほかに X のトレイが無いときだけ `_NET_SYSTEM_TRAY_S0` を持ち、XEmbed のアイコンの窓を受け入れる。
+  窓は Composite で画面の外に描かせ（手動の redirect）、入力の範囲を空にした枠に入れ、DAMAGE で描き直しを知って画像を読む。
+  画像は SNI と同じ `tray-ID.argb` と番号で XP の通知領域に出る。
+- 試験 VM に yad と gir1.2-gtk-3.0（GTK 3 の `GtkStatusIcon` は XEmbed だけを使う）を入れて確かめた（.deb はホストで取得）。
+  自作の GTK 3 のアイコン（半透明の縁の赤い円）と `yad --notification` のアイコンが XP の通知領域に出て、左クリックは
+  アプリの activate、右クリックはアプリ自身のメニュー（アイコンの上に出る）になり、項目を選ぶとアプリに届き、外をクリック
+  すると閉じた。アプリを終えるとアイコンは消えた。ツールチップは窓の名前（GTK の title、yad では「YAD」）。
+- 最初は XSendEvent でボタンの押下を送ったが、GTK 3 は XInput 2 でポインタを受けるので届かなかった。クリックのときだけ枠を
+  ポインタの下に置いて入力の範囲を戻し、XTest で本物の押下と離しを入れるようにした。
+- アプリのメニューを開いている間、ポインタが X サーバーの既定の × になった（GTK のメニューがつかむ窓はルートのカーソルを継ぐ）。
+  WM がルートのカーソルを矢印にした。
+- fcitx5 は SNI のまま（XEmbed のアイコンは重ねて出ない）。Wine の窓が XEmbed のトレイに入ることは無かった。
+- 待機中の tray.py の起床は 20 秒間で 0 回（XEmbed のアイコンがある状態）。
+- `tests/tray_host.py` に XEmbed の場合を足した（Xvfb を自分で起動する）: 24-bit と 32-bit の自作のアイコンの画像（背景の色の
+  透明化、乗算済みの戻し）、窓の名前のツールチップ、`_XEMBED_INFO` による隠す・出す、左・右・中クリックがポインタの位置で
+  ボタン 1・3・2 として届くこと、クリックの後に枠が入力を受けないこと、破棄と、別のトレイが選択を取ったときのルートへの返却。
+  chroot で SNI の 19 項目と合わせて 41 項目が成功（3回）。
+
+### Qt のアプリの日本語入力
+
+- 試験 VM に fcitx5-frontend-qt5 / qt6 と、Qt 6 の FeatherPad、Qt 5 の JuffEd を入れた。どちらも Mozc でその場に変換中の文字が
+  出て、候補の窓がキャレットの横に出て、確定できた。session は段階 6 から `QT_IM_MODULE=fcitx` を設定している。
+- フロントエンドが無いと、Qt のアプリは何も言わずに直接入力だけになる（JuffEd で Ctrl+Space が効かず、ローマ字がそのまま
+  入った）。supervisor が、入っている Qt の版にフロントエンドが無ければ `fcitx5.log` に書くようにした。
+
+### ロードマップの「後回しの候補」
+
+直したもの:
+
+- Alt+Tab の切り替えウィンドウのフォルダのアイコン（146 画素が各色1違う）: proxy は DrawIconEx で描く。`tests/icon-alpha.c`
+  （16 の α × 16 の色を5つの背景に重ねる）で、実XPは色×α/255 を切り捨ててから合成し、Wine の user32 はアイコンの乗算済み
+  アルファを四捨五入で作るので、256 通りのうち 104 通りが1明るかった（どの背景でも）。0041 で XP と同じ切り捨てにした。
+- DrawText の末尾の `&`: 実XPは描かない（"ab&"、"a&b&" の最後、"&" だけ）。Wine は最後の1字をそのまま描いていた。
+  DT_EXPANDTABS のタブの後の下線: 実XPは `&` の後の字の下に引く（"a\t&Wb" で x50..58、"\t&W" で x50..58、"abc\tW&b" で
+  x59..64）。Wine はタブの1字を下線の位置に数えず、次の字の下（x59..64）に引くか、引かなかった。どちらも 0037 で XP と同じに
+  した（`tests/text-underline.c` に5つのタブと4つの `&` の場合と、字の範囲の出力を足した）。メニューは項目をタブで分けて描くので、
+  メニューの見た目は変わらない。
+- MENUEX のリソースの区切りの状態: `tests/menu-separator.c` で、実XPは MENU・MENUEX のリソース、AppendMenu、InsertMenu、
+  InsertMenuItem のどれで作った区切りも MFS_GRAYED（3）を返した。Wine は MENUEX と InsertMenuItem の区切りが 0 だった。0032 で
+  区切りに MFS_GRAYED を足し、11 項目すべてが実XPと同じになった。描画は変わらない。
+- 待機中の起床: 試験 VM の待機中、supervisor が毎秒約 180 回起きていた（0.25 秒ごとに全部の最上位の窓をたどってタスクバーを
+  探し、そのたびに X サーバーへ数十回問い合わせていた）。X のイベント（ルートの SubstructureNotify）、子プロセスの pidfd、
+  シグナルで待つようにし、0 回になった（起動中のタスクバーを待つ間だけ1秒ごとに確かめる）。
+- 試験 VM の install を入れ替えた2回目にデスクトップの名前が英語になった件（段階 5）: 再現した。Wine の `wine.inf` が新しく
+  なった後に、stage.py より先に Wine のプログラムが1つでも動くと、Wine がその起動で prefix を更新して「マイ コンピュータ」などの
+  名前の登録を Wine のもの（`@C:\windows\syswow64\shell32.dll,-21`）に書き戻す。stage.py は `.update-timestamp` が新しい
+  `wine.inf` と合っているので更新済みとみなし、registry profile を入れ直さなかった。stage.py と create.py は、profile を当てたときの
+  `.update-timestamp` を `.xp-registry-version` に一緒に書き、それが変わっていれば当て直す。試験 VM で、直す前の stage.py は
+  何もせず、直した後は当て直し（`@%SystemRoot%\system32\SHELL32.dll,-9216`）、次の起動では何もしないことを確かめた。
+- そのほか、試験の途中で見つけて直したこと:
+  - LightDM を再起動してセッションが終わると、supervisor の後始末が X の接続の切断で例外になり、IPC ディレクトリ
+    （`/run/user/1000/win4wine-*`）が消されずに残っていた（試験 VM に 51 個）。子プロセスを1つずつ3秒待って止めていたので、
+    待つ間にセッションが打ち切られて Wine の `start.exe` も十数個残っていた。まとめて SIGTERM を送り、3秒後に残りのグループを
+    SIGKILL するようにし、切断済みの X の接続は無視する。再起動の後に何も残らないことを確かめた。
+  - install を入れ替えた後の stage.py の `wineboot -u` は全部の DLL を入れ直すので、ホストで Wine をビルドしていて VM が
+    遅いとき 120 秒を超え、stage.py が失敗してセッションが起動しなかった（ログイン画面に戻る）。`wineboot -u` だけ待ち時間を
+    600 秒にした（ほかの reg の呼び出しは 120 秒のまま）。
+
+直さないもの（理由と測った値）:
+
+- 待機中の wineserver の起床（毎秒約 64 回）: gdb で wineserver の待ち時間の一覧を見ると、待っていたのは定期保存（30 秒）と
+  XP Explorer の 60 秒・300 秒のタイマーだけで、16ms ごとの起床は upstream の wineserver が KUSER_SHARED_DATA の時刻を
+  更新するためのもの（`server/fd.c` の `user_shared_data_timeout = 16 * 10000`。共有ページから時刻を読む Windows のアプリのため）。
+  Wine のクライアントはどれも起きていない。CPU は約 0.3%（40 秒で 0.13 秒）。すべての Wine アプリに効く設計なので変えない。
+- Alt と Shift を押してから Tab を押す Alt+Shift+Tab: 実XPは一覧の最後（いちばん奥の窓）を選ぶ。試験 VM でも、QMP のキーと
+  xdotool のどちらでも最後の窓を選び、実XPと同じだった。段階 1 の観察は再現しなかった。
+- 非クライアント領域の試験の既知の失敗: どちらも試験の作りによる。`tests/nonclient-caption.c` の非アクティブ時の6件は、窓の
+  題名を DrawThemeText で描いた期待値と比べるもので、実XP（XP で動くよう、GetDpiForWindow と SetProcessDPIAware を使わない
+  ように直した）でも同じ6件に加えてアクティブ時の題名と WM_PRINT の DC の保存も失敗した（期待値が XP の描き方ではない）。
+  `tests/nonclient-theme.c` の「caption button pixels differ: active=1」は Wine の uxtheme にだけある関数で描いたボタンを
+  DrawThemeBackground の期待値と比べるもので、実XPでは動かない。ボタンは以前の段階で実XPの画面と画素単位で比べて一致している。
+- 主ツールバーの TB_GETBUTTONSIZE（実XP 76×38、Wine 84×38）: `tests/toolbar-layout.c` に各ボタンの情報を足して比べると、13 個の
+  ボタンの矩形・スタイル・状態・文字、TBMETRICS、TB_GETMAXSIZE はすべて実XPと同じで、違うのは既定のボタンの大きさだけ。
+  ツールバーは XP の comctl32（MS のバイナリ）で、その中で決まる値。画面には出ない。
+- 対象外のまま残すもの（直す方法があるか）:
+  - WinHelp のポップアップの中身: XP のダイアログは「?」の後に WinHelp（windows.hlp などの .hlp）を呼ぶ。Wine の winhlp32 は
+    .hlp を開けるので、利用者の XP の媒体から .hlp を取り出して置き、HELP_WM_HELP / HELP_CONTEXTPOPUP のポップアップを
+    winhlp32 が出せるかを確かめれば直せる見込みがある（winhlp32 のポップアップの対応は未確認）。
+  - フォルダ オプションの「オフライン ファイル」タブ: cscui.dll（XP のオフライン ファイル）の提供で、SMB の共有のキャッシュの
+    サービスを前提にする。XP の cscui.dll を登録すればタブは出せる可能性があるが、Linux の上では働かないので出さない。
+  - 「新規作成」のサブメニューのファイルの種類（利用者の判断で2項目）: 種類ごとの ShellNew の登録（registry profile）と、
+    利用者の XP の媒体の ShellNew の雛形、圧縮フォルダ（zipfldr.dll）とブリーフケース（syncui.dll）の登録で出せる。
+  - cmd のボタンのロゴ（利用者の判断）: Wine の conhost はクラスのアイコンに `IDI_WINLOGO` を使い、アイコンの資源も持たない。
+    外部シェルのときだけ、つながったプロセスの実行ファイル（cmd.exe）のアイコンをクラスに使うパッチで直せる。
+
+### ビルドと検証
+
+- 未改変の 11.0 に `wine/build.sh` で 59 本が当たり、当てたツリーは移植用ブランチと一致した。新しいソースとビルドディレクトリで
+  configure から全体をビルドし（`.local/wine-stage12-install`）、警告は upstream の bison の 14 件だけ。試験 VM には install を
+  丸ごと入れた（`/work/.local/wine-stage12-install`、段階 7 の install も残した）。プローブは i686 と x86_64 の両方で `-Werror` の
+  まま通る。
+- 新しいプローブ（`tests/icon-alpha.c`、`tests/menu-separator.c`、広げた `tests/text-underline.c`）の Wine の出力は実XPと同じ
+  （text-underline は、Tahoma と代わりの字体の字の幅の差と、プローブが文字列の外の字の幅を測る値を除く）。
+- Alt+Tab の切り替えウィンドウ（2つの「マイ コンピュータ」）は、段階 1 の実XPの画像とアイコンの行が0画素差（以前は 146 画素）。
+  窓全体ではマウスポインタの周りだけが違う。
+- 前後の比較（試験 VM、同じ日に段階 7 の install と今回の install で撮った `localres/s8/s8ab7-*`・`s8ab12-*`、フォルダの表示の状態は
+  同じ写しに戻した）: デスクトップ、スタートメニュー、右クリックメニュー、全部閉じた後は時計を除いて0画素差。「ファイル名を
+  指定して実行」、フォルダウィンドウ（1枚、2枚）、Alt+Tab、切り替えた後は、アイコンの半透明部分だけが各色1以内で違う（54〜376
+  画素、ほとんどが暗い方向。0041 の切り捨ての丸め）。
+- VM の非クライアント領域の試験（nonclient-caption、caption-icons、nonclient-theme、caption-text、frame-control）の出力は、段階 7 の
+  install と handle を除いて一致（既知の失敗も同じ）。
+- chroot の Xvfb で `tests/wm_integration.py`、`tests/native_frames.py`（Luna とクラシック）、`tests/xterm_redraw.py`、
+  `tests/bridge_integration.py`、`tests/recovery_integration.py`、`tests/tray_host.py`、`tests/linux_apps.py`、`tests/patch_state.py` が
+  成功（`.local/s12-bridge-tests.log`、`.local/s12-recovery.log`）。
+- 試験の補助: 最初に古い補助（`.local/cleanup-bridge-tests.sh`、消した prefix を指していた）で回してしまい、素の prefix が作られて
+  失敗した。その prefix を消し、64-bit の試験用の prefix を使う `.local/stage7-bridge-tests.sh` で回し直した。

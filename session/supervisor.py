@@ -2,9 +2,11 @@
 """Xsession supervisor with shell readiness checks and bounded recovery."""
 import argparse
 from collections import deque
+import glob
 import json
 import os
 from pathlib import Path
+import select
 import shutil
 import signal
 import subprocess
@@ -78,6 +80,12 @@ class Session:
             raise SystemExit('Invalid recovery limits')
         self.d = display.Display()
         self.class_atom = self.d.intern_atom('_WIN4WINE_CLASS')
+        # The supervisor sleeps until a top-level window changes, a child
+        # exits or a signal comes; signal handlers write to this pipe.
+        self.d.screen().root.change_attributes(event_mask=X.SubstructureNotifyMask)
+        self.wakeup = os.pipe2(os.O_NONBLOCK | os.O_CLOEXEC)
+        self.pidfds = {}
+        self.tray_window = None
         if self.linux_font:
             self.env['FONTCONFIG_FILE'] = str(self.font_config())
         self.status('starting')
@@ -137,9 +145,30 @@ class Session:
         temporary.write_text('\n'.join(lines) + '\n')
         temporary.replace(config)
 
+    @staticmethod
+    def missing_frontends():
+        """Installed Qt versions without fcitx5's input context plugin.
+
+        Without it, Qt applications ignore QT_IM_MODULE=fcitx silently and
+        take only the keyboard's own characters."""
+        missing = []
+        libraries = [Path(d) for d in glob.glob('/usr/lib/*-linux-gnu') + ['/usr/lib']]
+        for version, core in (('qt5', 'libQt5Core.so.5'), ('qt6', 'libQt6Core.so.6')):
+            if not any((d / core).exists() for d in libraries):
+                continue
+            plugins = [d / version / 'plugins/platforminputcontexts' for d in libraries]
+            if not any(any(p.glob('libfcitx5platforminputcontextplugin*')) for p in plugins):
+                missing.append(f'fcitx5-frontend-{version}')
+        return missing
+
     def start_input_method(self):
         if not self.input_method or self.xim_server('fcitx'):
             return None  # Not configured, or started by the login already.
+        missing = self.missing_frontends()
+        if missing:
+            with (self.state / 'fcitx5.log').open('a') as log:
+                for package in missing:
+                    print(f'{package} is not installed: Qt applications get no input method', file=log)
         self.fcitx_defaults()
         return self.spawn(['fcitx5'], 'fcitx5')
 
@@ -178,26 +207,67 @@ class Session:
         return process
 
     def tray(self):
-        for w in self.d.screen().root.query_tree().children:
+        # The taskbar found last time is checked first; a full search asks
+        # the X server about every top-level window.
+        windows = self.d.screen().root.query_tree().children if self.tray_window is None else [self.tray_window]
+        for w in windows:
             try:
                 p = w.get_full_property(self.class_atom, X.AnyPropertyType)
                 if p and bytes(p.value).rstrip(b'\0').lower() == b'shell_traywnd' and w.get_attributes().map_state == X.IsViewable:
+                    self.tray_window = w
                     geometry = w.get_geometry()
                     return geometry.width >= 200 and geometry.height >= 20
             except error.XError:
                 pass
+        if self.tray_window is not None:
+            self.tray_window = None
+            return self.tray()
         return False
 
-    def halt(self, process):
-        if process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-                process.wait(timeout=3)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
+    def wait(self, processes, timeout=None):
+        """Sleep until a window changes, one of the processes exits, a signal comes or the timeout passes."""
+        fds = [self.d.fileno(), self.wakeup[0]]
+        for process in processes:
+            if process and process.poll() is None:
+                if process not in self.pidfds:
+                    self.pidfds[process] = os.pidfd_open(process.pid)
+                fds.append(self.pidfds[process])
+        for process in [p for p in self.pidfds if p.poll() is not None]:
+            os.close(self.pidfds.pop(process))
+        if not self.d.pending_events() and not self.stopping:
+            select.select(fds, [], [], timeout)
+        try:
+            os.read(self.wakeup[0], 512)
+        except BlockingIOError:
+            pass
+        while self.d.pending_events():
+            self.d.next_event()
+
+    def halt(self, *processes):
+        """End the processes' groups: SIGTERM together, then SIGKILL after three seconds.
+
+        At the end of a login the display manager kills what is left soon;
+        waiting for each group in turn could leave the later ones running."""
+        running = []
+        for process in processes:
+            if process.poll() is None:
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    os.killpg(process.pid, signal.SIGTERM)
+                    running.append(process)
                 except ProcessLookupError:
                     pass
+        deadline = time.monotonic() + 3
+        for process in running:
+            try:
+                process.wait(timeout=max(0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                pass
+            try:
+                # Children that ignore SIGTERM, such as Wine's start.exe
+                # waiting for its program, go with the group.
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
     def stop_wine(self):
         server = Path(self.wine).with_name('wineserver')
@@ -247,7 +317,9 @@ class Session:
                     break
                 if proxy.poll() is not None:
                     break
-                time.sleep(.25)
+                # While the shell starts, its taskbar may get its class or
+                # size without an event this client sees; check every second.
+                self.wait((wm, im, proxy, shell), None if ready else 1)
             if self.stopping:
                 break
             if self.end_requested(shell):
@@ -315,18 +387,20 @@ class Session:
                 raise RuntimeError('WM exited during fallback')
             if fallback.poll() is not None and terminal.poll() is not None:
                 break
-            time.sleep(.5)
+            self.wait((wm, fallback, terminal))
 
     def close(self):
         self.stopping = True
-        for p in reversed(self.processes):
-            self.halt(p)
+        self.halt(*reversed(self.processes))
         try:
             self.stop_wine()
         finally:
             for f in self.logs:
                 f.close()
-            self.d.close()
+            try:
+                self.d.close()
+            except (error.ConnectionClosedError, OSError):
+                pass  # The X server ended first, as when the display manager restarts.
             shutil.rmtree(self.ipc, ignore_errors=True)
             self.status('stopped')
 
@@ -336,6 +410,7 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=Path, default=DEFAULT_CONFIG)
     args = parser.parse_args()
     session = Session(json.loads(args.config.read_text()))
+    signal.set_wakeup_fd(session.wakeup[1])
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, lambda *_: setattr(session, 'stopping', True))
     try:

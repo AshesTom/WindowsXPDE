@@ -6,6 +6,13 @@ directory: the item's pixmap and theme icon reach tray-ID.argb at the size
 in tray-size, tooltip and status reach tray.tsv, the proxy's *.tray commands
 reach Activate, SecondaryActivate and the dbusmenu, and the entry goes when
 the item turns passive or leaves the bus. A second host defers to the first.
+
+On an X display (a private Xvfb when DISPLAY is unset) self-made XEmbed
+icons dock into _NET_SYSTEM_TRAY_S0: their images reach tray-ID.argb (24-bit
+windows opaque except the background colour, 32-bit ones unpremultiplied),
+the window name is the tooltip, _XEMBED_INFO hides and shows them, the
+proxy's clicks arrive as button presses with the icon under the pointer,
+and icons go back to the root when another tray takes the selection.
 """
 import os
 from pathlib import Path
@@ -24,6 +31,9 @@ if not os.environ.get('TRAY_HOST_TEST_BUS'):
 import gi
 gi.require_version('Gio', '2.0')
 from gi.repository import Gio, GLib
+from Xlib import X, display
+from Xlib.ext import xtest
+from Xlib.protocol import event
 
 ITEM_XML = '''<node>
 <interface name="org.kde.StatusNotifierItem">
@@ -141,6 +151,137 @@ def read(path):
         return None
 
 
+class XEmbedIcon:
+    """A minimal XEmbed tray icon on its own X connection."""
+
+    def __init__(self, depth, background, square):
+        self.d = display.Display()
+        screen = self.d.screen()
+        if depth == 32:
+            visual = next(v.visual_id for d in screen.allowed_depths if d.depth == 32 for v in d.visuals
+                          if v.visual_class == X.TrueColor)
+            colormap = screen.root.create_colormap(visual, X.AllocNone)
+            self.w = screen.root.create_window(0, 0, 10, 10, 0, 32, X.InputOutput, visual, colormap=colormap,
+                                               border_pixel=0, background_pixel=background)
+        else:
+            self.w = screen.root.create_window(0, 0, 10, 10, 0, screen.root_depth, X.InputOutput, X.CopyFromParent,
+                                               background_pixel=background)
+        self.w.change_attributes(event_mask=X.ExposureMask | X.ButtonPressMask | X.ButtonReleaseMask
+                                 | X.StructureNotifyMask)
+        self.gc = self.w.create_gc(foreground=square)
+        self.info(1)
+        self.events = []
+        tray = self.d.get_selection_owner(self.d.intern_atom('_NET_SYSTEM_TRAY_S0'))
+        tray.send_event(event.ClientMessage(window=tray, client_type=self.d.intern_atom('_NET_SYSTEM_TRAY_OPCODE'),
+                                            data=(32, [X.CurrentTime, 0, self.w.id, 0, 0])), event_mask=X.NoEventMask)
+        self.d.flush()
+
+    def info(self, flags):
+        atom = self.d.intern_atom('_XEMBED_INFO')
+        self.w.change_property(atom, atom, 32, [0, flags])
+        self.d.flush()
+
+    def pump(self):
+        while self.d.pending_events():
+            e = self.d.next_event()
+            self.events.append(e)
+            if e.type == X.Expose:
+                g = self.w.get_geometry()
+                self.w.fill_rectangle(self.gc, g.width // 4, g.height // 4, g.width // 2, g.height // 2)
+        self.d.flush()
+
+    def wait(self, predicate, timeout=5.0):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            self.pump()
+            if predicate():
+                return True
+            time.sleep(0.02)
+        return False
+
+    def got(self, kind, **fields):
+        return [e for e in self.events if e.type == kind and all(getattr(e, k) == v for k, v in fields.items())]
+
+
+def tray_lines(ipc):
+    return [line.split('\t') for line in (read(ipc / 'tray.tsv') or '').splitlines()]
+
+
+def xembed_checks(ipc):
+    """Runs while the host owns the tray and no StatusNotifierItem is listed."""
+    (ipc / 'tray-size').write_text('16\n')
+    command(ipc, 'noop 1')
+    time.sleep(0.3)
+    ids = {line[0] for line in tray_lines(ipc)}
+    plain = XEmbedIcon(24, 0x1397ed, 0x00ff00)
+    check(plain.wait(lambda: plain.got(X.ClientMessage)), 'XEMBED_EMBEDDED_NOTIFY sent to the icon')
+    check(plain.wait(lambda: len(tray_lines(ipc)) == len(ids) + 1), 'XEmbed icon listed: %r' % tray_lines(ipc))
+    ident = next((line[0] for line in tray_lines(ipc) if line[0] not in ids), '0')
+    icon = ipc / f'tray-{ident}.argb'
+    check(plain.wait(lambda: icon.exists() and argb(icon)[3][8 * 16 + 8] == 0xff00ff00),
+          'XEmbed image: the drawn square, opaque')
+    if icon.exists():
+        pixels = argb(icon)[3]
+        check(pixels[0] >> 24 == 0, 'background colour of a 24-bit icon transparent: %08x' % pixels[0])
+    geometry = plain.w.get_geometry()
+    check((geometry.width, geometry.height) == (16, 16), 'icon window sized to tray-size')
+
+    plain.w.change_property(plain.d.intern_atom('_NET_WM_NAME'), plain.d.intern_atom('UTF8_STRING'), 8,
+                            'Icon\tname'.encode())
+    plain.d.flush()
+    check(plain.wait(lambda: [ident, 'A', 'Icon name'] in tray_lines(ipc)), 'window name as tooltip')
+
+    # The pointer is where the user clicked the XP icon.
+    xtest.fake_input(plain.d, X.MotionNotify, x=100, y=200)
+    plain.d.sync()
+    command(ipc, f'activate {ident} 100 200')
+    check(plain.wait(lambda: plain.got(X.ButtonPress, detail=1) and plain.got(X.ButtonRelease, detail=1)),
+          'left click arrives as button 1')
+    press = (plain.got(X.ButtonPress, detail=1) or [None])[0]
+    check(press is not None and (press.root_x, press.root_y, press.event_x, press.event_y) == (100, 200, 8, 8),
+          'click at the pointer, in the middle of the icon')
+    origin = plain.w.translate_coords(plain.d.screen().root, 0, 0)
+    check((-origin.x, -origin.y) == (92, 192), 'icon window moved under the pointer: %r' % ((-origin.x, -origin.y),))
+    under = plain.d.screen().root.query_pointer()
+    check(under.child == X.NONE or under.child != plain.w.query_tree().parent,
+          'frame takes no pointer input after the click')
+    command(ipc, f'context {ident} 30 40')
+    check(plain.wait(lambda: plain.got(X.ButtonPress, detail=3)), 'right click arrives as button 3')
+    command(ipc, f'secondary {ident} 30 40')
+    check(plain.wait(lambda: plain.got(X.ButtonPress, detail=2)), 'middle click arrives as button 2')
+    check(not (ipc / f'menu-{ident}.tsv').exists(), 'no menu file: the application shows its own menu')
+
+    plain.info(0)
+    check(plain.wait(lambda: ident not in {line[0] for line in tray_lines(ipc)}), 'unmapped by _XEMBED_INFO: hidden')
+    plain.info(1)
+    check(plain.wait(lambda: ident in {line[0] for line in tray_lines(ipc)}), 'mapped again: shown')
+
+    alpha = XEmbedIcon(32, 0, 0x80000080)
+    check(alpha.wait(lambda: len(tray_lines(ipc)) == len(ids) + 2), '32-bit XEmbed icon listed')
+    ident2 = next((line[0] for line in tray_lines(ipc) if line[0] not in ids | {ident}), '0')
+    icon2 = ipc / f'tray-{ident2}.argb'
+    check(alpha.wait(lambda: icon2.exists() and argb(icon2)[3][8 * 16 + 8] == 0x800000ff),
+          '32-bit icon: alpha kept, colour unpremultiplied')
+    if icon2.exists():
+        check(argb(icon2)[3][0] == 0, 'transparent border of a 32-bit icon')
+
+    alpha.w.destroy()
+    alpha.d.flush()
+    check(alpha.wait(lambda: ident2 not in {line[0] for line in tray_lines(ipc)} and not icon2.exists()),
+          'destroyed icon removed with its image')
+
+    # Another tray takes the selection: the icon is handed back.
+    other = display.Display()
+    owner = other.screen().root.create_window(0, 0, 1, 1, 0, X.CopyFromParent, X.InputOnly, X.CopyFromParent)
+    owner.set_selection_owner(other.intern_atom('_NET_SYSTEM_TRAY_S0'), X.CurrentTime)
+    other.flush()
+    check(plain.wait(lambda: ident not in {line[0] for line in tray_lines(ipc)}), 'entry removed when another tray takes over')
+    check(plain.wait(lambda: plain.w.query_tree().parent == plain.d.screen().root), 'icon reparented to the root')
+    other.close()
+    plain.d.close()
+    alpha.d.close()
+
+
 def main():
     work = Path(tempfile.mkdtemp(prefix='tray-host-'))
     ipc, theme = work / 'ipc', work / 'icons'
@@ -148,6 +289,14 @@ def main():
     (theme / 'hicolor/24x24/apps').mkdir(parents=True)
     png(theme / 'hicolor/24x24/apps/tray-host-test-icon.png', 24, (0, 0, 255, 255))
     (ipc / 'tray-size').write_text('16\n')
+    xvfb = None
+    if not os.environ.get('DISPLAY'):
+        read_end, write_end = os.pipe()
+        xvfb = subprocess.Popen(['Xvfb', '-displayfd', str(write_end), '-screen', '0', '640x480x24', '-nolisten', 'tcp'],
+                                pass_fds=[write_end], stderr=subprocess.DEVNULL)
+        os.close(write_end)
+        with os.fdopen(read_end) as pipe:
+            os.environ['DISPLAY'] = ':' + pipe.readline().strip()
     log = (work / 'tray.log').open('w')
     host = subprocess.Popen([sys.executable, str(ROOT / 'bridge-wm/tray.py'), '--ipc', str(ipc)],
                             stdout=log, stderr=subprocess.STDOUT)
@@ -211,10 +360,14 @@ def main():
         Gio.bus_unown_name(item.owner)
         check(wait(lambda: read(tsv) == '' and not icon.exists() and not menu.exists()),
               'entry, icon and menu removed when the item leaves')
+        xembed_checks(ipc)
     finally:
         host.terminate()
         host.wait(5)
         log.close()
+        if xvfb:
+            xvfb.terminate()
+            xvfb.wait(5)
     check(not tsv.exists(), 'tray.tsv removed when the host stops')
     if failures:
         print((work / 'tray.log').read_text())

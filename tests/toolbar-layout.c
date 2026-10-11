@@ -16,6 +16,58 @@ static void emit(const char *text)
     else WriteFile(out, text, (DWORD)strlen(text), &written, NULL);
 }
 
+/* Each button of a toolbar in another process: command, style, state,
+ * rectangle and text, read through a buffer allocated in that process. */
+static void buttons(HWND hwnd)
+{
+    DWORD pid;
+    HANDLE process;
+    BYTE *remote;
+    long count = (long)SendMessageA(hwnd, TB_BUTTONCOUNT, 0, 0);
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (!(process = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, FALSE, pid))) return;
+    if ((remote = VirtualAllocEx(process, NULL, 4096, MEM_COMMIT, PAGE_READWRITE)))
+    {
+        char line[512];
+        TBMETRICS metrics = {.cbSize = sizeof(metrics), .dwMask = TBMF_PAD | TBMF_BARPAD | TBMF_BUTTONSPACING};
+        SIZE max = {0};
+        WriteProcessMemory(process, remote, &metrics, sizeof(metrics), NULL);
+        SendMessageA(hwnd, TB_GETMETRICS, 0, (LPARAM)remote);
+        ReadProcessMemory(process, remote, &metrics, sizeof(metrics), NULL);
+        SendMessageA(hwnd, TB_GETMAXSIZE, 0, (LPARAM)remote);
+        ReadProcessMemory(process, remote, &max, sizeof(max), NULL);
+        snprintf(line, sizeof(line), "  metrics pad=%dx%d barpad=%dx%d spacing=%dx%d max=%ldx%ld bitmapflags=%lx\r\n",
+                 metrics.cxPad, metrics.cyPad, metrics.cxBarPad, metrics.cyBarPad, metrics.cxButtonSpacing,
+                 metrics.cyButtonSpacing, max.cx, max.cy, (long)SendMessageA(hwnd, TB_GETBITMAPFLAGS, 0, 0));
+        emit(line);
+        for (long i = 0; i < count && i < 32; i++)
+        {
+            TBBUTTON button = {0};
+            RECT rect = {0};
+            WCHAR text[64] = {0};
+            char utf8[192] = "";
+            long length;
+            SendMessageA(hwnd, TB_GETBUTTON, i, (LPARAM)remote);
+            ReadProcessMemory(process, remote, &button, sizeof(button), NULL);
+            SendMessageA(hwnd, TB_GETITEMRECT, i, (LPARAM)remote);
+            ReadProcessMemory(process, remote, &rect, sizeof(rect), NULL);
+            length = (long)SendMessageW(hwnd, TB_GETBUTTONTEXTW, button.idCommand, 0);
+            if (length > 0 && length < 63)
+            {
+                SendMessageW(hwnd, TB_GETBUTTONTEXTW, button.idCommand, (LPARAM)remote);
+                ReadProcessMemory(process, remote, text, (length + 1) * sizeof(WCHAR), NULL);
+                WideCharToMultiByte(CP_UTF8, 0, text, -1, utf8, sizeof(utf8), NULL, NULL);
+            }
+            snprintf(line, sizeof(line), "  button %ld id=%d style=%02x state=%02x image=%d rect=(%ld,%ld)-(%ld,%ld) text=%ld'%s'\r\n",
+                     i, button.idCommand, button.fsStyle, button.fsState, button.iBitmap, rect.left, rect.top,
+                     rect.right, rect.bottom, length, utf8);
+            emit(line);
+        }
+        VirtualFreeEx(process, remote, 0, MEM_RELEASE);
+    }
+    CloseHandle(process);
+}
+
 static BOOL CALLBACK child(HWND hwnd, LPARAM param)
 {
     char cls[64], line[512];
@@ -58,6 +110,7 @@ static BOOL CALLBACK child(HWND hwnd, LPARAM param)
     }
     snprintf(line + n, sizeof(line) - n, "\r\n");
     emit(line);
+    if (!strcmp(cls, "ToolbarWindow32")) buttons(hwnd);
     return TRUE;
 }
 

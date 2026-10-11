@@ -41,7 +41,7 @@ static void measure(HDC dc, const WCHAR *font, int height, int weight, BOOL ital
     LOGFONTW lf = {0};
     HFONT hfont, old;
     RECT rect = {left, 4, right, H};
-    int x0 = W, y0 = H, x1 = -1, y1 = -1, offset = -1, j = 0;
+    int x0 = W, y0 = H, x1 = -1, y1 = -1, ink0 = W, ink1 = -1, offset = -1, j = 0;
     SIZE before = {0}, through = {0};
 
     for (int i = 0; text[i]; i++)
@@ -66,6 +66,12 @@ static void measure(HDC dc, const WCHAR *font, int height, int weight, BOOL ital
     draw(dc, plain, &rect, flags | DT_NOPREFIX, without);
     for (int y = 0; y < H; y++)
         for (int x = 0; x < W; x++)
+        {
+            if ((without[y * W + x] & 0xffffff) != 0xffffff)
+            {
+                if (x < ink0) ink0 = x;
+                if (x > ink1) ink1 = x;
+            }
             if (with[y * W + x] != without[y * W + x])
             {
                 if (x < x0) x0 = x;
@@ -73,11 +79,12 @@ static void measure(HDC dc, const WCHAR *font, int height, int weight, BOOL ital
                 if (y < y0) y0 = y;
                 if (y > y1) y1 = y;
             }
+        }
     swprintf(line, ARRAYSIZE(line), L"%ls %d w%d i%d '%ls' rect=%d..%d flags=%x before=%ld through=%ld underline=",
              font, height, weight, italic, text, left, right, flags, before.cx, through.cx);
     emit(line);
-    if (x1 < 0) swprintf(line, ARRAYSIZE(line), L"none\r\n");
-    else swprintf(line, ARRAYSIZE(line), L"x%d..%d y%d..%d\r\n", x0, x1, y0, y1);
+    if (x1 < 0) swprintf(line, ARRAYSIZE(line), L"none ink=x%d..%d\r\n", ink0, ink1);
+    else swprintf(line, ARRAYSIZE(line), L"x%d..%d y%d..%d ink=x%d..%d\r\n", x0, x1, y0, y1, ink0, ink1);
     emit(line);
     SelectObject(dc, old);
     DeleteObject(hfont);
@@ -128,6 +135,17 @@ int wmain(int argc, WCHAR **argv)
     measure(dc, L"MS UI Gothic", -12, FW_NORMAL, FALSE, L"&W", 10, 16, DT_SINGLELINE);
     measure(dc, L"MS UI Gothic", -12, FW_NORMAL, FALSE, L"&W", 11, 16, DT_SINGLELINE | DT_RIGHT);
     measure(dc, L"MS UI Gothic", -12, FW_NORMAL, FALSE, L"a\t&Wb", 10, 200 - 10, DT_SINGLELINE | DT_EXPANDTABS);
+    /* The tab alone and a prefix after more text, to separate the tab stop from the text before it. */
+    measure(dc, L"MS UI Gothic", -12, FW_NORMAL, FALSE, L"\t&W", 10, 200 - 10, DT_SINGLELINE | DT_EXPANDTABS);
+    measure(dc, L"MS UI Gothic", -12, FW_NORMAL, FALSE, L"abc\tW&b", 10, 200 - 10, DT_SINGLELINE | DT_EXPANDTABS);
+    measure(dc, L"Tahoma", -11, FW_NORMAL, FALSE, L"a\t&Wb", 10, 200 - 10, DT_SINGLELINE | DT_EXPANDTABS);
+    measure(dc, L"MS UI Gothic", -12, FW_NORMAL, FALSE, L"&a\tb", 10, 200 - 10, DT_SINGLELINE | DT_EXPANDTABS);
+    measure(dc, L"MS UI Gothic", -12, FW_NORMAL, FALSE, L"a\tb", 10, 200 - 10, DT_SINGLELINE | DT_EXPANDTABS);
+    /* A lone prefix at the end, after a doubled one, and alone. */
+    measure(dc, L"MS UI Gothic", -12, FW_NORMAL, FALSE, L"ab&&", 10, 200 - 10, DT_SINGLELINE);
+    measure(dc, L"MS UI Gothic", -12, FW_NORMAL, FALSE, L"&", 10, 200 - 10, DT_SINGLELINE);
+    measure(dc, L"MS UI Gothic", -12, FW_NORMAL, FALSE, L"a&b&", 10, 200 - 10, DT_SINGLELINE);
+    measure(dc, L"MS UI Gothic", -12, FW_NORMAL, FALSE, L"ab&\ncd", 10, 200 - 10, 0);
     emit(L"TEXTUNDERLINE complete\r\n");
     DeleteDC(dc);
     DeleteObject(bitmap);

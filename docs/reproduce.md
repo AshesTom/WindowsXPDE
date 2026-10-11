@@ -463,8 +463,11 @@ git clone --branch wine-11.0 <未改変の Wine 11.0 のリポジトリ> .local/
 ```sh
 sudo apt-get install --no-install-recommends fcitx5 fcitx5-mozc fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 \
   fcitx5-config-qt locales python3-gi gir1.2-glib-2.0 gir1.2-gdkpixbuf-2.0 librsvg2-common
-# 任意: Linux のブラウザ、代わりの日本語の字体、Qt アプリの入力
-sudo apt-get install --no-install-recommends chromium fonts-ipafont-gothic fcitx5-frontend-qt5 fcitx5-frontend-qt6
+# 任意: Linux のブラウザ、代わりの日本語の字体
+sudo apt-get install --no-install-recommends chromium fonts-ipafont-gothic
+# Qt のアプリで日本語を入力するとき（入っている Qt の版の分。無いと Qt のアプリは何も言わずに直接入力だけになり、
+# supervisor が fcitx5.log に「fcitx5-frontend-qt6 is not installed」などと書く）
+sudo apt-get install --no-install-recommends fcitx5-frontend-qt5 fcitx5-frontend-qt6
 ```
 
 `ja_JP.UTF-8` のロケールを作る（`/etc/locale.gen` の該当行を有効にして `locale-gen`）。session.json の `locale` に指定した
@@ -634,3 +637,22 @@ WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/foreign-icons-test.exe --owner '
 registry profile は 24 になった。次にセッションを起動すると `stage.py` が適用し、`HKCU\Console` を MS Gothic の 8×18 にする
 （一度だけ。その後に変えた字体は残る）。0041 が変わったので Wine を作り直す（新しいソースとビルドディレクトリで）。
 セッションのログ（`~/.local/state/win4wine/*.log`）は起動のたびに前回の分が `*.log.1` になる。
+
+## Linux のトレイアイコン（XEmbed）と Qt の日本語入力（2026-10-11、段階 8）
+
+パッチは 59 本になり、0041 以降の番号が変わった（`docs/patches.md` の「段階 8」）。新しいソースとビルドディレクトリで configure
+から Wine をビルドし、install を入れ替える。`bridge-wm/tray.py`、`bridge-wm/wm.py`、`session/supervisor.py`、`prefix/stage.py`
+を入れ替え、セッションを起動し直す。registry profile は 24 のまま。`.xp-registry-version` は `版 更新の印` の形になり、古い形の
+prefix では次の起動で stage.py が profile を一度当て直す。tray.py は python3-xlib（WM と同じ）も使い、X サーバーの Composite、DAMAGE、SHAPE、XTEST の拡張が要る
+（Debian の Xorg と Xvfb は既定で持つ。無ければ XEmbed だけを扱わず、tray.log に書く）。
+
+- ほかに X のトレイが無いとき、XEmbed のトレイだけを使うアプリ（GTK の `GtkStatusIcon` を使う yad、古いトレイアプリなど）の
+  アイコンも XP の通知領域に出る。左・中・右クリックはアプリに届き、メニューはアプリ自身のものが出る。
+- Qt のアプリの日本語入力には、上のパッケージの一覧の `fcitx5-frontend-qt5` / `fcitx5-frontend-qt6` を入れる。session は
+  `input_method` が `fcitx5` のとき `QT_IM_MODULE=fcitx` を設定する（段階 6 から）。
+
+試験:
+
+```sh
+./scripts/debian.sh run bash -c 'cd /work && python3 tests/tray_host.py'   # SNI に加え、Xvfb で XEmbed のアイコンも試す
+```

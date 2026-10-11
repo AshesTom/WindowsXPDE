@@ -30,14 +30,18 @@ def prepare(prefix, wine):
     current = timestamp.read_text().strip() if timestamp.is_file() else ''
     version = prefix / '.xp-registry-version'
     wine_current = inf.is_file() and current == str(int(inf.stat().st_mtime))
-    if wine_current and version.is_file() and version.read_text().strip() == str(registry.VERSION):
+    # The profile is recorded with the Wine update it followed. Any Wine
+    # program, not only this script, updates an outdated prefix on start
+    # and rewrites the shell's registrations; the profile must follow again.
+    applied = version.read_text().split() if version.is_file() else []
+    if wine_current and applied == [str(registry.VERSION), current]:
         return
     env = dict(os.environ, WINEPREFIX=str(prefix),
                WINEDLLOVERRIDES='explorer,shell32,shdocvw,browseui,shlwapi,comctl32,uxtheme=b;mscoree,mshtml=',
                WINEDEBUG=os.environ.get('WINEDEBUG', '-all'))
     env.pop('WINEARCH', None)  # The existing prefix decides.
-    def run(*args):
-        subprocess.run([str(wine), *registry.shell_view(args)], env=env, check=True, timeout=120,
+    def run(*args, timeout=120):
+        subprocess.run([str(wine), *registry.shell_view(args)], env=env, check=True, timeout=timeout,
                        stdout=subprocess.DEVNULL)
     def exists(key, name):
         return subprocess.run([str(wine), *registry.shell_view(('reg', 'query', key, '/v', name))], env=env,
@@ -48,10 +52,13 @@ def prepare(prefix, wine):
     print('Updating dedicated prefix Wine/XP registry profile', flush=True)
     try:
         if not wine_current:
-            run('wineboot', '-u')
+            # After a Wine install changes, the update installs every DLL
+            # again; on a slow or busy machine it takes minutes.
+            run('wineboot', '-u', timeout=600)
         registry.install(run, exists)
+        current = timestamp.read_text().strip() if timestamp.is_file() else ''
         temp = version.with_suffix('.tmp')
-        temp.write_text(str(registry.VERSION) + '\n')
+        temp.write_text(f'{registry.VERSION} {current}\n')
         temp.replace(version)
     finally:
         server = str(wine.with_name('wineserver'))

@@ -8,6 +8,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+/* GetDpiForWindow and SetProcessDPIAware are not on XP, which has no DPI
+ * virtualisation: every process there sees the screen's DPI. */
+static UINT window_dpi(HWND hwnd)
+{
+    HDC dc=GetDC(hwnd);UINT dpi=GetDeviceCaps(dc,LOGPIXELSX);ReleaseDC(hwnd,dc);return dpi;
+}
+static BOOL dpi_aware(void)
+{
+    BOOL (WINAPI *set)(void)=(void *)GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetProcessDPIAware");
+    return !set||set();
+}
 typedef struct { HDC dc;HBITMAP bitmap;HGDIOBJ old;DWORD *pixels;int width,height; } SURFACE;
 static int failed;
 static SURFACE surface(int width,int height)
@@ -114,12 +125,12 @@ done:
 int wmain(void)
 {
     WNDCLASSW wc={0};HWND hwnd,other;HTHEME theme;WCHAR title[400];
-    if(!GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL",NULL,0)||!SetProcessDPIAware()||!IsThemeActive())return 2;
+    if(!GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL",NULL,0)||!dpi_aware()||!IsThemeActive())return 2;
     wc.lpfnWndProc=DefWindowProcW;wc.lpszClassName=L"Win4WineNcCaption";wc.hInstance=GetModuleHandleW(NULL);wc.hIcon=LoadIconW(NULL,IDI_APPLICATION);
     if(!RegisterClassW(&wc))return 2;
     hwnd=CreateWindowW(wc.lpszClassName,L"",WS_OVERLAPPEDWINDOW|WS_VISIBLE,80,80,400,200,NULL,NULL,wc.hInstance,NULL);
     other=CreateWindowW(wc.lpszClassName,L"Foreground control",WS_OVERLAPPEDWINDOW|WS_VISIBLE,550,100,200,160,NULL,NULL,wc.hInstance,NULL);
-    if(!hwnd||!other||GetDpiForWindow(hwnd)!=96)return 2;
+    if(!hwnd||!other||window_dpi(hwnd)!=96)return 2;
     theme=OpenThemeData(hwnd,L"Window");if(!theme)return 2;
     lstrcpyW(title,L"日本語&Ampersand & literal — ");for(int i=0;i<12;i++)lstrcatW(title,L"長い日本語タイトルと省略表示 ");
     SetCursorPos(10,70);

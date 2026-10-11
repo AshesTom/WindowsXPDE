@@ -112,7 +112,9 @@ def create(assets, dest, home, wine):
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoSimpleStartMenu', '1', 'REG_DWORD')
     reg(r'HKCU\Control Panel\Desktop', 'LogPixels', '96', 'REG_DWORD')
     reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced', 'WebView', '0', 'REG_DWORD')
-    (dest / '.xp-registry-version').write_text(str(registry.VERSION) + '\n')
+    # The profile follows this Wine update of the prefix (see stage.py).
+    update = (dest / '.update-timestamp').read_text().strip()
+    (dest / '.xp-registry-version').write_text(f'{registry.VERSION} {update}\n')
     (dest / 'xp-shell.json').write_text(json.dumps({'assets': str(assets), 'home': str(home),
                                                    'wine': wine, 'profile': 'shell'}, indent=2) + '\n')
     print(f'Prefix ready: {dest}')

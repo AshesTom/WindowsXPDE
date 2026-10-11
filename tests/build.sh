@@ -34,6 +34,8 @@ compile "$out/part-black-test.exe" "$root/tests/part-black.c" -luxtheme -lgdi32 
 compile "$out/notify-icon-test.exe" "$root/tests/notify-icon.c" -luxtheme -lshell32 -lgdi32 -luser32
 compile "$out/theme-threads-test.exe" "$root/tests/theme-threads.c" -luxtheme -lgdi32 -luser32
 compile "$out/menu-layout-test.exe" "$root/tests/menu-layout.c" -luser32 -lgdi32
+compile "$out/menu-separator-test.exe" "$root/tests/menu-separator.c" -luser32
+compile "$out/icon-alpha-test.exe" "$root/tests/icon-alpha.c" -luser32 -lgdi32
 compile "$out/gl-perf-test.exe" "$root/tests/gl-perf.c" -lopengl32 -lgdi32 -luser32
 compile "$out/class-probe.exe" -municode "$root/prefix/class-probe.c" -lole32 -luuid
 

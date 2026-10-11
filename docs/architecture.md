@@ -23,6 +23,8 @@ SHELLHOOK で配信する。題名の変更は、Wine 11.0 の DefWindowProc の
 仲介プロセスは、表示済みの `Shell_TrayWnd` と Start/ReBar 子ウィンドウの準備が 200ms 間隔の二回の確認で安定した後、現在の親 client サイズを使った公開 `WM_SIZE` を一度だけ送る。起動直後に保持された子の ideal 高さを、シェル自身の通常レイアウトで親に合わせ直すためで、子の寸法や字体は指定しない。応答待ちは最大 500ms。Tray HWND/PID の置換・消失で状態をリセットし、一時的な非表示では再送しない。この確認の timer は、表示中の tray がこの同期を待っている間だけ動く。Luna と Classic に適用し、`BCM_GETIDEALSIZE` の測定値は変更しない。
 
 WM は XSETTINGS の selection が空いているときだけその所有者になり、`Gtk/DecorationLayout` を `:` にする。
+WM はルートウィンドウのカーソルを矢印（カーソルの字体の left_ptr）にする。自分のカーソルを持たない窓（ポインタをつかんでいる間の
+Linux のアプリのメニューなど）では、X サーバーの既定の × ではなくこれが出る。
 GTK のヘッダーバーを使うアプリ（Remmina など）は自前の最小化・最大化・閉じるボタンを出さず、
 Win32 の枠のボタンだけが残る。既存の settings daemon がある場合は何もしない。他の設定は GTK の既定値。
 
@@ -114,7 +116,19 @@ WinEvent の処理より先に生成から破棄まで終わる短命ウィン�
 `bridge-wm/tray.py`（python3-gi の Gio と GdkPixbuf）は、セッションバスで `org.kde.StatusNotifierWatcher` を所有し、自身を
 host として登録する。登録された StatusNotifierItem ごとに番号を振り、アイコン・ツールチップ・メニューを IPC ディレクトリへ書く。
 すでに別の watcher（デスクトップ環境のトレイ）がいれば何もせずに終わる。D-Bus と IPC ディレクトリの変更（Gio の
-FileMonitor）でだけ起きる。XEmbed のトレイ（`_NET_SYSTEM_TRAY_S0`）は扱わない。
+FileMonitor）でだけ起きる。
+
+ほかに X のトレイ（`_NET_SYSTEM_TRAY_S0` の所有者）が無ければ、tray.py は自分が所有して XEmbed のトレイにもなる（段階 8）。
+`SYSTEM_TRAY_REQUEST_DOCK` で来たアイコンの窓を、自分の作った枠（override-redirect）に入れて `XEMBED_EMBEDDED_NOTIFY` を
+送る。枠は Composite で手動の redirect にするので画面に描かれず、入力の範囲（SHAPE の Input）を空にするのでポインタも
+受けない。アイコンの窓の Damage を受けたら GetImage で画像を読み、SNI と同じ番号・`tray-ID.argb` で通知領域に出す。
+32-bit（ARGB）の窓は乗算済みのアルファを戻し、24-bit の窓は枠の背景の色（Luna の通知領域の色、`0x1397ed`）の画素を
+透明にする。`_NET_SYSTEM_TRAY_VISUAL` で ARGB の visual を知らせるので、GTK 3 などは透明な背景で描く。
+`_XEMBED_INFO` の mapped が外れたら通知領域から消す。ツールチップは窓の `_NET_WM_NAME`（無ければ `WM_NAME`、クラス）。
+クリックは、そのときだけ枠をポインタの下に置いて入力の範囲を戻し、XTest で本物のボタンの押下と離しを入れて、範囲を空に戻す
+（GTK 3 は XInput 2 でポインタを受けるので、XSendEvent の合成の押下は届かない）。メニューはアプリ自身が出し、アイコンの窓の
+位置（ポインタの位置）に合わせて置く。別のトレイが選択を取ったら、アイコンの窓をルートへ返す（アプリは `MANAGER` を見て
+そちらに入り直す）。tray.py が終わるときもルートへ返し、異常終了でも save-set でルートへ戻る。
 
 - tray.py → proxy の `tray.tsv`: `ID TAB 状態 TAB ツールチップ`。状態は A（Active）か N（NeedsAttention）。Passive は載せない。
 - tray.py → proxy の `tray-ID.argb`: アイコン。`W4I1` 形式（WM のウィンドウアイコンと同じ）。大きさは proxy が `tray-size` に書く
@@ -132,7 +146,7 @@ XP の Explorer が受け取れる形式で届くのは Wine パッチ 0028 に�
 
 ## セッション
 
-ディスプレイマネージャが Xorg と認証を起動し、`session/supervisor.py` が WM → tray.py → 入力メソッド → proxy → XP explorer を起動する。WM 所有権取得に失敗したらセッションを中断する。トレイの存在を監視し、起動失敗・消失・proxy 終了時に専用 wineserver を終了して再試行する。120 秒以内に 3 回失敗すると native override と外部 shell フラグを解除し、独立した recovery prefix の Wine builtin ホームブラウザと復旧用 xterm を起動する。セッション終了時に子プロセス・専用 wineserver・IPC を掃除する。
+ディスプレイマネージャが Xorg と認証を起動し、`session/supervisor.py` が WM → tray.py → 入力メソッド → proxy → XP explorer を起動する。WM 所有権取得に失敗したらセッションを中断する。トレイの存在を監視し、起動失敗・消失・proxy 終了時に専用 wineserver を終了して再試行する。120 秒以内に 3 回失敗すると native override と外部 shell フラグを解除し、独立した recovery prefix の Wine builtin ホームブラウザと復旧用 xterm を起動する。セッション終了時に子プロセス・専用 wineserver・IPC を掃除する（子のグループにまとめて SIGTERM、3秒後に残りを SIGKILL）。supervisor は周期的に起きず、ルートの SubstructureNotify、子プロセスの pidfd、シグナルで待つ（起動中のタスクバーを待つ間だけ1秒ごと）。
 
 `session.json` の `input_method` が `fcitx5` なら、`XMODIFIERS=@im=fcitx`、`GTK_IM_MODULE`・`QT_IM_MODULE`・`SDL_IM_MODULE=fcitx` を
 Wine と Linux アプリの環境に入れ、fcitx5 を起動して見張る（120 秒に 3 回まで起動し直す）。ログイン側（im-config など）がすでに

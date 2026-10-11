@@ -70,6 +70,13 @@ class Manager:
         self.d.sync()
         if self.bad_access:
             raise SystemExit('Another WM already owns this X display')
+        # Windows without a cursor of their own, such as the menus of Linux
+        # applications while they hold the pointer, show the root's: an
+        # arrow, as window managers set, instead of the X server's cross.
+        font = self.d.open_font('cursor')
+        self.root.change_attributes(cursor=font.create_glyph_cursor(font, 68, 69, (0, 0, 0),
+                                                                    (0xffff, 0xffff, 0xffff)))
+        font.close()
         self.support = self.root.create_window(-1, -1, 1, 1, 0, X.CopyFromParent)
         self.setprop(self.root, '_NET_SUPPORTING_WM_CHECK', Xatom.WINDOW, [self.support.id])
         self.setprop(self.support, '_NET_SUPPORTING_WM_CHECK', Xatom.WINDOW, [self.support.id])
