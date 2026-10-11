@@ -199,7 +199,57 @@
 - 既存の試験と、実XPとの画面比較を通る。
 - 既存の 32bit prefix の更新手順を `docs/reproduce.md` に書く。
 
-## 段階 8: ログイン画面
+## 段階 8: 後回しの候補、Linux のトレイアイコン（XEmbed）、Qt の日本語入力
+
+目的: 段階 1〜7 と 2026-10-11 の作業で見つけて残した差と不足を片付ける。
+
+前提（2026-10-11 の状態）:
+- パッチは 58 本（`docs/patches.md`）。今のクリーンビルドは `.local/wine-stage10-install`。試験 VM は段階 7 の install に
+  このビルドの wineserver、win32u.so、conhost.exe を入れた `/work/.local/wine-stage7-install` と、`prefix-final64` で動く
+  （VM のディスクは空きが約 8GB で、install 全体を入れ替えてよい）。chroot の試験用の prefix は `prefix-wmopt-w64` と
+  `prefix-wmopt-classic-w64` だけ。番号の古い試験の補助（`.local/s7-recovery.sh` など）は消した install を指しているので、
+  使うときは今の install に直す。
+- 2026-10-11 の内容は `docs/status.md` の最後の4節（Linux アプリのスタートメニュー、Windows キー、cmd の字体など）。
+
+やること（1つずつ、原因を調べてから直す。直さないと決めたものは理由を残す）:
+
+1. Linux のトレイアイコン（XEmbed）
+   - 今は StatusNotifierItem だけを XP の通知領域に出す（`bridge-wm/tray.py`、`docs/architecture.md`）。
+     `_NET_SYSTEM_TRAY_S0` の XEmbed のトレイだけを使う古いアプリのアイコンは出ない。
+   - tray.py（または WM）が、ほかにトレイが無いときだけ `_NET_SYSTEM_TRAY_S0` を所有し、XEmbed のアイコンの窓を
+     受け入れ、その画像を SNI と同じ経路（`tray-ID.argb`）で XP の通知領域に出す。クリック（左・右・中）はアイコンの窓に
+     送り返す。アイコンの窓は画面に出さない。
+   - 試験 VM に XEmbed だけを使うアプリを入れて確かめる（例: `stalonetray` の自前のアイコンや、Python で書いた XEmbed の
+     最小のアイコン。外部のバイナリを入れる場合は .deb をホストで取得して入れる）。`tests/tray_host.py` に XEmbed の場合を足す。
+2. Qt のアプリの日本語入力
+   - 試験 VM に `fcitx5-frontend-qt5` と `fcitx5-frontend-qt6` を入れ（.deb はホストで取得）、Qt のアプリ（入っている
+     `fcitx5-config-qt` の入力欄、Qt の小さなエディタなど）で Mozc の変換・確定ができることを確かめる。
+   - session は `QT_IM_MODULE=fcitx` を設定する。フロントエンドが無いときの挙動（入力できない、警告）を確かめ、
+     `docs/reproduce.md` の導入の一覧と、必要なら supervisor の扱い（入っていなければログに書く）を直す。
+3. ロードマップの「後回しの候補」（下の節。番号は 10.0 版なので `docs/patches.md` の対応表で今の番号に読み替える）
+   - Alt+Tab の切り替えウィンドウで、フォルダのアイコン（32×32）の半透明部分が実XPと各色1違う（146画素）。
+   - Alt と Shift を先に押してから Tab を押した Alt+Shift+Tab が、直前のウィンドウを選ぶ。実XPと比べる。
+   - 非クライアント領域の試験の既知の失敗（nonclient-caption の非アクティブ時の6件、nonclient-theme の
+     「caption button pixels differ: active=1」）。
+   - 待機中に wineserver が毎秒60〜85回起きる。どのプロセスかを特定する（WM の最適化の段階の「待機中に定期的に起きない」に
+     合わせて、直せるものは直す）。
+   - MENUEX のリソースの区切りの状態（実XPは MFS_GRAYED、Wine は0）。
+   - DrawText が末尾の `&` を描く（XP は描かない）。DT_EXPANDTABS のタブの後の下線の位置がずれる。
+   - 主ツールバーの TB_GETBUTTONSIZE（実XP 76×38、Wine 84×38。ボタンの位置は同じ）。
+   - 試験 VM の install を入れ替えた2回目に registry profile が入れ直されず、デスクトップの名前が英語になった（段階 5）。
+     再現の手順を探し、`prefix/stage.py` の判定を確かめる。
+   - 対象外のまま残すもの（理由は `docs/status.md`）: WinHelp のポップアップの中身、フォルダ オプションの「オフライン ファイル」
+     タブ（cscui.dll）、「新規作成」のサブメニューのファイルの種類（利用者の判断）、cmd のボタンのロゴ（利用者の判断）。
+     それぞれ直す方法があるかだけ、日本語で短くまとめる。
+
+完了条件:
+- XEmbed だけを使うアプリのアイコンが XP の通知領域に出て、左・右クリックが届く。
+- Qt のアプリで Mozc の日本語入力ができる（必要なパッケージは文書に書く）。
+- 「後回しの候補」の各項目が、直したか、直さない理由と測った数値が `docs/status.md` に残っている。
+- 既存の試験（chroot の WM・枠・ブリッジ・トレイの試験、VM の非クライアント領域の試験）と、段階 7 と同じ9場面の比較が通る
+  （差があれば理由を書く）。パッチを変えたら、新しいソースとビルドディレクトリで configure からビルドする。
+
+## 段階 9: ログイン画面
 
 目的: Linux のログイン画面（LightDM）を XP のようこそ画面の見た目にする。
 
@@ -222,7 +272,7 @@
 - 主要な画面の寸法と配置が実XPと揃っている（差があれば記録する）。
 - 画像が抽出されていない環境では、通常の greeter のまま使える。
 
-## 段階 9: スケーリング（まず X、その後 compositor を検討）
+## 段階 10: スケーリング（まず X、その後 compositor を検討）
 
 ### 9a. X11 での DPI 拡大
 - XP 本来の方法（LogPixels）で 120（125%）、144（150%）などに対応する。今の `prefix/display.py` は 96・144・192 だけ。
@@ -236,6 +286,8 @@
 - まず方式の比較と試作の見積もりを日本語でまとめ、利用者の判断を仰いでから実装する。
 
 ## 後回しの候補
+
+（2026-10-11、段階 8 で扱う。）
 
 （この節のパッチ番号は 10.0 版のもの。今の番号は `docs/patches.md` の対応表で読み替える。）
 
