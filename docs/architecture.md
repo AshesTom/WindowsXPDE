@@ -238,6 +238,15 @@ root の背景に残してから `start_session_sync` する。終了オプシ�
 ビットマップ・文字列・ダイアログのテンプレートを取り出す。DIB（RLE8・24-bit・32-bit のアルファ）は自前で cairo の画像にする。
 文字は GDI の DrawText の置き方（`Text`）: 全角と半角の連なりごとに Pango で並べ、OS/2 の winAscent・winDescent で行を置き、
 太字・斜体・下線を GDI と同じ方法で作る。fontconfig の設定は抽出した字体を加え、gasp に合わせてなじませを止める。
+DPI（段階 10）は `greeter.json` の `dpi`（XP と同じくマシン全体で1つ）で、配置・字体・画像を XP と同じ規則で拡大する
+（`Screen(dpi=)`）。ログオン・ログオフの画面は supervisor が prefix の LogPixels を `--dpi` で渡す。
+
+## DPI（段階 10）
+
+DPI は XP と同じく prefix の `HKCU\Control Panel\Desktop\LogPixels` で決める（`prefix/display.py --dpi`）。外部シェルの
+Wine のプロセスは system DPI aware になり（パッチ 0044）、その DPI で自分で描く。supervisor は起動時に同じ値を読み
+（`session/dpi.py`）、root の `RESOURCE_MANAGER` に `Xft.dpi`、セッションの fontconfig に dpi、環境に `XCURSOR_SIZE` と
+（192 以上で）`GDK_SCALE`・`GDK_DPI_SCALE` を入れる。カーソルテーマは 32 と 64 の画像を持ち、X が大きさで選ぶ。
 
 `greeter/xp-splash.py` は XP シェルのセッションの中で動く（supervisor が起動する）。python-xlib の override-redirect の窓に
 同じ描画の画像を貼る。`logon` はタスクバーが出るまで「個人設定を適用しています...」、`logoff` は stdin の語（`saving`、

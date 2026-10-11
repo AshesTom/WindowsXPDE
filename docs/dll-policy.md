@@ -1045,3 +1045,54 @@ greeter も同じカーソルになる（XP の上ではすべての窓が同じ
 付けた（黒い端末の上でも見える）。テーマは `greeter/install.sh` が `/usr/share/icons/win4wine-xp` に入れ（libXcursor が探す場所）、
 greeter と XP シェルのセッションが `XCURSOR_THEME` で使う。WM のルートのカーソルはカーソルの字体からなので、セッションの
 最初に xsetroot でテーマの矢印にする。
+
+## DPI の拡大（2026-10-12、段階 10）
+
+**判断: DPI は XP と同じく LogPixels で決め、外部シェルのプロセスは system DPI aware にする（0044）。** XP には DPI 仮想化が無く、
+どのアプリも LogPixels の DPI で自分で描く。Wine は DPI 対応を宣言しない（マニフェストの無い）アプリを 96 DPI で描いて画像のまま
+拡大するので、XP のシェルとアプリがぼけていた。opt-in のプロセスは AppCompatFlags の指定が無ければ system aware になる
+（XP にはマニフェストの dpiAware が無いので、マニフェストでは変えない）。レジストリの AppCompatFlags の既定値でも同じことが
+できるが、prefix の中の opt-in でないプロセスにも効くので、win32u のパッチにした。
+**判断: アイコンとカーソルの寸法は実XPで測った規則にする（0044）。** 参照用 XP を 96、108、120、132、144、168、192、216 DPI に
+して GetSystemMetrics を測った（`tests/dpi-metrics.c`）。SM_CXICON はどの DPI でも 32（シェルの画像リストも 32 と 16）。
+SM_CXSMICON は「メニューのボタン幅（iMenuWidth）−2 を偶数に切り下げた値」で、DPI を何度も変えるとメニュー幅とともに 1px ずつ
+変わる（XP は DPI を変えるたびに WindowMetrics を新旧の DPI の比で掛け直して保存し、丸めがたまる）。SM_CXCURSOR は 144 DPI
+まで 32、168 DPI から 64。Wine は DPI に比例させていた（120 DPI で SM_CXICON 40 など）。
+**判断: Wine のメトリクスとフォントの拡大は Wine のまま（96 DPI の値を MulDiv で拡大）にする。** 実XPを 96 DPI でテーマを適用して
+から画面のプロパティで 144 DPI にした状態（利用者が DPI を変える普通の手順）と、Wine の値は一致した（caption 38、メニュー幅 27、
+スクロールバー 26、枠 2、フォント -20 など）。XP でその後にテーマを選び直すと枠は 1 に戻るが、それは選び直したときだけの状態として
+扱う。DPI を何度も変えた XP の値（丸めがたまる）には合わせない。
+**判断: 文字の送り幅は、ヒンティングで変わらないものを1回だけ丸める（0036）。** MS UI Gothic の 15px（120 DPI のメニューの字体）
+の A・E・V・Z は設計値 9.49・8.50 で、XP は 9・8、Wine（FreeType）は 26.6 固定小数点に丸めてから画素に丸めて 10・9 にしていた。
+メニューバーの「(E)」「(V)」などで項目が 1px ずつずれていった。ヒンティングで送り幅が変わる字体（hdmx を持つ Tahoma など）は
+FreeType の値のまま。12〜24px の通常体と太字で XP と全て一致した（`tests/char-widths-dpi.c`）。
+**判断: Start ボタンの画像は XP の Button と同じく DPI で拡大する（0046）。** XP の explorer は 25×20 のビットマップの画像リストを
+そのまま渡し、XP の comctl32 の Button が ILD_DPISCALE で描く（120 DPI で 31×25、144 DPI で 37×30、切り捨て）。Wine の Start ボタンは
+画像リストの大きさのまま描き、幅が XP より 6px 狭かった。描画は XP の comctl32 の ImageList_DrawIndirect（ILD_DPISCALE）に任せる。
+**判断: caption のボタン、題名の字体と影は XP の規則にする（0049）。** XP の Luna の caption ボタンは SM_CYSIZE−4 の正方形（96 DPI の
+21、120 DPI の 27、144 DPI の 34）で、間隔と枠からの余白は DPI によらず 2px。ボタンの記号は描く大きさで画像を選ぶ
+（ImageSelectType=size、26px までは 13px の記号、27px からは 19px）ので、ボタンが 1px 小さいと記号が細くなる。題名はテーマの 10pt を
+その場で換算すると 120 DPI で 17px になるが、XP は SPI の caption の字体（16px）で描く。影の矩形を左と上だけ動かしていたので、
+上下中央揃えで影の縦のずれが半分になり、120 DPI の caption では影が真横に出ていた（96 DPI は高さの偶奇で偶然 1px だった）。
+**判断: Linux のアプリには同じ DPI を `Xft.dpi` と fontconfig で渡し、GTK は 192 DPI 以上だけ整数倍にする（`session/dpi.py`）。**
+XP は文字と寸法を拡大し、アイコンは 32 のままにする。GTK 3 と Qt 5 は `Xft.dpi` で文字だけを拡大するので、XP の拡大のしかたに近い。
+GTK 3 の部品は整数倍しかできないので、2 倍以上のときだけ `GDK_SCALE` と `GDK_DPI_SCALE` で部品も拡大する。Qt 6 と Chromium は
+`Xft.dpi` から自分で全体を拡大する（それぞれの仕様のまま）。カーソルの大きさ（`XCURSOR_SIZE`）は XP の SM_CXCURSOR と同じ規則。
+**判断: 64 のカーソルは 32 の各画素を 2 倍にし、影は 32 と同じにする（`greeter/cursors.py`）。** 実XPの 192 DPI の矢印は 32 の画像の
+最近傍の 2 倍で、影は 32 と同じ位置（3px 右、1px 下）とぼかし（[1, 2, 3, 2, 1]）、濃さ 0.318 で一致した（最大誤差 0.002）。
+カーソルテーマに 32 と 64 の両方の画像を入れ、X が `XCURSOR_SIZE` で選ぶ。
+**判断: ようこそ画面とログオン・ログオフの画面は DPI で拡大し、XP で拡大しない部品はそのままにする（`greeter/welcome.py`）。** 実XPの
+144 DPI では、帯の高さ、パネルの幅、ユーザーの欄、画像（ユーザーの画像と枠、電源ボタン、左上の光）と文字が DPI で拡大され、
+Windows のロゴ、案内文の折り返しの幅（344px）、吹き出し（文字と大きさ）は 96 DPI のまま。右のパネルの境目は「画面の幅の半分−2」
+から、パネルが広がった分の半分だけ左にずれる。ユーザーの画像の枠の位置（7px）と文字の内側の余白（2px）も拡大しない。日本語の
+折り返しは文字の種類（漢字・ひらがな・カタカナ）が変わる所だけで行う（XP は「...クリック」「してください。」で折り返す）。
+ようこそ画面の DPI はマシン全体の設定として `/etc/win4wine/greeter.json` の `dpi` で決め、ログオン・ログオフの画面は supervisor が
+prefix の DPI を渡す。
+**判断: 次の差は残す。** いずれも 96 DPI から同じ差がある（DPI に固有ではない）か、XP の挙動が状態によって変わるもの。
+- 合成の斜体（Start ボタンの「スタート」など）は、GDI の白黒の描画で 96 DPI から XP と字形が違う（`tests/text-bits-dpi.c`）。
+- SM_CXSIZE（XP は Luna で caption の高さと同じ、Wine は 18 を拡大）、メニューの高さ（XP 19、Wine 18）、アイコンの間隔（XP 79、
+  Wine 78）、SM_CYMAXIMIZED、DEFAULT_GUI_FONT の名前（XP は MS UI Gothic、Wine は MS Shell Dlg）。ボタンの配置は 0049 が
+  決めるので見た目には出ない。
+- XP は 120 DPI 以上でラスターフォント（SYSTEM_FONT など）を 8514 系に替えるが、XP の .fon は抽出していないので Wine の VGA 系の
+  ままになる。システムフォントを使う古い形式のダイアログでだけ見える。
+- ようこそ画面の 144 DPI で、名前と画像の枠の端、案内文が 1px、パスワード欄の幅、吹き出しのエラーのアイコン（XP は約 32px）。

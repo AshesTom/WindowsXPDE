@@ -28,6 +28,7 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `--greeter` | ログイン画面を XP のようこそ画面にする（LightDM をディスプレイマネージャにする） |
 | `--no-greeter` | 今のログイン画面のまま（既定）。XP のカーソルだけ入れる |
 | `--theme luna\|classic` | 見た目。`luna`（既定、XP 形式のスタートメニュー）か `classic`（クラシック形式） |
+| `--dpi N` | 画面の DPI（XP の「DPI 設定」）。96（通常）、120（大きいサイズ）か 19〜480 の任意の値。XP のシェル、セッションの Linux のアプリ、ようこそ画面に効く |
 | `--wine-install DIR` | 別の Debian 13 マシンでビルドした Wine（その `.local/wine-install` を写したもの）を使い、ここではビルドしない |
 | `--jobs N` | Wine のビルドの並列数（既定は CPU の数） |
 
@@ -76,6 +77,8 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `shutdown_command`, `reboot_command` | `systemctl poweroff` / `reboot` | 終了オプションで実行するコマンド |
 
 見た目を後から変えるときは、セッションを止めてから `scripts/setup.sh --media ISO --theme classic`（または `luna`）。
+DPI（文字や画面の部品の大きさ）は `scripts/setup.sh --media ISO --dpi 120` で変え、ログインし直す。XP と同じく、文字と寸法が
+大きくなり、アイコンは 32×32 のまま。Linux のアプリも同じ DPI で文字が大きくなる（GTK は 192 以上で部品も 2 倍）。
 
 ## うまく動かないとき
 

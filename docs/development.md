@@ -75,9 +75,9 @@ python3 wine/patch-state.py SOURCE wine/patches --apply   # 未改変の Wine 11
 | `tests/tray_host.py` | トレイの仲介（StatusNotifierItem と XEmbed） |
 | `tests/linux_apps.py` | Linux アプリのスタートメニュー |
 | `tests/recovery_integration.py CONFIG.json` | シェルが落ちたときの切り替え |
-| `tests/greeter_layout.py ASSETS`, `tests/cursor_theme.py ASSETS` | ようこそ画面の配置、カーソル |
-| `tests/patch_state.py`, `tests/font_*.py`, `tests/workarea.py` | 単体の試験 |
-| `tests/*.c` | 公開 API のプローブ。同じものを Wine と実 XP で動かして数値を比べる |
+| `tests/greeter_layout.py ASSETS`, `tests/cursor_theme.py ASSETS` | ようこそ画面の配置（96・120・144 DPI）、カーソル（32 と 64） |
+| `tests/patch_state.py`, `tests/font_*.py`, `tests/workarea.py`, `tests/dpi_settings.py` | 単体の試験 |
+| `tests/*.c` | 公開 API のプローブ。同じものを Wine と実 XP で動かして数値を比べる（DPI は `dpi-metrics.c`、`char-widths-dpi.c`、`caption-glyph-dpi.c`、`text-bits-dpi.c`） |
 
 ## 手作業での導入
 
@@ -99,7 +99,10 @@ python3 wine/patch-state.py SOURCE wine/patches --apply   # 未改変の Wine 11
    XP の DLL の配置を行う。セッションの起動時にも自動で走る。
 4. `bridge-wm/build.sh` で bridge を作り直し、セッションを起動し直す。
 
-見た目と DPI は `prefix/display.py --theme luna|classic --menu xp|classic --dpi 96|144|192`（セッションを止めてから）。
+見た目と DPI は `prefix/display.py --theme luna|classic --menu xp|classic --dpi N`（セッションを止めてから）。N は XP と同じく
+96（通常）、120（大きいサイズ）か、カスタムの 19〜480。セッションは同じ DPI を Linux のアプリにも渡す（`Xft.dpi`、fontconfig、
+カーソルの大きさ、192 以上で GTK の `GDK_SCALE`。`session/dpi.py`）。ようこそ画面の DPI は `/etc/win4wine/greeter.json` の
+`"dpi"` で決める（XP でもマシン全体の設定）。
 
 ## 既存の XP のハイブから取り込む
 
