@@ -192,6 +192,8 @@ static LRESULT CALLBACK owner_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         DeleteObject(info.hbmMask);
         return TRUE;
     }
+    if (msg == WM_APP + 9)
+        return SetClassLongPtrW((HWND)lp, GCLP_HICON, (LONG_PTR)make_icon(202)) != 0;
     if (msg == WM_APP + 5) ExitProcess(0); /* server must free remaining owner snapshots */
     if (msg == WM_APP + 3)
     {
@@ -211,7 +213,10 @@ int wmain(int argc, WCHAR **argv)
     DWORD expected, start;
     unsigned int i;
     BOOL enabled = GetEnvironmentVariableW(L"WIN4WINE_EXTERNAL_SHELL", NULL, 0) != 0;
-    if (argc > 1)
+    /* --owner EXE: the owner is another build of this test, e.g. the x86_64
+     * one for a 32-bit reader (WoW64, as the XP taskbar reads 64-bit windows). */
+    const WCHAR *owner = argc > 2 && !wcscmp(argv[1], L"--owner") ? argv[2] : NULL;
+    if (argc > 1 && !owner)
     {
         WNDCLASSW cls = {0};
         MSG message;
@@ -221,6 +226,22 @@ int wmain(int argc, WCHAR **argv)
         for (i = 0; i < 80; ++i) icons[i] = make_icon(i);
         hwnd = CreateWindowW(cls.lpszClassName, argv[1], WS_OVERLAPPEDWINDOW,
                              0, 0, 100, 100, NULL, NULL, NULL, NULL);
+        {
+            /* Windows of classes with icons, as most applications have,
+             * without WM_SETICON: one with both icons, one with a large icon only. */
+            WNDCLASSEXW ex = {0};
+            ex.cbSize = sizeof(ex);
+            ex.lpfnWndProc = DefWindowProcW;
+            ex.lpszClassName = L"ForeignClassIcons";
+            ex.hIcon = make_icon(200);
+            ex.hIconSm = make_icon(201);
+            RegisterClassExW(&ex);
+            CreateWindowW(ex.lpszClassName, argv[1], WS_OVERLAPPEDWINDOW, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
+            ex.lpszClassName = L"ForeignClassIcon";
+            ex.hIconSm = NULL;
+            RegisterClassExW(&ex);
+            CreateWindowW(ex.lpszClassName, argv[1], WS_OVERLAPPEDWINDOW, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
+        }
         SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)icons[0]);
         while (GetMessageW(&message, NULL, 0, 0) > 0) DispatchMessageW(&message);
         for (i = 0; i < 80; ++i) if (icons[i] && i != 77) DestroyIcon(icons[i]);
@@ -228,7 +249,8 @@ int wmain(int argc, WCHAR **argv)
     }
     startup.cb = sizeof(startup);
     swprintf(title, 64, L"ForeignIcon-%lu", GetCurrentProcessId());
-    GetModuleFileNameW(NULL, exe, MAX_PATH);
+    if (owner) lstrcpynW(exe, owner, MAX_PATH);
+    else GetModuleFileNameW(NULL, exe, MAX_PATH);
     swprintf(command, MAX_PATH + 64, L"\"%ls\" %ls", exe, title);
     check(CreateProcessW(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL, &startup, &process), "create owner process");
     if (failures) return 1;
@@ -238,6 +260,28 @@ int wmain(int argc, WCHAR **argv)
     check(hwnd != NULL, "owner ready");
     if (!hwnd) { TerminateProcess(process.hProcess, 1); return 1; }
     borrowed = (HICON)SendMessageW(hwnd, WM_APP + 1, 0, 0);
+    {
+        /* The XP taskbar asks GetClassLongPtr for windows without WM_SETICON. */
+        HWND both = FindWindowW(L"ForeignClassIcons", title), large = FindWindowW(L"ForeignClassIcon", title);
+        HICON big = (HICON)GetClassLongPtrW(both, GCLP_HICON), small = (HICON)GetClassLongPtrW(both, GCLP_HICONSM);
+        HICON derived = (HICON)GetClassLongPtrW(large, GCLP_HICONSM);
+        check(both && large, "class icon windows ready");
+        if (!enabled) check(!big && !small && !derived, "normal Wine keeps class icons private");
+        else
+        {
+            HICON a = make_icon(200), b = make_icon(201), c = make_icon(202);
+            check(big && draw_hash(big) == draw_hash(a), "foreign class icon matches owner pixels");
+            check(small && draw_hash(small) == draw_hash(b), "foreign small class icon matches owner pixels");
+            check(derived && inspect_icon(derived), "derived small class icon is readable");
+            check(!SetClassLongPtrW(both, GCLP_HICON, (LONG_PTR)a), "foreign class icon cannot be changed");
+            check(SendMessageW(hwnd, WM_APP + 9, 0, (LPARAM)both), "owner changes its class icon");
+            big = (HICON)GetClassLongPtrW(both, GCLP_HICON);
+            check(big && draw_hash(big) == draw_hash(c), "changed class icon reaches other processes");
+            DestroyIcon(a);
+            DestroyIcon(b);
+            DestroyIcon(c);
+        }
+    }
     if (!enabled)
     {
         check(!SendMessageW(hwnd, WM_GETICON, ICON_SMALL, 0), "normal Wine rejects cross-process WM_GETICON");

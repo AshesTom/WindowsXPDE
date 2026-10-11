@@ -883,3 +883,32 @@ prefix では Wine の起動処理が自分の wineboot も走らせ、試験 VM
 comctl32 を書いた。
 **判断: XP の DLL を環境変数で native にするときは `n,b` にする。** WoW64 では 32-bit のプログラムが 64-bit の `start.exe` を経て
 起動し直され、`=n` だけだと `start.exe` が 64-bit の native の shell32 を探して起動に失敗する（`prefix/display.py`、文書の試験の例）。
+
+## Linux アプリのスタートメニューと 64-bit のアプリのアイコン（2026-10-11）
+
+**判断: Linux のアプリは desktop entry から、XP のスタートメニューの通常のショートカットにする（`session/linux_apps.py`）。**
+XP の Explorer が読むのはファイルシステムの Programs フォルダの .lnk なので、そこに置けば XP の並べ替え、「最近使ったプログラム」、
+ドラッグなどがそのまま効く。置き場所は共通の Programs（Linux のアプリはシステム全体のもの）。分類のフォルダを XP の名前で作って
+Windows のアプリと混ぜ、名前に ` (Linux)` を付ける（利用者の判断。ほかの候補は「Linux」フォルダの下に分類、「Linux」フォルダに平らに）。
+**判断: 起動は GUI のサブシステムの自作の仲介（`linux-launch.exe`）にする。** ショートカットの先を `start.exe /unix` にすると、
+コンソールのプログラムなのでコンソールの窓が開く。仲介は `CreateProcessW` で `/usr/bin/env` を起動する（調査 10 の argv[0] の
+理由で env を挟む）。`WINEDEBUG` だけは外す。`WINEPREFIX`、`WIN4WINE_EXTERNAL_SHELL`、入力メソッドの変数は残し、Linux の
+端末から起動した Windows のアプリも XP シェルから起動したものと同じ環境になる。
+**判断: ショートカットは Wine の shell32 の `IShellLinkW` で作り、`winemenubuilder` を止めて保存する。** .lnk を自前で書くより、
+Windows の公開 API で作ったものを XP の shell32 が読む形にする。Wine の shell32 は Start Menu の .lnk を保存すると
+winemenubuilder で Linux の desktop entry を作るので、そのままでは自分の作った項目を読み返す。`applications/wine` も読まない
+（Windows のアプリのインストーラーが作るショートカットの分。試験 VM の Notepad++ で確かめた）。
+**判断: 作ったものだけを記録して片付ける。** 同じ名前の利用者のショートカットや、Windows のアプリのフォルダの中身は消さない。
+**判断: セッションの `PATH` の先頭にセッションの Wine を置く。** 試験 VM では Wine を `/work/.local/...` に置き、`wine` が
+`PATH` に無かった。別の Wine（ディストリビューションのもの）が `PATH` にあると、それが XP の prefix を自分の版に更新してしまう。
+**判断: 外部シェルのとき、別のプロセスのウィンドウのクラスのアイコンを `GetClassLongPtr` で返す（0022 に追加）。** XP のタスクバーは
+ボタンのアイコンを、相手のプロセスの PEB をたどって得た実行ファイルの名前から `PrivateExtractIconsW` で取り出し、なければ
+`WM_GETICON`（ICON_SMALL2、ICON_SMALL、ICON_BIG、SendMessageCallback）と `GetClassLongW(GCL_HICONSM、GCL_HICON)` を使う
+（XP Explorer の公開 API の呼び出しの記録、`+relay` の RelayInclude で確かめた。XP の DLL の中は見ていない）。WoW64 の 32-bit の
+XP Explorer は 64-bit のプロセスの PEB を読めず（`NtReadVirtualMemory` が `STATUS_ACCESS_DENIED`）、Wine は別のプロセスのクラスの
+アイコンを返さないので、64-bit のアプリ（Wine の notepad、Notepad++ の x64 版など）のボタンは既定のアイコンになった（段階 7 からの
+後退。段階 6 までは 64-bit のアプリが動かなかった）。Windows と同じくクラスのアイコンを返せば、PEB を読めない場合も正しいアイコンになる。
+owner は自分のクラスのアイコンを、ウィンドウを作るときと `SetClassLongPtr` で変えるときに server に渡し（既存の `set_class_info`
+の要求。プロトコルは変えない）、server は共有メモリではない側に持つ。アイコンの画素は 0022 の仕組みで読む。opt-in なしでは
+渡さないので、server も今までどおり `ERROR_INVALID_HANDLE` を返す。conhost（cmd の窓）はクラスのアイコンに Wine のロゴ
+（`IDI_WINLOGO`）を使うので、cmd のボタンは Wine のロゴのまま（Wine の conhost の仕様。conhost.exe にはアイコンの資源も無い）。

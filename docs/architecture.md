@@ -140,6 +140,10 @@ Wine と Linux アプリの環境に入れ、fcitx5 を起動して見張る（1
 `null` で無効）は、prefix の `windows/Fonts` を加え、sans-serif・Sans・system-ui にその字体を優先する fontconfig の設定を
 状態ディレクトリに作り、`FONTCONFIG_FILE` で渡す。システムと利用者の fontconfig の設定は include で引き続き効く。
 
+`session.json` の `linux_menu`（既定 `true`）が有効なら、XP Explorer を起動する前に `session/linux_apps.py` で Linux の
+アプリをスタートメニューへ入れ、その後は `--watch` で見張る（下の「Linux アプリのスタートメニュー」）。Wine と Linux アプリの
+`PATH` の先頭にはセッションの Wine の `bin` を置き、端末で打つ `wine` がセッションと同じ Wine と prefix を使うようにする。
+
 Win7 対応時も WM と IPC を維持し、DLL profile、shell readiness class、必要な Wine shim を変更する方針。
 
 WM は native X クライアントのフォーカス・サイズ変更に合わせて、表示中の子孫へ Expose を送る。
@@ -150,3 +154,41 @@ synthetic ConfigureNotify も返す。
 XP のタスクボタンが他プロセスの最小化可否を調べるため、Wine パッチ 0022 は外部シェル opt-in 時に
 標準システムメニューのプロセス内コピーを返す。アプリ独自の変更は同期しない限定 shim。
 0032 は名前付き child ReBar の未指定 alignment を CCS_TOP に正規化し、フォルダの初期ずれを防ぐ。
+
+## Linux アプリのスタートメニュー（2026-10-11）
+
+`session/linux_apps.py PREFIX --wine WINE [--watch]` は、XDG のデータディレクトリ（`$XDG_DATA_HOME`、`$XDG_DATA_DIRS`）の
+`applications` にある desktop entry（freedesktop.org の Desktop Entry Specification）を読み、表示するアプリごとに prefix の共通の
+Programs（`C:\ProgramData\Microsoft\Windows\Start Menu\Programs`）にショートカットを1つ置く。
+
+- 表示するもの: `Type=Application` で、`NoDisplay`・`Hidden` が真でなく、`OnlyShowIn`・`NotShowIn` が今のデスクトップ
+  （`XDG_CURRENT_DESKTOP`。XP シェルのセッションでは空）に合い、`TryExec` と Exec のプログラムが見つかるもの。同じ desktop file ID
+  では先のディレクトリ（利用者の側）が勝つ。Wine 自身が Windows のアプリのために作る `applications/wine` 以下は読まない。
+- 名前は `Name` のロケールの値（`LC_ALL`・`LC_MESSAGES`・`LANG`）に ` (Linux)` を付ける（利用者の判断）。同じフォルダで重なると
+  ` (Linux 2)` …。説明（スタートメニューのツールチップ）は `Comment`、なければ `GenericName`。
+- フォルダは `Categories` の主な分類から、XP にあるものはその名前にする（日本語のロケールでは日本語）。Windows のアプリの
+  フォルダと同じ名前なら混ざる（利用者の判断）。
+
+  | 分類 | フォルダ |
+  |---|---|
+  | TerminalEmulator、Utility | アクセサリ |
+  | AudioVideo、Audio、Video | アクセサリ\エンターテイメント |
+  | System | アクセサリ\システム ツール |
+  | Network | インターネット |
+  | Game | ゲーム |
+  | Graphics、Office、Development、Education、Science、Settings | グラフィックス、オフィス、開発、教育、科学、設定 |
+  | なし | すべてのプログラムの直下 |
+
+- 起動: ショートカットの先は `C:\xp\linux-apps\linux-launch.exe`（`session/linux-launch.c`、GUI のサブシステムなのでコンソールが
+  開かない）。引数は Exec からファイルと URL のフィールドコードを除き、`%c`・`%k`・`%i` を展開した Windows の形のコマンドライン。
+  `Terminal=true` は `x-terminal-emulator -e`（なければ `xterm -e`）で包む。`Path` は作業ディレクトリ（`Z:` の形）。
+  linux-launch.exe は `CreateProcessW` で `/usr/bin/env -u WINEDEBUG PROGRAM ...` を起動する（Wine は Unix の実行ファイルを
+  そのまま起動し、Windows の形の argv[0] は env が受け流す）。セッションのデバッグの設定は Linux のアプリに渡さない。
+- アイコン: `Icon` をアイコンテーマ（`~/.config/gtk-3.0/settings.ini` のテーマとその継承、hicolor、`/usr/share/pixmaps`）から探し、
+  GdkPixbuf で 16・32・48 の 32-bit の .ico（AND マスク付き）にして `C:\xp\linux-apps\icons` に置く。
+- ショートカットは `session/linux-links.c`（`IShellLinkW`、`IPersistFile`）を Wine で1回起動して書く。そのとき
+  `winemenubuilder.exe=d` にする（Wine の shell32 はショートカットを保存すると Linux のメニューの項目を作り、それをまた読むことになる）。
+- 作ったショートカットと、作るために足したフォルダは `C:\xp\linux-apps\state.json` に記録する。変わらないものは書き直さず、
+  消えたアプリのショートカットと、空になった自分のフォルダだけを消す。利用者や Windows のアプリのファイルには触れない。
+- `--watch`: `applications` の各ディレクトリ（まだ無いものはその最も近い親）を inotify で見張り、変更が2秒止んでから同期する。
+  パッケージの導入・削除でスタートメニューが追従する。XP Explorer は開いている間もフォルダの変更を読み直す。

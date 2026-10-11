@@ -568,3 +568,42 @@ WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge64/notify-icon-test.exe
 
 試験 VM では `.local/vm-stage7-install.sh` が install と更新したファイルを ext4 のイメージで写す（段階 6 の install は
 `wine-final-install`、移す前の prefix は `prefix-final` のまま残る）。
+
+## Linux アプリのスタートメニュー（2026-10-11）
+
+セッションは XP Explorer を起動する前に、Linux のアプリ（`/usr/share/applications` などの desktop entry）を XP のスタートメニューの
+「すべてのプログラム」に入れ、その後もアプリの導入・削除に追従する（`session/linux_apps.py`、仕組みは `docs/architecture.md`）。
+名前は「Mousepad (Linux)」のように ` (Linux)` が付き、「アクセサリ」「インターネット」などの分類のフォルダに入る。
+
+既存の環境の更新:
+
+1. Wine を作り直す（0022 が変わった。wineserver と win32u が変わるので、新しいソースとビルドディレクトリで configure から
+   `wine/build.sh` を実行し、install をまとめて入れ替える。prefix はそのまま使える）。
+2. `./scripts/debian.sh run bash -c 'cd /work && bridge-wm/build.sh'` で `.local/bridge/linux-launch.exe` と `linux-links.exe` を作る。
+3. セッションを起動し直す。最初の起動でショートカットとアイコンができる（`C:\xp\linux-apps`、記録は `state.json`、ログは
+   `~/.local/state/win4wine/linux-apps.log`）。
+
+`session.json` の `"linux_menu": false` で無効になる（作ったショートカットは残る）。片付けるときはセッションを止めてから:
+
+```sh
+python3 session/linux_apps.py /path/to/prefix --wine /path/to/wine --remove
+```
+
+作ったショートカットと、作るために足したフォルダ（空になったもの）だけを消す。利用者のショートカットや Windows のアプリのものは残る。
+
+セッションの `PATH` の先頭にはセッションの Wine の `bin` が入る。LXTerminal などの端末で `wine setup.exe` と打つと、XP シェルと
+同じ Wine・prefix・環境（`WIN4WINE_EXTERNAL_SHELL`、入力メソッド）で動く。Windows のアプリのインストーラーが作るショートカットは
+XP のスタートメニューに直接入る（Wine が `~/.local/share/applications/wine` に作る Linux 側の項目は読まない）。
+
+試験:
+
+```sh
+python3 tests/linux_apps.py                                   # Wine なし（GdkPixbuf があればアイコンも）
+./scripts/debian.sh run bash -c 'cd /work && python3 tests/linux_apps.py --wine .local/wine-stage8-install/bin/wine'
+```
+
+`tests/foreign-icons.c` は `--owner EXE` で owner を別の架構のビルドにできる。WoW64 の 4 通り（32/64-bit の読む側と owner）を試す:
+
+```sh
+WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/foreign-icons-test.exe --owner 'Z:\path\to\bridge64\foreign-icons-test.exe'
+```

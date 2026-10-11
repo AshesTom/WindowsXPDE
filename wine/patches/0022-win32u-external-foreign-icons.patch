@@ -5,7 +5,13 @@ Purpose: show the right icons for other processes' windows on the XP
 taskbar, including the proxy windows of Linux applications.
 Wine before: win32u refused WM_GETICON across processes and rejected
 foreign icon handles, so the taskbar fell back to the default icon.
-Change: allow WM_GETICON across processes. The returned HICON stays the
+GetClassLongPtr returned no class icons for other processes' windows; the
+XP taskbar then reads the application's file name from its PEB, which a
+32-bit taskbar cannot do for a 64-bit process (WoW64).
+Change: allow WM_GETICON across processes. The owner also gives its class
+icons to the server when it creates a window or changes them, and
+GetClassLongPtr(GCLP_HICON, GCLP_HICONSM) returns them to other processes,
+as on Windows. The returned HICON stays the
 owner's borrowed handle; the server keeps an immutable pixel snapshot of
 static icons (up to 256x256, 2048 bytes of resource data each, 16 MiB per
 owner and 64 MiB in all, freed when the owner destroys the icon or exits),
@@ -16,22 +22,110 @@ icons are not shared. The first display DC is created outside the user
 lock.
 Evidence: tests/foreign-icons.c runs two processes with self-authored
 pixels: identity, GetIconInfo, alpha and monochrome DrawIconEx, CopyIcon,
-destroy refusal, cache pressure, handle reuse and owner exit.
+destroy refusal, cache pressure, handle reuse and owner exit, and class
+icons (both, large only, changed by the owner); with --owner the owner is
+the other architecture's build (all four pairs pass; the class icon checks
+failed before).
 Scope: only with WIN4WINE_EXTERNAL_SHELL; the server protocol changes, so
 wineserver, ntdll and win32u must come from the same build.
 Old patches: 0025.
 ---
+ dlls/win32u/class.c            |  42 +++++-
  dlls/win32u/cursoricon.c       | 294 ++++++++++++++++++++++++++++++++++++++++-
  dlls/win32u/message.c          |  10 +-
- dlls/win32u/ntuser_private.h   |   1 +
- dlls/win32u/window.c           |   1 +
+ dlls/win32u/ntuser_private.h   |   2 +
+ dlls/win32u/window.c           |   2 +
  include/wine/server_protocol.h |  51 ++++++-
+ server/class.c                 |  23 +++-
  server/protocol.def            |  32 +++++
  server/request_handlers.h      |  11 ++
  server/request_trace.h         |  24 ++++
  server/user.c                  |  83 +++++++++++-
- 9 files changed, 501 insertions(+), 6 deletions(-)
+ 11 files changed, 564 insertions(+), 10 deletions(-)
 
+diff --git a/dlls/win32u/class.c b/dlls/win32u/class.c
+index dc1a42b..0252e30 100644
+--- a/dlls/win32u/class.c
++++ b/dlls/win32u/class.c
+@@ -32,6 +32,7 @@
+ #include "ntuser_private.h"
+ #include "wine/server.h"
+ #include "wine/debug.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(class);
+ WINE_DECLARE_DEBUG_CHANNEL(win);
+@@ -53,6 +54,8 @@ typedef struct tagCLASS
+     HICON        hIcon;         /* Default icon */
+     HICON        hIconSm;       /* Default small icon */
+     HICON        hIconSmIntern; /* Internal small icon, derived from hIcon */
++    HICON        shared_icon;   /* class icons last given to the server (external shell) */
++    HICON        shared_icon_sm;
+     HCURSOR      hCursor;       /* Default cursor */
+     HBRUSH       hbrBackground; /* Default background */
+     struct client_menu_name menu_name; /* Default menu name */
+@@ -818,6 +821,33 @@ static BOOL set_server_info( HWND hwnd, INT offset, LONG_PTR newval, UINT size,
+     return ret;
+ }
+ 
++/* With an external shell, give the class icons to the server, so that the
++ * XP taskbar in another process reads them with GetClassLongPtr as on
++ * Windows; it otherwise finds an application's file through its PEB, which
++ * a 32-bit taskbar cannot read in a 64-bit process. CLASS is the window's
++ * local class, or NULL to look it up. Called without the user lock. */
++void share_class_icons( HWND hwnd, CLASS *class )
++{
++    HICON icon, small_icon;
++    ULONG_PTR old;
++
++    if (!win4wine_external_shell()) return;
++    if (class) user_lock();
++    else if (!(class = get_class_ptr( hwnd, FALSE )) || class == OBJ_OTHER_PROCESS) return;
++    icon = class->hIcon;
++    small_icon = class->hIconSm ? class->hIconSm : class->hIconSmIntern;
++    if (icon == class->shared_icon && small_icon == class->shared_icon_sm)
++    {
++        release_class_ptr( class );
++        return;
++    }
++    class->shared_icon = icon;
++    class->shared_icon_sm = small_icon;
++    release_class_ptr( class );
++    set_server_info( hwnd, GCLP_HICON, HandleToUlong( icon ), sizeof(LONG_PTR), &old );
++    set_server_info( hwnd, GCLP_HICONSM, HandleToUlong( small_icon ), sizeof(LONG_PTR), &old );
++}
++
+ static ULONG_PTR set_class_long_size( HWND hwnd, INT offset, LONG_PTR newval, UINT size, BOOL ansi )
+ {
+     ULONG_PTR retval = 0;
+@@ -926,6 +956,7 @@ static ULONG_PTR set_class_long_size( HWND hwnd, INT offset, LONG_PTR newval, UI
+         break;
+     }
+     release_class_ptr( class );
++    if (offset == GCLP_HICON || offset == GCLP_HICONSM) share_class_icons( hwnd, NULL );
+     return retval;
+ }
+ 
+@@ -1022,10 +1053,17 @@ static ULONG_PTR get_class_long_size( HWND hwnd, INT offset, UINT size, BOOL ans
+             {
+                 switch (offset)
+                 {
+-                case GCLP_HBRBACKGROUND:
+-                case GCLP_HCURSOR:
+                 case GCLP_HICON:
+                 case GCLP_HICONSM:
++                    /* Shared by share_class_icons in the owner. */
++                    if (win4wine_external_shell())
++                    {
++                        retvalue = reply->info;
++                        break;
++                    }
++                    /* fall through */
++                case GCLP_HBRBACKGROUND:
++                case GCLP_HCURSOR:
+                 case GCLP_WNDPROC:
+                 case GCLP_MENUNAME:
+                     FIXME( "offset %d not supported on other process window %p\n", offset, hwnd );
 diff --git a/dlls/win32u/cursoricon.c b/dlls/win32u/cursoricon.c
 index 8865400..217ac59 100644
 --- a/dlls/win32u/cursoricon.c
@@ -429,10 +523,18 @@ index 58eeb04..4cc7dd2 100644
      case WM_QUERYDRAGICON:
      case WM_QUERYPARKICON:
 diff --git a/dlls/win32u/ntuser_private.h b/dlls/win32u/ntuser_private.h
-index ec6cf02..d3ee888 100644
+index ec6cf02..77480ae 100644
 --- a/dlls/win32u/ntuser_private.h
 +++ b/dlls/win32u/ntuser_private.h
-@@ -233,6 +233,7 @@ void *free_user_handle( HANDLE handle, unsigned short type );
+@@ -186,6 +186,7 @@ WNDPROC alloc_winproc( WNDPROC func, BOOL ansi );
+ BOOL is_winproc_unicode( WNDPROC proc, BOOL def_val );
+ DWORD get_class_long( HWND hwnd, INT offset, BOOL ansi );
+ WNDPROC get_class_winproc( struct tagCLASS *class );
++void share_class_icons( HWND hwnd, struct tagCLASS *class );
+ ULONG_PTR get_class_long_ptr( HWND hwnd, INT offset, BOOL ansi );
+ WORD get_class_word( HWND hwnd, INT offset );
+ DLGPROC get_dialog_proc( DLGPROC proc, BOOL ansi );
+@@ -233,6 +234,7 @@ void *free_user_handle( HANDLE handle, unsigned short type );
  void *get_user_handle_ptr( HANDLE handle, unsigned short type );
  void release_user_handle_ptr( void *ptr );
  void *next_thread_user_object( UINT tid, HANDLE *handle, unsigned short type );
@@ -441,7 +543,7 @@ index ec6cf02..d3ee888 100644
  
  static inline UINT win_get_flags( HWND hwnd )
 diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
-index 4bceb90..152d8c0 100644
+index 4bceb90..16a82a2 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
 @@ -245,6 +245,7 @@ static void set_user_handle_ptr( HANDLE handle, void *ptr )
@@ -452,6 +554,14 @@ index 4bceb90..152d8c0 100644
      user_unlock();
  }
  
+@@ -5534,6 +5535,7 @@ static WND *create_window_handle( HWND parent, HWND owner, UNICODE_STRING *name,
+         }
+     }
+ 
++    if (class) share_class_icons( handle, class );
+     user_lock();
+ 
+     win->handle     = handle;
 diff --git a/include/wine/server_protocol.h b/include/wine/server_protocol.h
 index dc1ceeb..380d0ac 100644
 --- a/include/wine/server_protocol.h
@@ -543,6 +653,63 @@ index dc1ceeb..380d0ac 100644
 +#define SERVER_PROTOCOL_VERSION 931
  
  #endif /* __WINE_WINE_SERVER_PROTOCOL_H */
+diff --git a/server/class.c b/server/class.c
+index 64c789f..235248b 100644
+--- a/server/class.c
++++ b/server/class.c
+@@ -49,6 +49,8 @@ struct window_class
+     atom_t              atom;            /* class atom for versioned class */
+     client_ptr_t        client_ptr;      /* pointer to class in client address space */
+     class_shm_t        *shared;          /* class in session shared memory */
++    user_handle_t       icon;            /* class icons, set by the owner for other processes */
++    user_handle_t       icon_small;
+ };
+ 
+ C_ASSERT( sizeof(class_shm_t) == offsetof(class_shm_t, extra[0]) );
+@@ -63,6 +65,7 @@ static struct window_class *create_class( struct process *process, int local, st
+     class->process = (struct process *)grab_object( process );
+     class->count = 0;
+     class->local = local;
++    class->icon = class->icon_small = 0;
+ 
+     if (!(class->shared = alloc_shared_object( offsetof(class_shm_t, extra[cls_extra]) ))) goto failed;
+     SHARED_WRITE_BEGIN( class->shared, class_shm_t )
+@@ -311,6 +314,14 @@ DECL_HANDLER(set_class_info)
+             reply->old_info = shared->instance;
+             shared->instance = req->new_info;
+             break;
++        case GCLP_HICON:
++            reply->old_info = class->icon;
++            class->icon = req->new_info;
++            break;
++        case GCLP_HICONSM:
++            reply->old_info = class->icon_small;
++            class->icon_small = req->new_info;
++            break;
+         default:
+             if (req->size > sizeof(req->new_info) || req->offset < 0 ||
+                 req->offset > class->shared->cls_extra - (int)req->size)
+@@ -336,10 +347,18 @@ DECL_HANDLER(get_class_info)
+ 
+     switch (req->offset)
+     {
+-    case GCLP_HBRBACKGROUND:
+-    case GCLP_HCURSOR:
+     case GCLP_HICON:
+     case GCLP_HICONSM:
++        /* Only owners that shared their class icons answer; otherwise as before. */
++        if (class->icon || class->icon_small)
++        {
++            reply->info = req->offset == GCLP_HICON ? class->icon : class->icon_small;
++            break;
++        }
++        set_win32_error( ERROR_INVALID_HANDLE );
++        break;
++    case GCLP_HBRBACKGROUND:
++    case GCLP_HCURSOR:
+     case GCLP_WNDPROC:
+     case GCLP_MENUNAME:
+         /* not supported */
 diff --git a/server/protocol.def b/server/protocol.def
 index 0ac6429..72a8766 100644
 --- a/server/protocol.def

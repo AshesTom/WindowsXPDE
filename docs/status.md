@@ -1111,3 +1111,49 @@ Wine を新しい WoW64 方式（`--enable-archs=i386,x86_64`、Unix 側は 64-b
 | 2回目 read-pixels | 2906 | 6107 | 5840 |
 | 2回目 buffer-upload | 30811 | 38831 | 33111 |
 | 2回目 present | 226 | 229 | 215 |
+
+## Linux アプリのスタートメニューと Notepad++ の確認（2026-10-11）
+
+利用者の求めで、Linux のアプリを XP のスタートメニューに出すようにし（`session/linux_apps.py`、仕組みは `docs/architecture.md`、
+判断は `docs/dll-policy.md`）、Windows のアプリの例として Notepad++ を試験 VM に入れて確かめた。
+
+- 試験 VM に lxterminal、mousepad、Firefox ESR を入れた（.deb はホストで取得。Qt の入力のフロントエンドは入れていない）。
+  Notepad++ 8.9.8.1 の x64 のインストーラーは配布元（GitHub の Releases）から取得し、公開の SHA-256 と一致した（`.local/` のみ）。
+- スタートメニュー: VM の 12 個の desktop entry から、アクセサリ（LXTerminal、Mousepad、UXTerm、XTerm、キーボードレイアウト
+  ビューアー）、アクセサリ\システム ツール（Fcitx 5）、インターネット（Chromium、Firefox ESR）、グラフィックス（ImageMagick）、
+  設定（Fcitx5 設定など）のショートカットがアイコン付きでできた（`localres/s8/programs-acc.png`）。セッション中に作っても、
+  開いている XP Explorer のスタートメニューにすぐ出た。Mousepad と LXTerminal はスタートメニューから起動し、コンソールの窓は
+  開かず、XP の枠・タスクボタンが付いた。起動したアプリの環境に `WINEDEBUG` は無く、`WINEPREFIX`、`WIN4WINE_EXTERNAL_SHELL`、
+  入力メソッドの変数は渡る。
+- 日本語入力（Mozc）: Mousepad（GTK、on-the-spot）、LXTerminal（VTE）、Firefox ESR のアドレスバー（スタートメニューから起動）で
+  変換・候補の選択・確定ができ、候補の窓はカーソルの位置に出た。Notepad++（Scintilla、XIM の over-the-spot）と、LXTerminal で
+  `wine notepad` と打って起動した 64-bit の Wine の notepad でも同じ。
+- Notepad++: LXTerminal から `wine` でインストーラーを起動し、日本語の画面で導入できた。スタートメニューの「Notepad++」、
+  フォルダウィンドウでの `notepad++.exe` のダブルクリック、cmd からの起動の3通りで起動した。
+- 見つけて直したこと:
+  - 64-bit のアプリ（Notepad++ x64、64-bit の Wine の notepad）のタスクボタンが既定のアイコンになった（段階 7 からの後退）。
+    32-bit の notepad は正しい。XP Explorer は PEB から実行ファイルの名前を得てアイコンを取り出すが、WoW64 から 64-bit の
+    プロセスの PEB は読めない。0022 を広げ、別のプロセスのクラスのアイコンを `GetClassLongPtr` で返すようにした。両方の notepad と
+    Notepad++ のボタンが正しいアイコンになった。`tests/foreign-icons.c` にクラスのアイコンの検査と `--owner` を足し、
+    32/64-bit の4通りと opt-in なしで PASS、修正前のビルドでは新しい検査が失敗する。
+  - セッションの `PATH` に Wine が無く、端末で `wine` が見つからなかった（Wine を `/work/.local/...` に置いているため）。
+    supervisor が `PATH` の先頭にセッションの Wine を置く。
+- 試験: `tests/linux_apps.py`（Wine なしの部分と、`--wine` で新しい prefix に書く・2回目は何もしない・start.exe 経由で Linux の
+  コマンドが `WINEDEBUG` なしで動く・`--watch` の追加と削除・`--remove`）が chroot で成功。
+- ビルド: 未改変の 11.0 に 56 本が当たり、当てたツリーは移植用ブランチと一致した。新しいソースとビルドディレクトリで configure から
+  全体をビルドし（`.local/wine-stage8-install`）、警告は upstream の bison の 14 件だけ。試験 VM は空きが足りないので、段階 7 の
+  install のうち変わった wineserver と win32u.so をこのビルドのものにした。
+- 前後の比較（試験 VM、段階 7 の `localres/stage7/s7i2*` と今回の `localres/s8/s8z1*`、フォルダの表示の状態は同じ写しに戻した）:
+  9場面のうち8場面が時計を除いて0画素差。「ファイル名を指定して実行」は、今回の試験で打った `cmd` が履歴に入って欄に出たことだけが違う。
+- chroot の Xvfb で `tests/wm_integration.py`、`tests/native_frames.py`（Luna とクラシック）、`tests/xterm_redraw.py`、
+  `tests/bridge_integration.py`、`tests/patch_state.py` が成功（`.local/s8-bridge-tests.log`）。最初は wm_integration の Alt+Tab が
+  段階 7 のビルドでも失敗した。`wine.inf` の日付の違う2つの install を交互に使ったため、そのたびに試験用 prefix の更新が裏で走り、
+  その窓がフォーカスを取っていた。新しいビルドで prefix を更新し終えてから回すと成功した。
+- 見つけたが直していないこと:
+  - Linux のアプリにキーボードのフォーカスがあるとき、XP のデスクトップやタスクバーの空いた所をクリックしてもフォーカスが
+    移らない（WM の `focus()` が desktop と dock の種類のウィンドウを扱わない）。そのため Win+R も Linux のアプリに届いた。
+  - Linux のアプリにフォーカスがあるとき、XP のホットキー（Win+R、Win+E、Win キー）は効かない（X のキーはそのアプリに届き、
+    Wine はホットキーのためにキーを横取りしない）。
+  - fcitx5 で直接入力と Mozc を切り替えた直後に出る入力メソッドの表示（28×28 の窓）が黒く、すぐ消える。
+  - cmd の窓（Wine の conhost）のタスクボタンは Wine のロゴ（conhost のクラスのアイコンが `IDI_WINLOGO`）。日本語のロケールの
+    conhost は半角の文字を全角の幅で並べる。

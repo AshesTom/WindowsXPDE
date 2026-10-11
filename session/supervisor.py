@@ -37,6 +37,10 @@ class Session:
                         WINEDLLOVERRIDES='explorer=b;xp-explorer=n;mscoree,mshtml=;uxtheme=b')
         # The prefix decides its architecture; the recovery prefix takes Wine's default.
         self.env.pop('WINEARCH', None)
+        # A terminal in the session runs Windows programs with "wine" in the
+        # session's prefix; that must be this Wine, not another one in PATH,
+        # which would update the prefix to its own version.
+        self.env['PATH'] = os.pathsep.join(filter(None, (str(Path(self.wine).parent), self.env.get('PATH'))))
         # Wine derives its user locale and ANSI code page from the Unix locale.
         # A Japanese XP shell expects Japanese formats and code page 932 even
         # when the Linux session itself runs in another locale.
@@ -52,6 +56,7 @@ class Session:
                 self.env.update(XMODIFIERS='@im=fcitx', GTK_IM_MODULE='fcitx', QT_IM_MODULE='fcitx',
                                 SDL_IM_MODULE='fcitx')
         self.linux_font = config.get('linux_font', 'MS UI Gothic')
+        self.linux_menu = config.get('linux_menu', True)
         # Wine's ExitWindowsEx records log off / shut down / restart here,
         # so that the shell's exit ends the session instead of restarting it.
         self.request = self.state / 'session-request'
@@ -104,6 +109,24 @@ class Session:
         if not self.input_method or self.xim_server('fcitx'):
             return None  # Not configured, or started by the login already.
         return self.spawn(['fcitx5'], 'fcitx5')
+
+    def start_linux_menu(self):
+        """Put the Linux applications into the Start menu, then follow changes.
+
+        The first pass ends before the shell starts, so that its Start menu
+        has them from the beginning. A failure only leaves the menu as it was."""
+        menu = [sys.executable, str(ROOT / 'session/linux_apps.py'), str(self.prefix), '--wine', self.wine]
+        with (self.state / 'linux-apps.log').open('ab') as log:
+            log.write(f'\n--- sync {time.time()} ---\n'.encode())
+            log.flush()
+            try:
+                subprocess.run(menu, env=self.env, stdout=log, stderr=subprocess.STDOUT, timeout=180, check=False)
+            except subprocess.TimeoutExpired:
+                print('Linux menu sync timed out; see linux-apps.log', file=sys.stderr)
+        # Wine's desktop process keeps the environment of the program that
+        # started it; let the shell start it with the session's own.
+        self.stop_wine()
+        self.spawn([*menu, '--watch'], 'linux-apps')
 
     def status(self, state, **extra):
         record = dict(state=state, time=time.time(), **extra)
@@ -162,6 +185,8 @@ class Session:
         # Install only the shell family in this dedicated prefix. Runtime overrides select them.
         subprocess.run(['python3', str(ROOT / 'prefix/stage.py'), str(self.prefix),
                         '--wine', self.wine], check=True)
+        if self.linux_menu:
+            self.start_linux_menu()
         crashes = deque()
         attempt = 0
         while not self.stopping:
