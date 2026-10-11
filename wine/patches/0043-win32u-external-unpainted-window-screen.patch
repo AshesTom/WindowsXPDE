@@ -8,12 +8,17 @@ reads those pixels; BitBlt from the DC of a top-level window not shown
 yet reads the screen too (drawing into it changes nothing). XP's shell32
 shows its full-screen DimmedWindowClass window (no brush) behind the
 "Log Off Windows" dialog and fades it to grey band by band, reading each
-band back from the window's own DC.
+band back from the window's own DC. Reading the screen leaves layered
+windows out (unless with CAPTUREBLT), so the Start menu's fading item
+(shell32's SysFader, still shown when the dialog opens) is not in the
+grey picture.
 Wine before: a newly shown window's surface started white, and a hidden
 window's DC read its unmapped X window (black); the dialog stood on a
 white screen.
 Change: when such a window is shown, the screen under it is copied into
-its surface before the X window is mapped. A DC of a top-level window
+its surface before the X window is mapped; where a shown layered window
+is, the copy is redrawn from the surfaces of this process's windows under
+it (left as read when a window of another process shows there). A DC of a top-level window
 without WS_VISIBLE takes the screen drawable at the window's position,
 with its empty visible region (drawing stays clipped away).
 Evidence: a probe reading GetDC/GetWindowDC of a hidden full-screen popup
@@ -25,9 +30,9 @@ Scope: external shell opt-in only; top-level, non-layered windows whose
 class has no background brush (the copy) and top-level windows without
 WS_VISIBLE (the DC).
 ---
- dlls/win32u/dce.c    | 17 +++++++++++++++++
- dlls/win32u/window.c | 21 +++++++++++++++++++++
- 2 files changed, 38 insertions(+)
+ dlls/win32u/dce.c    | 17 +++++++++
+ dlls/win32u/window.c | 98 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 115 insertions(+)
 
 diff --git a/dlls/win32u/dce.c b/dlls/win32u/dce.c
 index 5d6cbb7..38fe9dd 100644
@@ -65,25 +70,102 @@ index 5d6cbb7..38fe9dd 100644
  
      if (dce->clip_rgn) NtGdiCombineRgn( vis_rgn, vis_rgn, dce->clip_rgn,
 diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
-index 1d4e6a4..88c18b1 100644
+index 1d4e6a4..1e55a34 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
-@@ -2172,6 +2172,23 @@ static BOOL is_fullscreen( const MONITORINFO *info, const RECT *rect )
+@@ -2172,6 +2172,100 @@ static BOOL is_fullscreen( const MONITORINFO *info, const RECT *rect )
   *
   * Backend implementation of SetWindowPos.
   */
 +/* Windows shows the screen under a top-level window that has no background brush until the
 + * window paints there; XP's shell32 reads those pixels back to fade its log-off background to
 + * grey. Give such a window's new surface what is on the screen there, before it is mapped. */
++/* Redraw RECT (screen coordinates) of DC, which shows WINDOW_RECT, as the screen would be
++ * without the layered window LIST[LAYERED]: from the surfaces of the windows under it, bottom
++ * up. Leaves DC as it is when a window above covers part of RECT, or when a window of another
++ * process (whose pixels this process does not have) shows there. */
++static void draw_without_layered( HWND hwnd, HDC dc, const RECT *window_rect, const RECT *rect,
++                                  HWND *list, int layered )
++{
++    char buffer[FIELD_OFFSET( BITMAPINFO, bmiColors[256] )];
++    BITMAPINFO *info = (BITMAPINFO *)buffer;
++    struct window_surface *surfaces[32];
++    RECT visible[32], part;
++    BOOL covered = FALSE;
++    int count = 0, i;
++
++    for (i = 0; list[i]; i++)
++    {
++        struct window_rects rects;
++        WND *win;
++
++        if (i == layered || list[i] == hwnd || !(get_window_long( list[i], GWL_STYLE ) & WS_VISIBLE) ||
++            (get_window_long( list[i], GWL_EXSTYLE ) & WS_EX_LAYERED)) continue;
++        if (!get_window_rects( list[i], COORDS_SCREEN, &rects, get_thread_dpi() ) ||
++            !intersect_rect( &part, &rects.visible, rect )) continue;
++        if (i < layered || count == ARRAY_SIZE(surfaces)) break;
++        if (!(win = get_win_ptr( list[i] )) || win == WND_OTHER_PROCESS || win == WND_DESKTOP) break;
++        if ((surfaces[count] = win->surface)) window_surface_add_ref( surfaces[count] );
++        release_win_ptr( win );
++        if (!surfaces[count]) break;
++        visible[count++] = rects.visible;
++        /* Nothing under a window that covers all of RECT shows. */
++        if ((covered = EqualRect( &part, rect ))) break;
++    }
++    while (count--)
++    {
++        struct window_surface *surface = surfaces[count];
++        RECT src, dst;
++        void *bits;
++
++        if (covered)
++        {
++            intersect_rect( &src, &visible[count], rect );
++            dst = src;
++            OffsetRect( &src, -visible[count].left, -visible[count].top );
++            OffsetRect( &dst, -window_rect->left, -window_rect->top );
++            window_surface_lock( surface );
++            if ((bits = window_surface_get_color( surface, info )))
++                NtGdiSetDIBitsToDeviceInternal( dc, dst.left, dst.top, dst.right - dst.left, dst.bottom - dst.top,
++                                                src.left - surface->rect.left, surface->rect.bottom - src.bottom,
++                                                0, surface->rect.bottom - surface->rect.top,
++                                                bits, info, DIB_RGB_COLORS, 0, 0, FALSE, NULL );
++            window_surface_unlock( surface );
++        }
++        window_surface_release( surface );
++    }
++}
++
 +static void copy_screen_to_new_surface( HWND hwnd, const RECT *window_rect )
 +{
 +    HDC screen, dc;
++    HWND *list;
++    int i;
 +
 +    if (!(screen = NtUserGetDCEx( 0, 0, DCX_CACHE | DCX_WINDOW ))) return;
 +    if ((dc = NtUserGetDCEx( hwnd, 0, DCX_CACHE | DCX_WINDOW )))
 +    {
 +        NtGdiBitBlt( dc, 0, 0, window_rect->right - window_rect->left, window_rect->bottom - window_rect->top,
 +                     screen, window_rect->left, window_rect->top, SRCCOPY, 0, 0 );
++        /* Windows reads the screen without layered windows (unless with CAPTUREBLT): the
++         * Start menu's fading item (shell32's SysFader) must not stay in XP's dimmed log-off
++         * and turn-off backgrounds. X has their pixels on the screen; redraw those parts from
++         * the surfaces of the windows under them, from the top-level list's bottom up. */
++        if ((list = list_window_children( 0 )))
++        {
++            for (i = 0; list[i]; i++)
++            {
++                struct window_rects rects;
++                RECT part;
++
++                if (list[i] == hwnd || !(get_window_long( list[i], GWL_STYLE ) & WS_VISIBLE) ||
++                    !(get_window_long( list[i], GWL_EXSTYLE ) & WS_EX_LAYERED)) continue;
++                if (get_window_rects( list[i], COORDS_SCREEN, &rects, get_thread_dpi() ) &&
++                    intersect_rect( &part, &rects.window, window_rect ))
++                    draw_without_layered( hwnd, dc, window_rect, &part, list, i );
++            }
++            free( list );
++        }
 +        NtUserReleaseDC( hwnd, dc );
 +    }
 +    NtUserReleaseDC( 0, screen );
@@ -92,7 +174,7 @@ index 1d4e6a4..88c18b1 100644
  static BOOL apply_window_pos( HWND hwnd, HWND insert_after, UINT swp_flags, struct window_surface *new_surface,
                                const struct window_rects *new_rects, const RECT *valid_rects )
  {
-@@ -2294,6 +2311,10 @@ static BOOL apply_window_pos( HWND hwnd, HWND insert_after, UINT swp_flags, stru
+@@ -2294,6 +2388,10 @@ static BOOL apply_window_pos( HWND hwnd, HWND insert_after, UINT swp_flags, stru
      {
          TRACE( "win %p surface %p -> %p\n", hwnd, old_surface, new_surface );
          register_window_surface( old_surface, new_surface );
