@@ -31,7 +31,7 @@ Old patches: 0046, 0061, 0063.
  1 file changed, 135 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 8548d9e..938b5ed 100644
+index e205736..5b518e1 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
 @@ -336,14 +336,75 @@ static HRESULT UXTHEME_LoadImage(HTHEME hTheme, int iPartId, int iStateId, const

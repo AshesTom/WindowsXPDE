@@ -17,10 +17,10 @@ Old patches: 0069.
  1 file changed, 9 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
-index 91398e8..a209df7 100644
+index e011659..24da589 100644
 --- a/dlls/comctl32_v6/button.c
 +++ b/dlls/comctl32_v6/button.c
-@@ -2938,6 +2938,11 @@ static void CB_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
+@@ -2961,6 +2961,11 @@ static void CB_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
          label_rect.right -= box_size.cx + text_offset;
      else
          label_rect.left += box_size.cx + text_offset;
@@ -32,7 +32,7 @@ index 91398e8..a209df7 100644
  
      old_label_rect = label_rect;
      dtFlags = BUTTON_CalcLayoutRects(infoPtr, hDC, &label_rect, &image_rect, &text_rect);
-@@ -3040,10 +3045,12 @@ static void GB_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
+@@ -3063,10 +3068,12 @@ static void GB_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
  
      bgRect = clientRect;
      GetTextMetricsW(hDC, &textMetric);

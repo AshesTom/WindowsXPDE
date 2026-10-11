@@ -5,8 +5,9 @@ Purpose: draw Luna captions, borders and caption buttons on the XP shell's
 and its applications' windows, with XP's geometry.
 XP behavior: measured with public DrawThemeBackground, WM_NCHITTEST and
 synthetic-icon probes on the user's XP:
-- caption and button images keep their true sizes, scaled with the DPI,
-  with two-pixel gaps; input slots are padded beyond the images;
+- caption buttons are squares of SM_CYSIZE less four (the assets' 21 at
+  96 DPI, 27 at 120, 34 at 144), two pixels apart and two pixels from the
+  frame at every DPI; input slots are padded beyond the images;
 - in an inactive caption, Luna's second group of four button images
   (TMT_IMAGECOUNT 8) is used;
 - the 16 pixel icon sits at y8 (SM_CYCAPTION includes a one-pixel
@@ -15,7 +16,9 @@ synthetic-icon probes on the user's XP:
 - the icon falls back like the classic caption's: window small, window
   big, class small, class big, then IDI_WINLOGO at small-icon size, except
   for WS_EX_DLGMODALFRAME windows;
-- the title has the theme's single text shadow;
+- the title, in SPI_GETNONCLIENTMETRICS' caption font (16 pixels at 120
+  DPI; the theme's 10 points would be 17), has the theme's single text
+  shadow, one pixel right and down at every DPI;
 - the caption image covers the whole SM_CYCAPTION height, without a row of
   window colour above the client.
 Wine before: the opted-in shell's windows had classic frames.
@@ -32,14 +35,14 @@ Scope: only with WIN4WINE_EXTERNAL_SHELL; classic sessions and ordinary
 Wine keep their frames.
 Old patches: 0014 (except metric.c), 0022, 0027, 0028, 0032, 0034, 0062, 0065.
 ---
- dlls/user32/defwnd.c      |  67 ++++++++++++
+ dlls/user32/defwnd.c      |  67 +++++++++++
  dlls/user32/nonclient.c   |   8 ++
- dlls/uxtheme/draw.c       |  21 ++++
+ dlls/uxtheme/draw.c       |  22 ++++
  dlls/uxtheme/uxtheme.spec |   3 +
- dlls/uxtheme/window.c     | 266 ++++++++++++++++++++++++++++++++++++++++++++++
+ dlls/uxtheme/window.c     | 275 ++++++++++++++++++++++++++++++++++++++++++++++
  dlls/win32u/defwnd.c      |  25 ++++-
  include/winuser.h         |   4 +
- 7 files changed, 391 insertions(+), 3 deletions(-)
+ 7 files changed, 401 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/user32/defwnd.c b/dlls/user32/defwnd.c
 index 79192d4..2b30c16 100644
@@ -177,7 +180,7 @@ index d65e7c9..799a1e0 100644
      case MENU_MIN_BUTTON:
      case MENU_MAX_BUTTON:
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 545c069..8548d9e 100644
+index 545c069..e205736 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
 @@ -38,6 +38,7 @@
@@ -188,7 +191,7 @@ index 545c069..8548d9e 100644
  
  WINE_DEFAULT_DEBUG_CHANNEL(uxtheme);
  
-@@ -1834,6 +1835,26 @@ HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId
+@@ -1834,6 +1835,27 @@ HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId
  
      oldTextColor = SetTextColor(hdc, textColor);
      oldBkMode = SetBkMode(hdc, TRANSPARENT);
@@ -205,8 +208,9 @@ index 545c069..8548d9e 100644
 +            SUCCEEDED(GetThemeColor(hTheme, iPartId, iStateId, TMT_TEXTSHADOWCOLOR, &shadow_color)))
 +        {
 +            RECT shadow = *rect;
-+            shadow.left += offset.x;
-+            shadow.top += offset.y;
++            /* Move the whole rectangle: centred or bottom-aligned text would
++             * move by half the offset, or not at all. */
++            OffsetRect(&shadow, offset.x, offset.y);
 +            SetTextColor(hdc, shadow_color);
 +            DrawTextW(hdc, pszText, iCharCount, &shadow, flags);
 +            SetTextColor(hdc, textColor);
@@ -227,7 +231,7 @@ index 60a258d..deb1bff 100644
 +@ stdcall Win4WineDrawNonClient(ptr ptr)
 +@ stdcall Win4WineNcHitTest(ptr long long)
 diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
-index d059a85..7b9e13e 100644
+index d059a85..0c38c87 100644
 --- a/dlls/uxtheme/window.c
 +++ b/dlls/uxtheme/window.c
 @@ -26,6 +26,20 @@
@@ -287,7 +291,7 @@ index d059a85..7b9e13e 100644
      case MENU_CLOSE_BUTTON:
      case MENU_MIN_BUTTON:
      case MENU_MAX_BUTTON:
-@@ -89,3 +132,226 @@ void WINAPI UXTHEME_NonClientButtonDraw(HWND hwnd, HDC hdc, enum NONCLIENT_BUTTO
+@@ -89,3 +132,235 @@ void WINAPI UXTHEME_NonClientButtonDraw(HWND hwnd, HDC hdc, enum NONCLIENT_BUTTO
  
      CloseThemeData(theme);
  }
@@ -301,7 +305,8 @@ index d059a85..7b9e13e 100644
 +    UINT dpi = GetDpiForWindow(hwnd);
 +    DWORD style = GetWindowLongW(hwnd, GWL_STYLE);
 +    int border_x = GetSystemMetrics(style & WS_THICKFRAME ? SM_CXFRAME : SM_CXDLGFRAME);
-+    int gap = MulDiv(2, dpi, 96), padding = MulDiv(2, dpi, 96);
++    /* XP keeps 2px between the buttons and to the frame at every DPI. */
++    int gap = 2, padding = 2;
 +    int width = GetSystemMetrics(SM_CXSIZE), height = GetSystemMetrics(SM_CYSIZE) - 2;
 +    int i;
 +    GetWindowRect(hwnd, &window);
@@ -311,12 +316,11 @@ index d059a85..7b9e13e 100644
 +        + GetSystemMetrics(SM_CYCAPTION) - 1;
 +    if (SUCCEEDED(GetThemePartSize(theme, NULL, WP_CAPTION, CS_ACTIVE, NULL, TS_TRUE, &image)))
 +        caption->bottom = min(caption->bottom, MulDiv(image.cy, dpi, 96));
++    /* The buttons are square, 4px less than SM_CYSIZE: the assets' 21x21 at
++     * 96 DPI, 27x27 at 120 DPI (measured on XP). */
 +    if (SUCCEEDED(GetThemePartSize(theme, NULL, WP_CLOSEBUTTON, CBS_NORMAL, NULL, TS_TRUE, &image)))
-+    {
-+        width = MulDiv(image.cx, dpi, 96);
-+        height = MulDiv(image.cy, dpi, 96);
-+    }
-+    buttons[0].right = window.right - border_x - MulDiv(2, dpi, 96);
++        width = height = GetSystemMetrics(SM_CYSIZE) - 4;
++    buttons[0].right = window.right - border_x - 2;
 +    buttons[0].left = buttons[0].right - width;
 +    buttons[0].bottom = caption->bottom - padding;
 +    buttons[0].top = buttons[0].bottom - height;
@@ -500,7 +504,16 @@ index d059a85..7b9e13e 100644
 +            text.right = part.left - 2;
 +        }
 +    }
-+    if (SUCCEEDED(GetThemeSysFont(theme, TMT_CAPTIONFONT, &lf))) font = CreateFontIndirectW(&lf);
++    /* The caption font of SPI_GETNONCLIENTMETRICS, which applying the theme
++     * set: above 96 DPI the theme's point size converted again would be a
++     * pixel larger than XP's (10pt is 17 pixels at 120 DPI, XP's caption 16). */
++    {
++        NONCLIENTMETRICSW ncm = {sizeof(ncm)};
++        if (SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0))
++            font = CreateFontIndirectW(&ncm.lfCaptionFont);
++        else if (SUCCEEDED(GetThemeSysFont(theme, TMT_CAPTIONFONT, &lf)))
++            font = CreateFontIndirectW(&lf);
++    }
 +    if (font) SelectObject(dc, font);
 +    SetBkMode(dc, TRANSPARENT);
 +    GetWindowTextW(hwnd, title, ARRAY_SIZE(title));

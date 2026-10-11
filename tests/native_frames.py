@@ -132,14 +132,19 @@ def visible_task_icon(pixels):
     return None
 
 def visible_icon(pixels):
+    """Where the 16x16 icon shows in the caption, drawn at SM_CXSMICON: 16 at 96 DPI, larger above
+    (each screen pixel takes the icon pixel under its left edge or its centre)."""
     image = caption_image()
-    for top in range(len(image)-15):
-        for left in range(len(image[0])-15):
-            if image[top][left+1] != (pixels[1] & 0xffffff):
-                continue
-            if all(image[top+y][left+x] == (pixels[y*16+x] & 0xffffff)
-                   for y in range(16) for x in range(16) if pixels[y*16+x] >> 24 == 255):
-                return left, top
+    for size, centre in ((size, centre) for size in range(16, 33, 2) for centre in (0, 1)):
+        source = [(2 * i + centre) * 16 // (2 * size) for i in range(size)]
+        scaled = [pixels[source[y] * 16 + source[x]] for y in range(size) for x in range(size)]
+        for top in range(len(image)-size+1):
+            for left in range(len(image[0])-size+1):
+                if image[top][left+size-1] != (scaled[size-1] & 0xffffff):
+                    continue
+                if all(image[top+y][left+x] == (scaled[y*size+x] & 0xffffff)
+                       for y in range(size) for x in range(size) if scaled[y*size+x] >> 24 == 255):
+                    return left, top
     return None
 
 def paired():

@@ -161,7 +161,7 @@ index ad530d7..4e4a682 100644
      pos.x = rect.left;
      pos.y = rect.top;
 diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
-index 991357b..f0dc734 100644
+index 15b311e..3e64cba 100644
 --- a/dlls/uxtheme/window.c
 +++ b/dlls/uxtheme/window.c
 @@ -344,10 +344,13 @@ LRESULT WINAPI Win4WineNcHitTest(HWND hwnd, LPARAM coordinates, LRESULT original
@@ -193,5 +193,5 @@ index 991357b..f0dc734 100644
 +            text.right = part.left - 2;
 +        }
      }
-     if (SUCCEEDED(GetThemeSysFont(theme, TMT_CAPTIONFONT, &lf))) font = CreateFontIndirectW(&lf);
-     if (font) SelectObject(dc, font);
+     /* The caption font of SPI_GETNONCLIENTMETRICS, which applying the theme
+      * set: above 96 DPI the theme's point size converted again would be a

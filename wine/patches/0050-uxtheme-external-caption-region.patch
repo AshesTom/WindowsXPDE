@@ -18,7 +18,7 @@ Old patches: 0023, 0051.
  1 file changed, 145 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
-index 7b9e13e..8d558bc 100644
+index 0c38c87..a3ad02a 100644
 --- a/dlls/uxtheme/window.c
 +++ b/dlls/uxtheme/window.c
 @@ -29,6 +29,144 @@

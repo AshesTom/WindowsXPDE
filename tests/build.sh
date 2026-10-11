@@ -40,6 +40,10 @@ compile "$out/gl-perf-test.exe" "$root/tests/gl-perf.c" -lopengl32 -lgdi32 -luse
 compile "$out/class-probe.exe" -municode "$root/prefix/class-probe.c" -lole32 -luuid
 
 compile "$out/display-test.exe" -s "$root/tests/display.c" -luxtheme -lgdi32
+compile "$out/dpi-metrics-test.exe" -s "$root/tests/dpi-metrics.c" -luxtheme -lcomctl32 -lgdi32 -luser32
+compile "$out/char-widths-dpi-test.exe" -s "$root/tests/char-widths-dpi.c" -lgdi32 -luser32
+compile "$out/text-bits-dpi-test.exe" -s "$root/tests/text-bits-dpi.c" -lgdi32 -luser32
+compile "$out/caption-glyph-dpi-test.exe" -s "$root/tests/caption-glyph-dpi.c" -luxtheme -lgdi32 -luser32
 
 for name in start-button start-sizing start-metrics theme-font theme-text-shadow theme-metrics classic-fonts font-profile taskbar-background clock-theme scrollbar-theme rebar-theme rebar-gripper rebar-tail reference-metrics shell-layout caption-text nonclient-caption caption-icons gradient-clip halftone-clip clock-metrics clock-pixels taskbar-text theme-part-pixels window-theme-empty theme-props resource-languages; do
     compile "$out/$name-test.exe" -municode "$root/tests/$name.c" -luxtheme -lgdi32

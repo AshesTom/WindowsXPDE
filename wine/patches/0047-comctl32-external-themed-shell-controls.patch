@@ -143,10 +143,10 @@ index 80404b8..b5e3814 100644
  {
      int min = 0, max = ARRAY_SIZE(classes) - 1;
 diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
-index c4c50ca..91398e8 100644
+index 2f5744a..e011659 100644
 --- a/dlls/comctl32_v6/button.c
 +++ b/dlls/comctl32_v6/button.c
-@@ -3300,7 +3300,7 @@ static void CL_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
+@@ -3323,7 +3323,7 @@ static void CL_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
      }
  }
  
@@ -155,7 +155,7 @@ index c4c50ca..91398e8 100644
  {
      WNDCLASSW wndClass;
  
-@@ -3317,13 +3317,13 @@ static void register_button_class(const WCHAR *name)
+@@ -3340,13 +3340,13 @@ static void register_button_class(const WCHAR *name)
  
  void BUTTON_Register(void)
  {

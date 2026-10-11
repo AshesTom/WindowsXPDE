@@ -88,7 +88,7 @@ index 2b30c16..b9aa343 100644
      else if (msg == WM_PRINT && (lParam & PRF_NONCLIENT) && !(lParam & (PRF_CHILDREN | PRF_OWNED)))
          external_shell_draw_nonclient( hwnd, (HDC)wParam );
 diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
-index 8d558bc..991357b 100644
+index a3ad02a..15b311e 100644
 --- a/dlls/uxtheme/window.c
 +++ b/dlls/uxtheme/window.c
 @@ -40,6 +40,14 @@ struct caption_region
@@ -144,7 +144,7 @@ index 8d558bc..991357b 100644
  
      text = caption;
      text.top = border_y;
-@@ -493,6 +506,7 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
+@@ -502,6 +515,7 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
      text.bottom = text.top + GetSystemMetrics(SM_CYCAPTION);
      DrawThemeText(theme, dc, maximized ? WP_MAXCAPTION : WP_CAPTION, state, title, -1,
                    DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS, 0, &text);
