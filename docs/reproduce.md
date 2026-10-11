@@ -607,3 +607,24 @@ python3 tests/linux_apps.py                                   # Wine なし（Gd
 ```sh
 WIN4WINE_EXTERNAL_SHELL=1 "$WINE" .local/bridge/foreign-icons-test.exe --owner 'Z:\path\to\bridge64\foreign-icons-test.exe'
 ```
+
+## Windows キー、デスクトップのフォーカス、日本語のコンソール（2026-10-11）
+
+パッチは 58 本になり、0023 以降の番号が変わった（`docs/patches.md` の「Windows キーと日本語のコンソール」）。前の series を
+当てたソースツリーには重ねられないので、新しいソースとビルドディレクトリで configure からビルドする（上の節と同じ）。
+`bridge-wm/build.sh` で proxy も作り直し、セッションを起動し直す（`bridge-wm/wm.py` と `session/supervisor.py` も変わった）。
+
+- Windows キー単独と Ctrl+Esc でスタートメニューが開き、Win+R、Win+E などの XP のホットキーは Linux のアプリにフォーカスが
+  あっても効く（そのキーは Linux のアプリには届かない）。
+- デスクトップとタスクバーをクリックすると、キーボードがそこへ移る。
+- `input_method` が `fcitx5` のとき、supervisor は `~/.config/fcitx5/config` の `[Behavior]` に
+  `ShowInputMethodInformation=False` と `showInputMethodInformationWhenFocusIn=False` を足す（無いときだけ。値を決めて
+  あればそのまま）。入力モードは通知領域のアイコンで見る。
+- 日本語のロケールの cmd（Wine の conhost）は半角の升目になり、Mozc で日本語を入力できる。
+
+試験:
+
+```sh
+./scripts/debian.sh run bash -c 'cd /work && bridge-wm/build.sh'
+# wm_integration は Windows キー、Win+R、Ctrl+Esc の proxy への受け渡しと、デスクトップのクリックのフォーカスも検査する
+```

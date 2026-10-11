@@ -12,6 +12,9 @@ from Xlib import X, XK, Xatom, Xutil, display, error, protocol
 from icons import payload as icon_payload
 
 IN_CLOSE_WRITE, IN_MOVED_TO = 0x8, 0x80
+# Keys besides letters, digits and F1-F24 that XP's hotkeys use with the Windows key.
+VIRTUAL_KEYS = {XK.XK_Tab: 0x09, XK.XK_Pause: 0x13, XK.XK_Break: 0x13, XK.XK_space: 0x20,
+                XK.XK_Escape: 0x1b, XK.XK_Return: 0x0d}
 
 
 class Inotify:
@@ -96,6 +99,16 @@ class Manager:
                                       X.GrabModeAsync, X.GrabModeAsync, X.NONE, X.NONE)
             self.root.grab_key(self.d.keysym_to_keycode(XK.string_to_keysym('F4')), X.Mod1Mask | modifiers,
                                True, X.GrabModeAsync, X.GrabModeAsync)
+        # The Windows key with XP's hotkeys (Win+R, Win+E, ...) and Ctrl+Esc
+        # belong to the shell even while a native client has the keyboard; see shell_key.
+        self.super_codes = {self.d.keysym_to_keycode(XK.string_to_keysym(name)) for name in ('Super_L', 'Super_R')}
+        self.super_codes.discard(0)
+        self.shell_keys = 0
+        self.shell_combo = None  # keys pressed with the Windows key under a native client
+        for code in self.super_codes:
+            self.root.grab_key(code, X.AnyModifier, True, X.GrabModeAsync, X.GrabModeSync)
+        for modifiers in (0, X.LockMask, X.Mod2Mask, X.LockMask | X.Mod2Mask):
+            self.root.grab_key(self.escape, X.ControlMask | modifiers, True, X.GrabModeAsync, X.GrabModeSync)
         for w in self.root.query_tree().children:
             if w.get_attributes().map_state == X.IsViewable:
                 self.manage(w)
@@ -161,7 +174,10 @@ class Manager:
                                   'geometry': (r.x, r.y, r.width, r.height, r.border_width),
                                   'framed': False, 'icon_dirty': True, 'extents': None}
             w.change_attributes(event_mask=X.PropertyChangeMask | X.FocusChangeMask)
-            w.grab_button(1, 0, True, X.ButtonPressMask, X.GrabModeSync, X.GrabModeAsync, X.NONE, X.NONE)
+            # Left and right clicks activate a window, as on XP (a right click
+            # on the desktop opens its menu, which then needs the keyboard).
+            for button in (1, 3):
+                w.grab_button(button, 0, True, X.ButtonPressMask, X.GrabModeSync, X.GrabModeAsync, X.NONE, X.NONE)
             self.refresh(self.clients[w.id])
         client = self.clients[w.id]
         client['kind'] = self.kind(w)
@@ -236,6 +252,77 @@ class Manager:
                      height=height, border_width=border,
                      override=False), event_mask=X.StructureNotifyMask)
 
+    def focus_shell(self, w, time=X.CurrentTime):
+        """Give the XP desktop or taskbar the keyboard, as a click does on XP.
+
+        It is no application task, so no client stays active. TIME is that of
+        the user's event: Wine ignores WM_TAKE_FOCUS older than the foreground
+        window's own focus, and the keyboard only reaches a window that Wine
+        made active."""
+        if self.atom('WM_TAKE_FOCUS') in self.prop(w, 'WM_PROTOCOLS'):
+            self.message(w, 'WM_PROTOCOLS', [self.atom('WM_TAKE_FOCUS'), time, 0, 0, 0])
+        w.set_input_focus(X.RevertToPointerRoot, time)
+        if self.active:
+            self.active = 0
+            self.setprop(self.root, '_NET_ACTIVE_WINDOW', Xatom.WINDOW, [0])
+
+    def native_focus(self):
+        """The native client that has the keyboard rather than Wine, if any."""
+        focused = self.d.get_input_focus().focus
+        while hasattr(focused, 'id') and focused.id not in (X.NONE, X.PointerRoot, self.root.id):
+            c = self.clients.get(focused.id)
+            if c:
+                return focused.id if c['kind'] == 'normal' and not c['hwnd'] else None
+            focused = focused.query_tree().parent
+        return None
+
+    def shell_key(self, e):
+        """A Windows key or Ctrl+Esc press, frozen by the WM's synchronous grab.
+
+        Under a native client, Wine has none of these keys, and a window that
+        Wine has yet to activate would lose them. The WM keeps the keyboard
+        until the Windows key is up (the grab of a key lasts until its release),
+        then the proxy enters the same keys into Wine with SendInput: XP's
+        hotkeys (Win+R, Win+E, ...) and Wine's Start menu keys work as for a
+        Win32 window, with the foreground's right to open the Start menu.
+        Otherwise the key goes on as is."""
+        if self.switch is not None:
+            # The switcher's own grab delivers it; Esc there closes the switcher.
+            self.d.allow_events(X.AsyncKeyboard, e.time)
+            self.switch_event(e)
+            return
+        mode = X.ReplayKeyboard
+        try:
+            if self.native_focus():
+                mode = X.AsyncKeyboard
+                if e.detail == self.escape:
+                    self.write_shell_keys('ctrl-escape', [])
+                else:
+                    self.shell_combo = []
+        finally:
+            self.d.allow_events(mode, e.time)
+
+    def shell_combo_event(self, e):
+        """A key while the WM holds the keyboard for the Windows key."""
+        if e.type == X.KeyPress and e.detail not in self.super_codes:
+            keysym = self.d.keycode_to_keysym(e.detail, 0)
+            vk = VIRTUAL_KEYS.get(keysym)
+            if vk is None and (XK.XK_a <= keysym <= XK.XK_z or XK.XK_0 <= keysym <= XK.XK_9):
+                vk = ord(chr(keysym).upper())
+            if vk is None and XK.XK_F1 <= keysym <= XK.XK_F24:
+                vk = 0x70 + keysym - XK.XK_F1
+            if vk is not None:
+                self.shell_combo.append(vk)
+        elif e.type == X.KeyRelease and e.detail in self.super_codes:
+            self.write_shell_keys('windows', self.shell_combo)
+            self.shell_combo = None
+
+    def write_shell_keys(self, kind, keys):
+        self.shell_keys += 1
+        temporary = self.ipc / 'shellkeys.tmp'
+        temporary.write_text(f'{self.shell_keys} {kind}' + ''.join(f' {k:x}' for k in keys) + '\n')
+        temporary.replace(self.ipc / 'shellkeys.tsv')
+
     def focus(self, w):
         # Wine activation targets the proxy's XID; the native client owns X
         # keyboard focus and the single EWMH task identity.
@@ -253,6 +340,9 @@ class Manager:
             if self.atom('WM_TAKE_FOCUS') in self.prop(w, 'WM_PROTOCOLS'):
                 self.message(w, 'WM_PROTOCOLS', [self.atom('WM_TAKE_FOCUS'), X.CurrentTime, 0, 0, 0])
             w.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
+            return
+        if c and c['kind'] in ('desktop', 'dock'):
+            self.focus_shell(w)
             return
         if not c or c['kind'] != 'normal':
             return
@@ -687,7 +777,11 @@ class Manager:
                     r = e.child.get_geometry()
                     self.drag = (e.child, e.detail, e.root_x, e.root_y, r.x, r.y, r.width, r.height)
             else:
-                self.focus(e.window)
+                c = self.clients.get(e.window.id)
+                if c and c['kind'] in ('desktop', 'dock'):
+                    self.focus_shell(e.window, e.time)
+                else:
+                    self.focus(e.window)
                 self.d.allow_events(X.ReplayPointer, X.CurrentTime)
         elif e.type == X.MotionNotify and self.drag:
             w, button, px, py, x, y, width, height = self.drag
@@ -698,6 +792,13 @@ class Manager:
                 w.configure(width=max(64, width+dx), height=max(32, height+dy))
         elif e.type == X.ButtonRelease:
             self.drag = None
+        elif self.shell_combo is not None and e.type in (X.KeyPress, X.KeyRelease):
+            # The WM holds the keyboard until the Windows key is released;
+            # repeated presses of that key are ignored there.
+            self.shell_combo_event(e)
+        elif e.type == X.KeyPress and (e.detail in self.super_codes or
+                                       e.detail == self.escape and e.state & X.ControlMask):
+            self.shell_key(e)
         elif self.switch is not None and e.type in (X.KeyPress, X.KeyRelease):
             self.switch_event(e)
         elif e.type == X.KeyPress and e.detail == self.d.keysym_to_keycode(XK.string_to_keysym('F4')):

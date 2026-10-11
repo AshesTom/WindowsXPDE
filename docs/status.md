@@ -1149,11 +1149,49 @@ Wine を新しい WoW64 方式（`--enable-archs=i386,x86_64`、Unix 側は 64-b
   `tests/bridge_integration.py`、`tests/patch_state.py` が成功（`.local/s8-bridge-tests.log`）。最初は wm_integration の Alt+Tab が
   段階 7 のビルドでも失敗した。`wine.inf` の日付の違う2つの install を交互に使ったため、そのたびに試験用 prefix の更新が裏で走り、
   その窓がフォーカスを取っていた。新しいビルドで prefix を更新し終えてから回すと成功した。
-- 見つけたが直していないこと:
+- 見つけたこと（cmd のボタンのロゴ以外は次の節で直した）:
   - Linux のアプリにキーボードのフォーカスがあるとき、XP のデスクトップやタスクバーの空いた所をクリックしてもフォーカスが
     移らない（WM の `focus()` が desktop と dock の種類のウィンドウを扱わない）。そのため Win+R も Linux のアプリに届いた。
   - Linux のアプリにフォーカスがあるとき、XP のホットキー（Win+R、Win+E、Win キー）は効かない（X のキーはそのアプリに届き、
     Wine はホットキーのためにキーを横取りしない）。
   - fcitx5 で直接入力と Mozc を切り替えた直後に出る入力メソッドの表示（28×28 の窓）が黒く、すぐ消える。
-  - cmd の窓（Wine の conhost）のタスクボタンは Wine のロゴ（conhost のクラスのアイコンが `IDI_WINLOGO`）。日本語のロケールの
-    conhost は半角の文字を全角の幅で並べる。
+  - cmd の窓（Wine の conhost）のタスクボタンは Wine のロゴ（conhost のクラスのアイコンが `IDI_WINLOGO`。利用者の判断で直さない）。
+    日本語のロケールの conhost は半角の文字を全角の幅で並べる。
+
+## Windows キー、デスクトップのフォーカス、fcitx5 の表示、日本語のコンソール（2026-10-11）
+
+利用者の求めで、前の節で見つけたことを直した（cmd のボタンのロゴは除く）。パッチは 58 本（0023 と 0041 を加え、番号を
+振り直した。`docs/patches.md` の「Windows キーと日本語のコンソール」）。仕組みは `docs/architecture.md`、判断は `docs/dll-policy.md`。
+
+- Windows キーと Ctrl+Esc: XP の Explorer はシェルフックの `HSHELL_TASKMAN` でスタートメニューを開く（プローブから SHELLHOOK の
+  メッセージを送って確かめた）。Wine は Windows キー単独でも Ctrl+Esc でも何もしなかった。0023 で、キーを受けたプロセスが
+  `HSHELL_TASKMAN` を送る。調べる途中で次のことが分かった（`+relay`、`+key`、試験 VM）:
+  - XP の Explorer の `SetForegroundWindow` は、前面のプロセスが入力を受けていると server に拒まれた。キーを受けたプロセスが
+    先に前面を渡す。
+  - XP が登録するのはタスクバーの子ウィンドウ（タスク切り替え）で、最上位のウィンドウだけを見ても見つからない。
+  - WM が横取りしてから再送したキーは、Wine では押しっぱなしの扱い（`KF_REPEAT`）になる。
+  - Linux のアプリからの場合、X のフォーカスを XP のデスクトップへ移して再送すると、Wine がそのウィンドウを有効にする前に届いた
+    キーを server が捨てた。WM が WM_TAKE_FOCUS を時刻 0 で送ると、Wine は前面のウィンドウより古い要求として無視した。
+    最後は、WM が Windows キーの離しまでのキーを受け取り、proxy が `SendInput` で入れる形にした。
+- 試験 VM（LXTerminal と、64-bit の Wine の notepad）: Windows キー単独、Ctrl+Esc でスタートメニューが開き、Win+R で
+  「ファイル名を指定して実行」、Win+E で「マイ コンピュータ」が開いた（それぞれ 4〜6 回、すべて成功）。Win+R の R は LXTerminal に
+  入らない。デスクトップの単独の Windows キーでも開く。
+- デスクトップとタスクバーのクリック: デスクトップをクリックすると「Program Manager」、タスクバーでは `Shell_TrayWnd` が
+  キーボードを受ける。LXTerminal のタスクボタンでの最小化と復元は2回とも成功。最初は、スタートボタンのクリックでタスクバーが
+  フォーカスを持ったまま、デスクトップの右クリックメニューが Esc で閉じなくなった（段階 7 の場面との比較で見つけた）。XP と同じく
+  右クリックでもウィンドウを有効にするようにした。
+- fcitx5: 入力メソッドの情報の表示を切った（supervisor が `~/.config/fcitx5/config` に足す）。Wine のメモ帳で変換・確定の後に
+  切り替えると黒い窓が残る手順で、表示が出なくなったことを確かめた。候補の窓は黒くならない。
+- cmd: 日本語のロケールで「Microsoft Windows 5.1.2600」などが半角の升目で並び、Mozc で入力した日本語が echo され、コマンドラインの
+  途中への挿入とカーソルの位置も正しい（`localres/s8/final-cmd.png`）。確定した日本語は conhost が捨てていた（キーの無い文字。
+  元の conhost でも同じ）。0041 で直した。prefix の `HKCU\Console` の字体は「DejaVu Sans Mono」で、日本語は代わりの字体で描かれる
+  （XP は「ＭＳ ゴシック」。変えていない）。
+- ビルド: 未改変の 11.0 に 58 本が当たり、当てたツリーは移植用ブランチと一致した。新しいソースとビルドディレクトリで configure から
+  全体をビルドし（`.local/wine-stage9-install`）、警告は upstream の bison の 14 件だけ。試験 VM には、このビルドの wineserver、
+  win32u.so、conhost.exe を入れた（空きが足りないので install 全体は入れ替えていない）。
+- 前後の比較（試験 VM、段階 7 の `localres/stage7/s7i2*` と `localres/s8/s8z3*`）: 9場面のうち8場面が時計を除いて0画素差。
+  「ファイル名を指定して実行」は、前の節と同じく履歴の `cmd` だけが違う。
+- chroot の Xvfb で `tests/wm_integration.py`（Windows キー、Win+R、Ctrl+Esc の proxy への受け渡しと、デスクトップのクリックの
+  フォーカスを足した）、`tests/native_frames.py`（Luna とクラシック）、`tests/xterm_redraw.py`、`tests/bridge_integration.py`、
+  `tests/patch_state.py` が成功（`.local/s9-bridge-tests.log`）。クラシックの native_frames は1回、列挙の途中で消えたウィンドウに
+  当たって失敗した（試験の競合。その後2回成功。試験で消えたウィンドウを飛ばすようにした）。

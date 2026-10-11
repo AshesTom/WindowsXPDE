@@ -50,9 +50,12 @@ def frame_for(w):
     except OSError:
         return None
     for child in root.query_tree().children:
-        hwnd = prop(child, '_WIN4WINE_HWND')
-        if hwnd and pairs.get(hwnd[0]) == w.id and child.get_attributes().map_state == X.IsViewable:
-            return child
+        try:
+            hwnd = prop(child, '_WIN4WINE_HWND')
+            if hwnd and pairs.get(hwnd[0]) == w.id and child.get_attributes().map_state == X.IsViewable:
+                return child
+        except error.BadWindow:
+            pass  # destroyed since the query, e.g. during withdrawal and remap
 
 def frame_icon():
     hwnd = prop(frame, '_WIN4WINE_HWND')[0]

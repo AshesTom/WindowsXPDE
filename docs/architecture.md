@@ -16,8 +16,8 @@ inotify（proxy の `*.cmd` と `frames.tsv`）、シグナルだけで起き、
 `bridge-wm/proxy.c` は Wine 上の Win32 プロセス。Linux の通常ウィンドウに `Win4WineProxy` HWND を割り当てる。Win32 のシェルが GetWindowText、IsWindowVisible、IsIconic 等を参照できる。代理 HWND は `WS_OVERLAPPEDWINDOW` を持ち、その X ウィンドウを native クライアントの直下に表示して Win32 のタイトルバーと枠を使う。対応するクライアントがない代理は隠す。shell hook の登録は user32 パッチで HWND の property に保存し、仲介プロセスが SHELLHOOK メッセージを配信する。完全な Win32 hook 実装ではない。
 proxy も定期的には起きない。IPC ディレクトリの変更通知、out-of-context の WinEvent（前面化、最小化の開始・終了、
 最上位ウィンドウの生成・破棄・表示・非表示、題名の変更）、自分のウィンドウへのメッセージで起き、Win32 の一覧と前回との差を
-SHELLHOOK で配信する。Wine 10 は題名の変更を WinEvent で知らせないため、Wine パッチ 0021 が外部シェルの opt-in 時だけ
-DefWindowProc の WM_SETTEXT で EVENT_OBJECT_NAMECHANGE を出す。ファイルの同期はメッセージ処理より先に行う
+SHELLHOOK で配信する。題名の変更は、Wine 11.0 の DefWindowProc の WM_SETTEXT が EVENT_OBJECT_NAMECHANGE で知らせる
+（Wine 10 では opt-in のパッチで出していた。段階 5 で外した）。ファイルの同期はメッセージ処理より先に行う
 （先に動いた native が枠の一部を見えるようにし、その再描画を先にすると枠の移動が遅れるため）。
 
 仲介プロセスは、表示済みの `Shell_TrayWnd` と Start/ReBar 子ウィンドウの準備が 200ms 間隔の二回の確認で安定した後、現在の親 client サイズを使った公開 `WM_SIZE` を一度だけ送る。起動直後に保持された子の ideal 高さを、シェル自身の通常レイアウトで親に合わせ直すためで、子の寸法や字体は指定しない。応答待ちは最大 500ms。Tray HWND/PID の置換・消失で状態をリセットし、一時的な非表示では再送しない。この確認の timer は、表示中の tray がこの同期を待っている間だけ動く。Luna と Classic に適用し、`BCM_GETIDEALSIZE` の測定値は変更しない。
@@ -63,7 +63,7 @@ property は最大1 MiB、画像は256×256までとし、manage と icon / hint
 small / big の WM_SETICON に同じ HICON を設定し、交換・ウィンドウ破棄時に所有した HICON を一度破棄する。
 アイコンがない・壊れている場合は Wine builtin の共有 `IDI_APPLICATION` に戻す。共有アイコンは破棄しない。
 Wine の CreateIconIndirect は alpha 用 bitmap を内部で premultiply するため、bridge では二重変換しない。
-Wine パッチ 0023 は外部シェル opt-in 時だけ、別プロセス間の公開 `WM_GETICON` を許可する。
+Wine パッチ 0022 は外部シェル opt-in 時だけ、別プロセス間の公開 `WM_GETICON` と、別プロセスのクラスのアイコンの `GetClassLongPtr` を許可する。
 返す値は所有者の元の borrowed HICON で、受信側で `GetIconInfo` / `DrawIconEx` / `CopyIcon` を使える。
 所有者が初期化した static icon の画素・resource metadata を wineserver に不変 snapshot として登録する。
 画像は256×256、metadata は各2048 bytes、所有プロセスは16 MiB、server 全体は64 MiBまで。
@@ -127,7 +127,7 @@ FileMonitor）でだけ起きる。XEmbed のトレイ（`_NET_SYSTEM_TRAY_S0`�
   proxy は自分が求めた連番より新しいものだけを TrackPopupMenu で出し、選んだ項目を `event` で返す。古い連番の選択は捨てる。
 
 proxy は `Win4WineTray` の隠しウィンドウで公開の `Shell_NotifyIconW` を呼び、XP の通知領域にアイコンを追加・更新・削除する。
-XP の Explorer が受け取れる形式で届くのは Wine パッチ 0054 による（Wine の builtin の形式は XP の Explorer が受け付けない）。
+XP の Explorer が受け取れる形式で届くのは Wine パッチ 0028 による（Wine の builtin の形式は XP の Explorer が受け付けない）。
 `TaskbarCreated` を受けたら追加し直す。
 
 ## セッション
@@ -151,9 +151,9 @@ WM は native X クライアントのフォーカス・サイズ変更に合わ�
 周期的な再描画ではない。ConfigureRequest には root 座標の
 synthetic ConfigureNotify も返す。
 
-XP のタスクボタンが他プロセスの最小化可否を調べるため、Wine パッチ 0022 は外部シェル opt-in 時に
+XP のタスクボタンが他プロセスの最小化可否を調べるため、Wine パッチ 0021 は外部シェル opt-in 時に
 標準システムメニューのプロセス内コピーを返す。アプリ独自の変更は同期しない限定 shim。
-0032 は名前付き child ReBar の未指定 alignment を CCS_TOP に正規化し、フォルダの初期ずれを防ぐ。
+0034 は名前付き child ReBar の未指定 alignment を CCS_TOP に正規化し、フォルダの初期ずれを防ぐ。
 
 ## Linux アプリのスタートメニュー（2026-10-11）
 
@@ -192,3 +192,20 @@ Programs（`C:\ProgramData\Microsoft\Windows\Start Menu\Programs`）にショー
   消えたアプリのショートカットと、空になった自分のフォルダだけを消す。利用者や Windows のアプリのファイルには触れない。
 - `--watch`: `applications` の各ディレクトリ（まだ無いものはその最も近い親）を inotify で見張り、変更が2秒止んでから同期する。
   パッケージの導入・削除でスタートメニューが追従する。XP Explorer は開いている間もフォルダの変更を読み直す。
+
+## Windows キーとデスクトップのフォーカス（2026-10-11）
+
+- WM は Super（Windows キー）をすべての修飾の組み合わせで、Ctrl+Esc を同期モードで横取りする。Wine のウィンドウにフォーカスが
+  あるときはそのまま再送し（`ReplayKeyboard`）、Wine 自身が処理する。Linux のウィンドウにフォーカスがあるときは、Windows キーが
+  離されるまでのキーを WM が受け取り（キーの横取りは離されるまで続く）、IPC ディレクトリの `shellkeys.tsv` に
+  `番号 windows VK...`（文字・数字・F1〜F24・Tab・Pause・Space・Esc・Enter）または `番号 ctrl-escape` を書く。proxy はそれを
+  `SendInput` で Wine に入れる。Wine の前面のスレッドが新しい入力として受けるので、XP のホットキー（Win+R、Win+E など、
+  wineserver が照合する）も、スタートメニューのキー（Wine パッチ 0023）も、Win32 のウィンドウのときと同じに動く。Linux の
+  アプリにはそのキーは届かない。
+- Wine パッチ 0023: キーを受けたプロセスで、ほかのキーを挟まずに押して離した Windows キーと、Ctrl+Esc（Shift、Alt なし。Esc は
+  届けない）に対し、`Win4WineShellHook` の属性のあるウィンドウ（XP のタスク切り替えの子ウィンドウ）へ前面を渡してから
+  `HSHELL_TASKMAN` を送る。XP の Explorer はそれでスタートメニューを開く。
+- WM は左と右のクリックでウィンドウを有効にする（XP と同じ。デスクトップの右クリックメニューもキーボードを受ける）。
+  デスクトップ（Progman）とタスクバー（Shell_TrayWnd）をクリックすると、WM はそのウィンドウに X のフォーカスを渡し
+  （そのイベントの時刻で WM_TAKE_FOCUS。Wine は前面のウィンドウがフォーカスを得た時刻より古い要求を無視する）、
+  `_NET_ACTIVE_WINDOW` を 0 にする（アプリのタスクは無くなる）。タスクボタンでの最小化と復元は今までどおり。

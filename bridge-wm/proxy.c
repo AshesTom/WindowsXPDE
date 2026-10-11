@@ -207,6 +207,60 @@ static void notify(UINT event, HWND window)
     EnumWindows(deliver_tree, (LPARAM)&n);
 }
 
+/* The WM writes shellkeys.tsv when the Windows key or Ctrl+Esc is pressed
+ * under a native client: "NUMBER windows VK..." with the keys pressed while
+ * the Windows key was down, or "NUMBER ctrl-escape". Enter them into Wine as
+ * the keyboard would; Wine's foreground then handles XP's hotkeys and the
+ * Start menu keys as for its own windows. */
+static void key_input(INPUT *input, WORD vk, BOOL up)
+{
+    memset(input, 0, sizeof(*input));
+    input->type = INPUT_KEYBOARD;
+    input->ki.wVk = vk;
+    input->ki.wScan = (WORD)MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
+    input->ki.dwFlags = up ? KEYEVENTF_KEYUP : 0;
+    if (vk == VK_LWIN) input->ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+}
+
+static void shell_key_events(BOOL start)
+{
+    static unsigned seen;
+    WCHAR path[MAX_PATH + 32];
+    char kind[16] = "";
+    unsigned number = 0, vk, count = 0;
+    INPUT inputs[2 + 2 * 16 + 2];
+    FILE *file;
+    swprintf(path, MAX_PATH + 32, L"%ls\\shellkeys.tsv", directory);
+    if (!(file = _wfopen(path, L"rb"))) return;
+    if (fscanf(file, "%u %15s", &number, kind) != 2) number = seen;
+    if (start || number == seen)
+    {
+        seen = number;
+        fclose(file);
+        return;
+    }
+    seen = number;
+    if (!strcmp(kind, "ctrl-escape"))
+    {
+        key_input(&inputs[count++], VK_CONTROL, FALSE);
+        key_input(&inputs[count++], VK_ESCAPE, FALSE);
+        key_input(&inputs[count++], VK_ESCAPE, TRUE);
+        key_input(&inputs[count++], VK_CONTROL, TRUE);
+    }
+    else if (!strcmp(kind, "windows"))
+    {
+        key_input(&inputs[count++], VK_LWIN, FALSE);
+        while (count < ARRAYSIZE(inputs) - 3 && fscanf(file, "%x", &vk) == 1 && vk && vk < 0xff)
+        {
+            key_input(&inputs[count++], (WORD)vk, FALSE);
+            key_input(&inputs[count++], (WORD)vk, TRUE);
+        }
+        key_input(&inputs[count++], VK_LWIN, TRUE);
+    }
+    fclose(file);
+    if (count) SendInput(count, inputs, sizeof(INPUT));
+}
+
 static BOOL CALLBACK collect(HWND hwnd, LPARAM unused)
 {
     WCHAR name[80];
@@ -1051,9 +1105,11 @@ int wmain(int argc, WCHAR **argv)
     SetWinEventHook(EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
     SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_HIDE, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
     SetWinEventHook(EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
+    shell_key_events(TRUE);
     for (;;)
     {
         switch_events();
+        shell_key_events(FALSE);
         if (dirty)
         {
             dirty = FALSE;

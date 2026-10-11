@@ -105,9 +105,37 @@ class Session:
         wanted = '@server=' + name
         return bool(servers) and any(self.d.get_atom_name(atom) == wanted for atom in servers.value)
 
+    def fcitx_defaults(self):
+        """XP's IME shows its mode in the taskbar, not beside the caret.
+
+        fcitx5 shows the input method's name at the caret when it changes or
+        a window gets the focus; for XIM clients (Wine) it then leaves that
+        window black until it hides it. The tray icon already shows the mode.
+        Options that the user set in fcitx5's configuration are kept."""
+        wanted = {'ShowInputMethodInformation': 'False', 'showInputMethodInformationWhenFocusIn': 'False'}
+        config = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'fcitx5/config'
+        try:
+            lines = config.read_text().splitlines()
+        except FileNotFoundError:
+            lines = []
+        keys = {line.split('=', 1)[0].strip() for line in lines if '=' in line}
+        missing = [f'{key}={value}' for key, value in wanted.items() if key not in keys]
+        if not missing:
+            return
+        if '[Behavior]' in lines:
+            index = lines.index('[Behavior]') + 1
+            lines[index:index] = missing
+        else:
+            lines += ['[Behavior]', *missing]
+        config.parent.mkdir(parents=True, exist_ok=True)
+        temporary = config.with_name('config.win4wine')
+        temporary.write_text('\n'.join(lines) + '\n')
+        temporary.replace(config)
+
     def start_input_method(self):
         if not self.input_method or self.xim_server('fcitx'):
             return None  # Not configured, or started by the login already.
+        self.fcitx_defaults()
         return self.spawn(['fcitx5'], 'fcitx5')
 
     def start_linux_menu(self):

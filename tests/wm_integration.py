@@ -66,6 +66,25 @@ try:
     wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [first.id], 'Alt+Tab cycles native windows')
     subprocess.run(['xdotool', 'key', 'alt+shift+Tab'], check=True)
     wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [second.id], 'reverse Alt+Tab')
+    # Under a native client the Windows key and Ctrl+Esc go to the proxy,
+    # which enters them into Wine; the client keeps the keyboard.
+    def shell_keys(text):
+        path = ipc / 'shellkeys.tsv'
+        return lambda: path.exists() and path.read_text() == text
+    subprocess.run(['xdotool', 'key', 'super+r'], check=True)
+    wait(shell_keys('1 windows 52\n'), 'Win+R passed to the proxy')
+    subprocess.run(['xdotool', 'key', 'super'], check=True)
+    wait(shell_keys('2 windows\n'), 'Windows key passed to the proxy')
+    subprocess.run(['xdotool', 'key', 'ctrl+Escape'], check=True)
+    wait(shell_keys('3 ctrl-escape\n'), 'Ctrl+Esc passed to the proxy')
+    assert d.get_input_focus().focus.id == second.id, 'native client keeps the keyboard'
+    # A click on the desktop gives it the keyboard, and no task stays active.
+    subprocess.run(['xdotool', 'mousemove', str(g.width - 100), str(g.height - 100), 'click', '1'], check=True)
+    wait(lambda: d.get_input_focus().focus.id == desktop.id, 'desktop click takes the keyboard')
+    wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [0], 'no active task on the desktop')
+    subprocess.run(['xdotool', 'key', 'super'], check=True)
+    time.sleep(.3)
+    assert (ipc / 'shellkeys.tsv').read_text() == '3 ctrl-escape\n', 'Wine windows get the Windows key themselves'
     for index, (op, target) in enumerate((('minimize', first), ('activate', first), ('close', second))):
         (ipc / f'test-{index}.tmp').write_text(f'{op} {target.id:x}\n')
         (ipc / f'test-{index}.tmp').replace(ipc / f'test-{index}.cmd')
@@ -95,7 +114,7 @@ try:
     wait(lambda: prop(first, 'WM_STATE')[:1] == [3], 'single window stays minimized')
     time.sleep(.3)
     assert first.get_attributes().map_state != X.IsViewable
-    print('PASS: workarea, native snapshot, Alt+Tab, minimize, restore, activation, close')
+    print('PASS: workarea, native snapshot, Alt+Tab, shell keys, desktop focus, minimize, restore, activation, close')
 finally:
     for w in windows:
         try:
