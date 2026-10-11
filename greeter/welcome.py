@@ -70,6 +70,8 @@ def fontconfig(fonts, directory):
     XP follows each font's gasp table: MS UI Gothic is drawn without
     antialiasing (from its bitmaps) up to 24 pixels, Arial up to 17.
     """
+    directory = Path(directory).resolve()
+    fonts = Path(fonts).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     rules = ''.join(f'''
   <match target="font">

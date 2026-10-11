@@ -662,8 +662,11 @@ prefix では次の起動で stage.py が profile を一度当て直す。tray.p
 LightDM の greeter を XP のようこそ画面にする（`greeter/xp-greeter.py`）。ログインは LightDM と PAM が行う。Wine とパッチ、
 registry profile は変わらない。
 
-1. 抽出し直す。`extract/extract.py` は logonui.exe・winlogon.exe・arial.ttf と XP の既定のユーザー画像 23 枚も取り出す
-   （既存の出力先には書かないので、新しい出力先に抽出する。prefix はそのまま使える）。
+1. 抽出し直す。`extract/extract.py` は logonui.exe・winlogon.exe・arial.ttf と XP の既定のユーザー画像 23 枚、カーソルのための
+   user32.dll（`resources/`。prefix には写さない）も取り出す（既存の出力先には書かないので、新しい出力先に抽出する。prefix は
+   そのまま使える）。
+   パッチは 60 本になった（0043 を加えた。`docs/patches.md` の「段階 9」）。新しいソースとビルドディレクトリで Wine をビルドし、
+   install を入れ替える。
 2. パッケージ（Debian 13）: `lightdm`、`gir1.2-lightdm-1`、`gir1.2-gtk-3.0`、`python3-gi`、`python3-gi-cairo`、`python3-xlib`。
    使えないときに切り替える `lightdm-gtk-greeter` も入れておく。
 3. greeter を入れる（コードと必要な XP のファイルを `/usr/local/share/win4wine/greeter` に写し、
@@ -682,6 +685,10 @@ sudo systemctl restart lightdm
   ものか `~/.face`。
 - 必要なファイルや GTK・LightDM のバインディングが無いと、greeter は `fallback` に切り替える（理由は
   `/var/log/lightdm/seat0-greeter.log`）。リポジトリを更新したら `greeter/install.sh` を再び実行する。
+- `greeter/install.sh` は XP のカーソルの X のテーマ（`/usr/share/icons/win4wine-xp`、`greeter/cursors.py` が user32.dll から作る）も
+  入れる。greeter と XP シェルのセッションはこれがあれば `XCURSOR_THEME=win4wine-xp` で使う（Wine、Linux のアプリ、
+  ルートの矢印は xsetroot（x11-xserver-utils）で）。`session.json` と `greeter.json` の `cursor_theme` で別のテーマにでき、
+  `null` で使わない。
 - ログイン後とログオフ中の XP の画面は、XP シェルのセッション（`session/supervisor.py`）が同じ設定を読んで出す。
   `session.json` に `"welcome_screen": false` と書くと出さない。設定が無ければ出さずに進む（`welcome.log` に理由）。
 
@@ -689,6 +696,7 @@ sudo systemctl restart lightdm
 
 ```sh
 ./scripts/debian.sh run python3 /work/tests/greeter_layout.py /work/.local/ASSETS   # XP で測った配置と比べる
+python3 tests/cursor_theme.py .local/ASSETS                                           # カーソルのテーマ
 ```
 
 試験 VM での手順は `docs/vm.md` の「ログイン画面」。

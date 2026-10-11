@@ -22,6 +22,9 @@ FILES = {
     'luna.msstyles': 'themes/Luna', 'luna.theme': 'themes',
     # XP's default wallpaper and its 23 default user account pictures (48x48).
     'bliss.jpg': 'web/wallpaper',
+    # Only the cursors are read from user32.dll (greeter/cursors.py); it is kept out of
+    # system32, whose DLLs prefix/create.py copies into the prefix.
+    'user32.dll': 'resources',
     **dict.fromkeys(('airplane.bmp', 'astro.bmp', 'beach.bmp', 'butterfl.bmp', 'car.bmp', 'cat.bmp',
                      'chess.bmp', 'dirtbike.bmp', 'dog.bmp', 'drip.bmp', 'duck.bmp', 'fish.bmp',
                      'frog.bmp', 'guitar.bmp', 'horses.bmp', 'kick.bmp', 'liftoff.bmp', 'palmtree.bmp',

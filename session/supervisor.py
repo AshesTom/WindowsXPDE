@@ -62,6 +62,13 @@ class Session:
             if not any(os.environ.get(name) for name in IM_VARIABLES):
                 self.env.update(XMODIFIERS='@im=fcitx', GTK_IM_MODULE='fcitx', QT_IM_MODULE='fcitx',
                                 SDL_IM_MODULE='fcitx')
+        # XP's cursors (greeter/install.sh installs them as an X cursor theme): winex11
+        # shows Windows' standard cursors through the theme, Linux applications use it too.
+        self.cursor_theme = config.get('cursor_theme', 'win4wine-xp')
+        if self.cursor_theme and self.find_cursor_theme(self.cursor_theme):
+            self.env.update(XCURSOR_THEME=self.cursor_theme, XCURSOR_SIZE='32')
+        else:
+            self.cursor_theme = None
         self.linux_font = config.get('linux_font', 'MS UI Gothic')
         self.linux_menu = config.get('linux_menu', True)
         # Wine's ExitWindowsEx records log off / shut down / restart here,
@@ -92,6 +99,12 @@ class Session:
         if self.linux_font:
             self.env['FONTCONFIG_FILE'] = str(self.font_config())
         self.status('starting')
+
+    @staticmethod
+    def find_cursor_theme(name):
+        directories = [Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'icons',
+                       Path.home() / '.icons', Path('/usr/share/icons')]
+        return any((d / name / 'cursors/left_ptr').is_file() for d in directories)
 
     def font_config(self):
         """Prefer one family for Linux applications' sans-serif text.
@@ -309,6 +322,9 @@ class Session:
         time.sleep(.5)
         if wm.poll() is not None:
             raise RuntimeError('WM failed; see wm.log')
+        if self.cursor_theme and shutil.which('xsetroot'):
+            # The WM's root cursor comes from the core cursor font; xsetroot takes the theme's.
+            subprocess.run(['xsetroot', '-cursor_name', 'left_ptr'], env=self.env, check=False)
         # Linux tray icons (StatusNotifierItem) reach the XP notification
         # area through the proxy; the input method shows its mode there.
         self.spawn(['python3', str(ROOT / 'bridge-wm/tray.py'), '--ipc', str(self.ipc)], 'tray')

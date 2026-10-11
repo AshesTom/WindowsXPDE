@@ -364,6 +364,10 @@ def main():
         import welcome
         cache = Path(os.environ.get('HOME') or '/var/lib/lightdm') / '.cache/xp-greeter'
         config, assets = welcome.setup(cache)
+        # XP's cursors (greeter/cursors.py), for this window and the root.
+        theme = config.get('cursor_theme', 'win4wine-xp')
+        if theme and (Path('/usr/share/icons') / theme / 'cursors/left_ptr').is_file():
+            os.environ.update(XCURSOR_THEME=theme, XCURSOR_SIZE='32')
         import gi
         gi.require_version('Gtk', '3.0')
         gi.require_version('Gdk', '3.0')

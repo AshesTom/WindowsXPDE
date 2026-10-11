@@ -34,6 +34,17 @@ if [[ ! -f /etc/win4wine/greeter.json ]]; then
     printf '{"assets": "%s/assets", "fallback": "lightdm-gtk-greeter"}\n' "$share" |
         sudo install -Dm644 /dev/stdin /etc/win4wine/greeter.json
 fi
+# XP's cursors as an X cursor theme, for the greeter, Wine and Linux applications in the session.
+if [[ -f $assets/resources/user32.dll ]]; then
+    theme=$(mktemp -d)
+    python3 "$root/greeter/cursors.py" "$assets/resources/user32.dll" "$theme/win4wine-xp"
+    sudo rm -rf /usr/share/icons/win4wine-xp
+    sudo cp -r "$theme/win4wine-xp" /usr/share/icons/
+    sudo chmod -R a+rX /usr/share/icons/win4wine-xp
+    rm -rf "$theme"
+else
+    printf 'No resources/user32.dll in %s: XP cursors are not installed (extract again)\n' "$assets" >&2
+fi
 sudo install -Dm644 "$root/greeter/xp-greeter.desktop" /usr/share/xgreeters/xp-greeter.desktop
 printf '[Seat:*]\ngreeter-session=xp-greeter\n' | sudo install -Dm644 /dev/stdin "$seat"
 printf 'Installed the XP Welcome screen as %s. Settings: /etc/win4wine/greeter.json\n' "$seat"

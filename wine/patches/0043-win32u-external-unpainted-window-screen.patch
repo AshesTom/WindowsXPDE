@@ -1,0 +1,105 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] win32u: show the screen through top-level windows not painted yet
+
+Purpose: give XP's log-off dialog its dimmed picture of the screen.
+XP behavior: a top-level window without a class background brush shows
+what was on the screen under it until it paints, and BitBlt from its DC
+reads those pixels; BitBlt from the DC of a top-level window not shown
+yet reads the screen too (drawing into it changes nothing). XP's shell32
+shows its full-screen DimmedWindowClass window (no brush) behind the
+"Log Off Windows" dialog and fades it to grey band by band, reading each
+band back from the window's own DC.
+Wine before: a newly shown window's surface started white, and a hidden
+window's DC read its unmapped X window (black); the dialog stood on a
+white screen.
+Change: when such a window is shown, the screen under it is copied into
+its surface before the X window is mapped. A DC of a top-level window
+without WS_VISIBLE takes the screen drawable at the window's position,
+with its empty visible region (drawing stays clipped away).
+Evidence: a probe reading GetDC/GetWindowDC of a hidden full-screen popup
+(in WM_CREATE and after CreateWindow) and of the same popup just shown
+gives the screen's pixels on the reference XP; Wine gave 000000 and
+ffffff, and now the screen's pixels. XP shell32's log-off dialog in the
+test VM fades the desktop to grey.
+Scope: external shell opt-in only; top-level, non-layered windows whose
+class has no background brush (the copy) and top-level windows without
+WS_VISIBLE (the DC).
+---
+ dlls/win32u/dce.c    | 17 +++++++++++++++++
+ dlls/win32u/window.c | 21 +++++++++++++++++++++
+ 2 files changed, 38 insertions(+)
+
+diff --git a/dlls/win32u/dce.c b/dlls/win32u/dce.c
+index 5d6cbb7..38fe9dd 100644
+--- a/dlls/win32u/dce.c
++++ b/dlls/win32u/dce.c
+@@ -32,6 +32,7 @@
+ #include "wine/opengl_driver.h"
+ #include "wine/server.h"
+ #include "wine/debug.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(win);
+ 
+@@ -857,6 +858,22 @@ static void update_visible_region( struct dce *dce )
+ 
+     if (status || !vis_rgn) return;
+ 
++    /* Windows reads the screen through the DC of a top-level window that is not shown
++     * yet, while its empty visible region keeps drawing out. Wine read the window's own
++     * unmapped X window (black). See also copy_screen_to_new_surface. */
++    if (win4wine_external_shell() && top_win && top_win != get_desktop_window() &&
++        !(get_window_long( top_win, GWL_STYLE ) & (WS_VISIBLE | WS_CHILD)))
++    {
++        RECT screen = get_virtual_screen_rect( 0, MDT_DEFAULT ), empty;
++
++        user_driver->pGetDC( dce->hdc, dce->hwnd, get_desktop_window(), &win_rect, &screen, flags );
++        if (dce->clip_rgn) NtGdiCombineRgn( vis_rgn, vis_rgn, dce->clip_rgn,
++                                            (flags & DCX_INTERSECTRGN) ? RGN_AND : RGN_DIFF );
++        SetRectEmpty( &empty );
++        set_visible_region( dce->hdc, vis_rgn, &win_rect, &empty, NULL );
++        return;
++    }
++
+     user_driver->pGetDC( dce->hdc, dce->hwnd, top_win, &win_rect, &top_rect, flags );
+ 
+     if (dce->clip_rgn) NtGdiCombineRgn( vis_rgn, vis_rgn, dce->clip_rgn,
+diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
+index 1d4e6a4..88c18b1 100644
+--- a/dlls/win32u/window.c
++++ b/dlls/win32u/window.c
+@@ -2172,6 +2172,23 @@ static BOOL is_fullscreen( const MONITORINFO *info, const RECT *rect )
+  *
+  * Backend implementation of SetWindowPos.
+  */
++/* Windows shows the screen under a top-level window that has no background brush until the
++ * window paints there; XP's shell32 reads those pixels back to fade its log-off background to
++ * grey. Give such a window's new surface what is on the screen there, before it is mapped. */
++static void copy_screen_to_new_surface( HWND hwnd, const RECT *window_rect )
++{
++    HDC screen, dc;
++
++    if (!(screen = NtUserGetDCEx( 0, 0, DCX_CACHE | DCX_WINDOW ))) return;
++    if ((dc = NtUserGetDCEx( hwnd, 0, DCX_CACHE | DCX_WINDOW )))
++    {
++        NtGdiBitBlt( dc, 0, 0, window_rect->right - window_rect->left, window_rect->bottom - window_rect->top,
++                     screen, window_rect->left, window_rect->top, SRCCOPY, 0, 0 );
++        NtUserReleaseDC( hwnd, dc );
++    }
++    NtUserReleaseDC( 0, screen );
++}
++
+ static BOOL apply_window_pos( HWND hwnd, HWND insert_after, UINT swp_flags, struct window_surface *new_surface,
+                               const struct window_rects *new_rects, const RECT *valid_rects )
+ {
+@@ -2294,6 +2311,10 @@ static BOOL apply_window_pos( HWND hwnd, HWND insert_after, UINT swp_flags, stru
+     {
+         TRACE( "win %p surface %p -> %p\n", hwnd, old_surface, new_surface );
+         register_window_surface( old_surface, new_surface );
++        if (win4wine_external_shell() && !is_child && new_surface &&
++            new_surface != &dummy_surface && !is_layered && (swp_flags & SWP_SHOWWINDOW) &&
++            !get_class_long_ptr( hwnd, GCLP_HBRBACKGROUND, FALSE ))
++            copy_screen_to_new_surface( hwnd, &new_rects->window );
+         if (old_surface)
+         {
+             if (valid_rects)

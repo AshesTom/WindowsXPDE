@@ -244,3 +244,8 @@ root の背景に残してから `start_session_sync` する。終了オプシ�
 `shutdown`）で文を変える。後から出た窓や自分のすぐ上に上げられた窓があると上に戻り、終わるときは最後の画像を root の背景に
 残す（`greeter/xdraw.py`）。
 
+`greeter/cursors.py` は利用者の XP の user32.dll のカーソルの資源（100〜114）を X のカーソルテーマ（Xcursor の形式、40×40 の画像で
+名目の大きさ 32）にする。名前は winex11 が Windows の標準カーソルに使う名前（`dlls/winex11.drv/mouse.c`）と、ツールキットの名前
+（cursor-spec と X の古い名前）。XP の影を画像に入れ、反転するカーソルは黒に白い縁にする。supervisor はテーマがあれば
+`XCURSOR_THEME` と `XCURSOR_SIZE=32` を Wine と Linux のアプリの環境に入れ、WM の起動後に xsetroot でルートの矢印も替える。
+
