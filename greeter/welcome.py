@@ -2,7 +2,7 @@
 
 Images and strings come from the user's logonui.exe, msgina.dll and
 winlogon.exe at run time. The layout below is XP's at 96 DPI; the numbers
-were measured on the reference XP (docs/status.md, stage 9).
+were measured on the reference XP (stage 9).
 """
 import os
 from pathlib import Path

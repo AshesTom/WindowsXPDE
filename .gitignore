@@ -18,3 +18,4 @@ __pycache__/
 *.dl_
 *.ex_
 *.tt_
+/devnotes/

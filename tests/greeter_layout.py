@@ -6,7 +6,7 @@ python3 tests/greeter_layout.py ASSETS   (extract/extract.py's output, with logo
 Each state is drawn the way XP showed it (accounts Administrator, builder and
 taro with XP's beach and palm tree pictures, 96 DPI) and the bounding box of
 one kind of pixel in a region is compared with the box measured on XP's
-screen (docs/status.md, stage 9). Only these numbers are kept, no XP pixels.
+screen (stage 9). Only these numbers are kept, no XP pixels.
 Needs python3-gi, gir1.2-pango-1.0 and python3-gi-cairo (and GdkPixbuf).
 """
 import argparse
