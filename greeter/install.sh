@@ -46,5 +46,6 @@ else
     printf 'No resources/user32.dll in %s: XP cursors are not installed (extract again)\n' "$assets" >&2
 fi
 sudo install -Dm644 "$root/greeter/xp-greeter.desktop" /usr/share/xgreeters/xp-greeter.desktop
-printf '[Seat:*]\ngreeter-session=xp-greeter\n' | sudo install -Dm644 /dev/stdin "$seat"
+# The Welcome screen has no session menu: users without a last session get the XP shell.
+printf '[Seat:*]\ngreeter-session=xp-greeter\nuser-session=xp-shell\n' | sudo install -Dm644 /dev/stdin "$seat"
 printf 'Installed the XP Welcome screen as %s. Settings: /etc/win4wine/greeter.json\n' "$seat"

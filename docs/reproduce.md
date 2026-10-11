@@ -1,5 +1,55 @@
 # クリーン Debian 13 での再現
 
+## まとめて入れる（scripts/setup.sh）
+
+新しく入れた Debian 13 で、XP シェルのセッションを使えるところまでを1つのスクリプトで行う。ログインする利用者で実行する
+（root ではなく。パッケージとシステムのファイルには sudo を使う）。ネットワークと、40 GB ほどの空き（Wine のソースとビルド）が要る。
+
+```sh
+git clone <このリポジトリ> ~/win4wine
+cd ~/win4wine
+scripts/setup.sh --media /path/to/WindowsXPSP3.iso              # ログイン画面はそのまま
+scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter    # XP のようこそ画面にする（LightDM にする）
+```
+
+ほかのオプション:
+
+- `--theme luna|classic`: 新しい prefix の見た目（既定 `luna`。XP と同じく Luna では XP 形式、クラシックではクラシック形式の
+  スタートメニュー）。明示すると、既にある prefix にも当てる（セッションを止めてから）。
+- `--wine-install DIR`: 別のマシンでビルドした Wine（そのマシンの `.local/wine-install` を写したもの。置き場所は問わない）を使い、
+  ここではビルドしない。同じ Debian 13（amd64）であること。Wine は実行ファイルの場所から相対で自分のファイルを探すので、
+  ビルドしたときと違うパスに置いてよい（試験: ホストの chroot の `/work/.local/...` でビルドした install を VM の `/opt/xp` に
+  置いて動いた）。prefix、抽出、セッションの登録は、使うマシンと利用者ごとにこのスクリプトが行う。
+- `--jobs N`: Wine のビルドの並列数。
+
+行うこと（終わっている段階は飛ばすので、失敗した後にそのまま再実行できる）:
+
+1. パッケージ: Wine のビルドの依存（WoW64、i686・x86_64 の MinGW）、抽出と prefix の作成（cabextract、7z、Xvfb）、セッション
+   （Xorg、python3-xlib、GObject、xterm、xsetroot）、日本語入力（fcitx5、Mozc、GTK・Qt のフロントエンド）。ディスプレイ
+   マネージャが無ければ LightDM（通常のログイン画面）を入れる。`--greeter` では LightDM をディスプレイマネージャにし、
+   gir1.2-lightdm-1 などを入れる。
+2. `ja_JP.UTF-8` のロケール。
+3. Wine 11.0 を取得し、パッチを当ててビルドする（`.local/wine-install`、ログは `.local/wine-build.log`。4 コアで1時間半ほど）。
+   `--wine-install` のときは行わない。
+4. bridge（`.local/bridge`）。
+5. XP の媒体から抽出する（`.local/assets`）。
+6. XP の prefix を作り（`.local/prefix`、Xvfb の上で）、テーマを当てる。
+7. `~/.config/win4wine/session.json`（無ければ。Wine、prefix、`ja_JP.UTF-8`、fcitx5）と、セッション「XP Shell (Wine, X11)」の登録。
+8. `--greeter` なら `greeter/install.sh`（ようこそ画面と XP のカーソル）。無ければ XP のカーソルだけを入れる。
+
+終わったらディスプレイマネージャを再起動する（または再起動する）。`--greeter` では XP のようこそ画面からそのまま XP シェルに入る。
+そうでなければログイン画面でセッション「XP Shell (Wine, X11)」を選ぶ。後から `--greeter` を付けて実行し直すと、ようこそ画面だけを
+加える。元のログイン画面に戻すのは `greeter/install.sh --remove`。
+
+試験（2026-10-11）: debootstrap で作った最小構成の Debian 13 の VM（ネットワークあり、4 コア、デスクトップ環境なし）で、
+`--no-greeter` で最初から実行し、LightDM の通常のログイン画面からセッション「XP Shell」に入れた。続けて `--greeter --theme luna`
+で実行し直し（済んだ段階は飛ばされた）、XP のようこそ画面から Luna の XP シェルに入れた。別の利用者で `--wine-install`（ホストで
+ビルドした install）を使って入れ、ようこそ画面に2人が並び、その利用者でも XP シェル（XP 形式のスタートメニュー）が動いた。
+
+以下は、段階ごとの手順と、既存の環境を更新する手順。
+
+## chroot での開発環境
+
 ホストで git、sudo、debootstrap が使え、約 15 GB 以上の空きがあること。XP SP3 x86 ISO または XP Windows ディレクトリは利用者が用意する。Microsoft バイナリの取得処理はない。chroot は VM 内で実行する開発検証用で、独立した VM カーネルの試験ではない。
 
 ```sh
