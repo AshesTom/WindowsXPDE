@@ -2,7 +2,8 @@
 
 Images and strings come from the user's logonui.exe, msgina.dll and
 winlogon.exe at run time. The layout below is XP's at 96 DPI; the numbers
-were measured on the reference XP (stage 9).
+were measured on the reference XP (stage 9). At other DPI settings (Screen's
+dpi) XP scales the layout, the fonts and most images with the DPI (stage 10).
 """
 import os
 from pathlib import Path
@@ -23,6 +24,7 @@ CONFIG = Path('/etc/win4wine/greeter.json')
 REQUIRED = ('system32/logonui.exe', 'system32/msgina.dll', 'system32/winlogon.exe', 'fonts/msgothic.ttc')
 
 TOP, BOTTOM = 80, 96            # top band; bottom band (2 divider + 20 + 26 + 2 + 26 + 20)
+BOTTOM_PARTS = (2, 20, 26, 2, 26, 20)  # each scaled on its own above 96 DPI (122px at 120 DPI)
 PANEL = 384                     # width of the left and the right panel
 BACKGROUND = (90, 126, 220)
 TOP_COLOR = (0, 48, 156)
@@ -32,6 +34,7 @@ SHADOW = (49, 81, 181)
 STATUS = (0, 48, 156)
 ITEM = 80                       # height of one account
 INSET = 2                       # DirectUI draws text 2px in from its element's left and right edges
+MESSAGE = 320                   # where the left panel's message wraps, at every DPI
 # The shutdown dialog: its template is in DLUs, XP's MS UI Gothic 9pt base units are 7x12.
 BASE_X, BASE_Y = 7, 12
 # The faded screen behind the shutdown dialog: an affine fit per channel of XP's final state
@@ -54,14 +57,23 @@ def setup(cache):
     return config, Assets(root)
 
 
+def config_dpi(config):
+    """The Welcome screen's DPI: "dpi" in greeter.json (XP's machine-wide setting), 96 by default."""
+    try:
+        value = int(config.get('dpi', 96))
+    except (TypeError, ValueError):
+        return 96
+    return value if 19 <= value <= 480 else 96
+
+
 def default_picture(config, assets):
     """The picture of users without their own: XP's beach.bmp, as the XP prefix gives them."""
     return assets.pictures / config.get('picture', 'beach.bmp')
 
 
-def points(pt):
-    """Pixel height of a font of PT points at 96 DPI, rounded as MulDiv does."""
-    return (pt * 96 + 36) // 72
+def points(pt, dpi=96):
+    """Pixel height of a font of PT points at DPI, rounded as MulDiv does."""
+    return (pt * dpi + 36) // 72
 
 
 def fontconfig(fonts, directory):
@@ -477,8 +489,9 @@ class Screen:
     (centered logo and one line, for "Logging off..." and the like).
     """
 
-    def __init__(self, assets, users):
+    def __init__(self, assets, users, dpi=96):
         self.assets = assets
+        self.dpi = dpi
         self.text = Text(assets)
         self.users = users
         self.mode = 'list'
@@ -500,59 +513,77 @@ class Screen:
 
     # Geometry -------------------------------------------------------
 
+    def px(self, value):
+        """VALUE pixels at 96 DPI scaled to the screen's DPI, rounded as MulDiv does."""
+        return (value * self.dpi + 48) // 96
+
+    def bottom(self):
+        """The bottom band's height: its parts scaled one by one (XP: 122 pixels at 120 DPI)."""
+        return sum(self.px(part) for part in BOTTOM_PARTS)
+
+    def pt(self, points_):
+        return points(points_, self.dpi)
+
     def geometry(self, width, height):
         g = {}
-        g['content'] = (TOP, height - BOTTOM)
-        center = (TOP + height - BOTTOM) // 2
+        px = self.px
+        top_band, bottom_band, panel = px(TOP), self.bottom(), px(PANEL)
+        g['content'] = (top_band, height - bottom_band)
+        center = (top_band + height - bottom_band) // 2
         g['center'] = center
         if self.mode == 'status':
-            left = (width - PANEL) // 2
+            left = (width - panel) // 2
         else:
-            # XP: the divider of the right panel is at width/2 - 2 at every size.
-            left = width // 2 - 2 - PANEL
+            # XP: the divider of the right panel is at width/2 - 2 at every size (96 DPI); above,
+            # it moves left by half of what the panel grew (measured at 120 and 144 DPI).
+            left = width // 2 - 2 - panel - (panel - PANEL) // 2
         g['left'] = left
-        g['divider'] = left + PANEL
+        g['divider'] = left + panel
         shown = [self.selected] if self.mode == 'logon' else range(len(self.users))
         g['shown'] = list(shown)
-        top = center - ITEM * len(g['shown']) // 2
-        g['items'] = {i: top + ITEM * k for k, i in enumerate(g['shown'])}
-        g['list_x'] = g['divider'] + 1 + 26
+        top = center - px(ITEM) * len(g['shown']) // 2
+        g['items'] = {i: top + px(ITEM) * k for k, i in enumerate(g['shown'])}
+        g['list_x'] = g['divider'] + px(1 + 26)
         return g
 
     def item_at(self, width, height, x, y):
         g = self.geometry(width, height)
         if self.mode != 'list' or self.dialog:
             return None
+        px = self.px
         for i, top in g['items'].items():
-            right = g['divider'] + PANEL
-            if g['list_x'] <= x < right and top <= y < top + ITEM:
-                if i == self.selected and y >= top + 5 + 2 + 58 + 2:
+            right = g['divider'] + px(PANEL)
+            if g['list_x'] <= x < right and top <= y < top + px(ITEM):
+                if i == self.selected and y >= top + px(5 + 2 + 58 + 2):
                     return None
                 # Only the picture and the name take the pointer, as in XP.
-                if x < g['list_x'] + 7 + 58 + 7 + self.name_width(i) or i == self.selected:
+                if x < g['list_x'] + px(7 + 58 + 7) + self.name_width(i) or i == self.selected:
                     return i
         return None
 
     def name_width(self, i):
-        return self.text.size(self.text.layout(self.users[i].display, points(12)))[0]
+        return self.text.size(self.text.layout(self.users[i].display, self.pt(12)))[0]
 
     def power_rect(self, width, height):
-        layout = self.text.layout(self.assets.string('logonui', 11), points(12))
-        return (25, height - BOTTOM + 22, 26 + 2 + self.text.size(layout)[0], 26)
+        layout = self.text.layout(self.assets.string('logonui', 11), self.pt(12))
+        px = self.px
+        return (px(25), height - self.bottom() + px(2) + px(20), px(26 + 2) + self.text.size(layout)[0], px(26))
 
     def password_rects(self, width, height):
         g = self.geometry(width, height)
         top = g['items'][self.selected]
-        x = g['list_x'] + 71
+        px = self.px
+        x = g['list_x'] + px(71)
         # The edit is as tall as its Arial 16pt line and borders; the empty keyboard element and
         # the go button each keep a 5px margin.
-        row = top + ITEM - 29
-        return {'edit': (x, row, 163, 29), 'go': (x + 163 + 5 + 5, row + 1, 26, 26)}
+        row = top + px(ITEM) - px(29)
+        return {'edit': (x, row, px(163), px(29)), 'go': (x + px(163) + px(5 + 5), row + px(1), px(26), px(26))}
 
     def dialog_rects(self, width, height):
         controls = self.assets.dialog
         cx, cy = controls['size']
-        w, h = self.dlu(cx, BASE_X, 4), self.dlu(cy, BASE_Y, 8)
+        base_x, base_y = self.base_units()
+        w, h = self.dlu(cx, base_x, 4), self.dlu(cy, base_y, 8)
         # The 1px frame sits at (width - client) / 2 and one third down (XP at 800x600 and 1280x800).
         x = (width - w) // 2 + 1
         y = (height - h - 2) // 3 + 2
@@ -562,9 +593,17 @@ class Screen:
                              ('off_label', 20107), ('restart_label', 20109)):
             # As CreateDialog: x, y, cx and cy are each converted from DLUs.
             _, dx, dy, dw, dh = controls[number]
-            rects[name] = (x + self.dlu(dx, BASE_X, 4), y + self.dlu(dy, BASE_Y, 8),
-                           self.dlu(dw, BASE_X, 4), self.dlu(dh, BASE_Y, 8))
+            rects[name] = (x + self.dlu(dx, base_x, 4), y + self.dlu(dy, base_y, 8),
+                           self.dlu(dw, base_x, 4), self.dlu(dh, base_y, 8))
         return rects
+
+    def base_units(self):
+        """The dialog's base units: its MS UI Gothic 9pt as GdiGetCharDimensions measures it (7x12 at 96 DPI)."""
+        if self.dpi == 96:
+            return BASE_X, BASE_Y
+        letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+        width, height = self.text.size(self.text.layout(letters, self.pt(9)))
+        return (width // 26 + 1) // 2, height
 
     @staticmethod
     def dlu(value, base, divisor):
@@ -599,10 +638,15 @@ class Screen:
             cr.paint_with_alpha(alpha)
             cr.restore()
 
+        px = self.px
+        top_band, bottom_band, panel = px(TOP), self.bottom(), px(PANEL)
+        # Above 96 DPI XP stretches the pictures smoothly.
+        smooth = self.dpi != 96
+
         # Bands.
-        fill(TOP_COLOR, 0, 0, width, TOP)
-        blit(a.bitmap('logonui', 125, dimmed=dimmed), 0, TOP - 2, width, 2)
-        fill(BACKGROUND, 0, TOP, width, height - BOTTOM - TOP)
+        fill(TOP_COLOR, 0, 0, width, top_band)
+        blit(a.bitmap('logonui', 125, dimmed=dimmed), 0, top_band - px(2), width, px(2))
+        fill(BACKGROUND, 0, top_band, width, height - bottom_band - top_band)
         # GradientFill steps each channel in 12.20 fixed point (matches XP at 800, 1024 and 1280 wide).
         stride = cairo.ImageSurface.format_stride_for_width(cairo.FORMAT_RGB24, width)
         row = bytearray(stride)
@@ -612,61 +656,67 @@ class Screen:
             row[4 * x:4 * x + 3] = bytes(color[::-1])
         gradient = cairo.ImageSurface.create_for_data(row, cairo.FORMAT_RGB24, width, 1, stride)
         cr.save()
-        cr.rectangle(0, height - BOTTOM, width, BOTTOM)
+        cr.rectangle(0, height - bottom_band, width, bottom_band)
         cr.clip()
-        cr.translate(0, height - BOTTOM)
-        cr.scale(1, BOTTOM)
+        cr.translate(0, height - bottom_band)
+        cr.scale(1, bottom_band)
         cr.set_source_surface(gradient, 0, 0)
         cr.get_source().set_filter(cairo.FILTER_NEAREST)
         cr.paint()
         cr.restore()
-        blit(a.bitmap('logonui', 126, dimmed=dimmed), 0, height - BOTTOM, width, 2)
-        blit(a.bitmap('logonui', 100, dimmed=dimmed), 0, TOP)
+        blit(a.bitmap('logonui', 126, dimmed=dimmed), 0, height - bottom_band, width, px(2))
+        glow = a.bitmap('logonui', 100, dimmed=dimmed)
+        blit(glow, 0, top_band, px(glow.width), px(glow.height), nearest=not smooth)
 
         # Left panel.
-        right = g['left'] + PANEL
+        right = g['left'] + panel
         if self.mode == 'logon':
             words = a.string('logonui', 7)
-            px = points(int(a.string('logonui', 44) or 32))
-            layout = self.text.layout(words, px, bold=True, italic=True)
+            size = self.pt(int(a.string('logonui', 44) or 32))
+            layout = self.text.layout(words, size, bold=True, italic=True)
             w, h = self.text.size(layout)
-            y = g['center'] - (h + 3) // 2
+            y = g['center'] - (h + px(3)) // 2
             # GDI's extent of the emboldened, slanted line reaches 7px past its last advance (measured).
-            x = right - 22 - w - 7
-            self.text.draw(cr, layout, x + 2, y + 3, tint(SHADOW))
+            x = right - px(22) - w - px(7)
+            self.text.draw(cr, layout, x + px(2), y + px(3), tint(SHADOW))
             self.text.draw(cr, layout, x, y, tint(TEXT))
         else:
+            # The logo keeps its size at every DPI.
             logo = a.bitmap('logonui', 123, key='corner', dimmed=dimmed)
             message = self.status if self.mode == 'status' else a.string('logonui', 22)
-            layout = self.text.layout(message, points(int(a.string('logonui', 45) or 12)),
-                                      width=PANEL - 40, align='right')
+            # The message wraps at the same width at every DPI: between 313 and 326 pixels on
+            # XP at 120 and 144 DPI (at 96 DPI it fits on one line).
+            layout = self.text.layout(message, self.pt(int(a.string('logonui', 45) or 12)),
+                                      width=MESSAGE, align='right')
             w, h = self.text.size(layout)
-            top = g['center'] - (logo.height + 20 + h) // 2
-            blit(logo, right - 20 - logo.width, top)
-            self.text.draw(cr, layout, right - 40 - (PANEL - 40) - INSET, top + logo.height + 20, tint(TEXT))
+            top = g['center'] - (logo.height + px(20) + h) // 2
+            blit(logo, right - px(20) - logo.width, top)
+            self.text.draw(cr, layout, right - px(40) - MESSAGE - px(INSET), top + logo.height + px(20),
+                           tint(TEXT))
 
         # Right panel.
         if self.mode != 'status':
-            blit(a.bitmap('logonui', 124, dimmed=dimmed), g['divider'], TOP, 1, height - BOTTOM - TOP)
+            blit(a.bitmap('logonui', 124, dimmed=dimmed), g['divider'], top_band, px(1), height - bottom_band - top_band)
             for i, top in g['items'].items():
                 self.draw_user(cr, g, i, top, tint, blit, dimmed)
 
         # Bottom band.
         if self.mode == 'list':
             x, y, w, h = self.power_rect(width, height)
-            blit(a.bitmap('logonui', 107, key='corner', dimmed=dimmed), x, y, 26, 26)
-            layout = self.text.layout(a.string('logonui', 11), points(int(a.string('logonui', 42) or 12)),
+            blit(a.bitmap('logonui', 107, key='corner', dimmed=dimmed), x, y, px(26), px(26), nearest=not smooth)
+            layout = self.text.layout(a.string('logonui', 11), self.pt(int(a.string('logonui', 42) or 12)),
                                       underline=self.power_hover, family=a.string('logonui', 2) or None)
-            self.text.draw(cr, layout, x + 28 + INSET, y, tint((255, 255, 255)))
+            self.text.draw(cr, layout, x + px(28 + INSET), y, tint((255, 255, 255)))
             layout = self.text.layout(a.string('logonui', 25).replace('\\n', '\n'),
-                                      points(int(a.string('logonui', 43) or 9)), width=325 - 18)
-            self.text.draw(cr, layout, width - 25 - 325 + 18 + INSET, y, tint((255, 255, 255)))
+                                      self.pt(int(a.string('logonui', 43) or 9)), width=px(325 - 18))
+            self.text.draw(cr, layout, width - px(25 + 325 - 18) + INSET, y, tint((255, 255, 255)))
 
         if self.dialog and dialog:
             self.draw_dialog(cr, width, height, blit)
 
     def draw_user(self, cr, g, i, top, tint, blit, dimmed):
         a = self.assets
+        px = self.px
         user = self.users[i]
         x = g['list_x']
         hot = self.mode == 'list' and (self.hover is not None or self.selected is not None)
@@ -676,15 +726,16 @@ class Screen:
         if selected and self.mode == 'list':
             bar = a.bitmap('logonui', 112, key=(255, 0, 255), dimmed=dimmed)
             # The list keeps 5px free on its right.
-            self.nine(cr, bar, x, top, g['divider'] + PANEL - 5 - x, 72, (8, 8, 0, 8))
+            self.nine(cr, bar, x, top, g['divider'] + px(PANEL) - px(5) - x, px(72), (8, 8, 0, 8))
         lit_frame = self.mode == 'list' and (selected or i == self.hover)
         frame = a.bitmap('logonui', 119 if lit_frame else 113, alpha=True, dimmed=dimmed)
+        # The picture's frame keeps its 7px offset at every DPI (measured at 144 DPI).
         fx, fy = x + 5 + 2, top + 5 + 2
         if alpha < 1:
             target = cr.get_target()
-            area = (x, top, g['divider'] + PANEL - x, ITEM)
+            area = (x, top, g['divider'] + px(PANEL) - x, px(ITEM))
             under = self.capture(target, area)
-        blit(frame, fx, fy)
+        blit(frame, fx, fy, px(frame.width), px(frame.height), nearest=self.dpi == 96)
         if user.picture:
             try:
                 picture = a.picture(user.picture, dimmed)
@@ -692,12 +743,13 @@ class Screen:
                 print(f'cannot read {user.picture}: {e}', file=sys.stderr)
                 user.picture = None
             else:
-                blit(picture, fx + 5, fy + 5, 48, 48, nearest=False)
-        name = self.text.layout(user.display, points(12))
-        self.text.draw(cr, name, fx + 58 + 7 + INSET, fy, tint(TEXT))
+                blit(picture, fx + px(5), fy + px(5), px(48), px(48), nearest=False)
+        name = self.text.layout(user.display, self.pt(12))
+        name_x = x + px(5 + 2 + 58 + 7) + INSET
+        self.text.draw(cr, name, name_x, fy, tint(TEXT))
         if self.mode == 'logon' and self.status:
-            layout = self.text.layout(self.status, points(int(a.string('logonui', 46) or 9)), bold=True)
-            self.text.draw(cr, layout, fx + 58 + 7 + INSET, fy + self.text.size(name)[1], tint(STATUS))
+            layout = self.text.layout(self.status, self.pt(int(a.string('logonui', 46) or 9)), bold=True)
+            self.text.draw(cr, layout, name_x, fy + self.text.size(name)[1], tint(STATUS))
         if alpha < 1:
             self.fade(target, area, under, 96)
         if selected and self.mode == 'list' and (self.prompt or self.error):
@@ -729,18 +781,19 @@ class Screen:
         a = self.assets
         rects = self.password_rects(*self.size)
         x, y, w, h = rects['edit']
-        label = self.text.layout(a.string('logonui', 6), points(int(a.string('logonui', 47) or 9)),
+        px = self.px
+        label = self.text.layout(a.string('logonui', 6), self.pt(int(a.string('logonui', 47) or 9)),
                                  family=a.string('logonui', 48) or None)
         lw, lh = self.text.size(label)
-        self.text.draw(cr, label, x + 3 + INSET, y - 3 - lh, tint((255, 255, 255)))
+        self.text.draw(cr, label, x + px(3 + INSET), y - px(3) - lh, tint((255, 255, 255)))
         edit = a.bitmap('logonui', 102, key=(255, 0, 255), dimmed=dimmed)
         self.nine(cr, edit, x, y, w, h, (3, 3, 5, 5))
         # The edit's formatting rectangle starts inside the 3px border; the EDIT control
         # leaves 6px before the first character of Arial 16pt (measured).
-        dots = self.text.layout('\u25cf' * len(self.password), points(16), family='Arial')
-        tx, ty = x + 3 + 6, y + 3
+        dots = self.text.layout('\u25cf' * len(self.password), self.pt(16), family='Arial')
+        tx, ty = x + px(3 + 6), y + px(3)
         cr.save()
-        cr.rectangle(x + 3, y + 3, w - 8, h - 8)
+        cr.rectangle(x + px(3), y + px(3), w - px(8), h - px(8))
         cr.clip()
         if self.password:
             self.text.draw(cr, dots, tx, ty, tint((0, 0, 0)))
@@ -750,7 +803,7 @@ class Screen:
             cr.fill()
         cr.restore()
         gx, gy, gw, gh = rects['go']
-        blit(a.bitmap('logonui', 103, key='corner', dimmed=dimmed), gx, gy, gw, gh)
+        blit(a.bitmap('logonui', 103, key='corner', dimmed=dimmed), gx, gy, gw, gh, nearest=self.dpi == 96)
         if self.error and not self.dialog:
             self.draw_balloon(cr, x + w // 2 - 1, y + h // 2)
 
@@ -780,7 +833,9 @@ class Screen:
         """A balloon tip, as XP shows under the password box and over the shutdown buttons.
 
         The body starts 16px left of the stem and 19px below its tip; its corners
-        and outline follow the pixels of XP's rounded region (measured).
+        and outline follow the pixels of XP's rounded region (measured). XP keeps the
+        balloon's text and size at every DPI; only its error icon grows (to about 32px
+        at 144 DPI, not reproduced).
         """
         a = self.assets
         title = self.text.layout(title or a.string('logonui', 10), points(9), bold=True)
@@ -844,7 +899,7 @@ class Screen:
         fx, fy, fw, fh = r['flag']
         blit(flag, fx + int((fw - flag.width) / 2), fy + int((fh - flag.height) / 2))
         title = a.dialog[20102][0]
-        layout = self.text.layout(title, points(int(a.string('msgina', 20126) or 14)),
+        layout = self.text.layout(title, self.pt(int(a.string('msgina', 20126) or 14)),
                                   family=a.string('msgina', 20125) or None)
         tx, ty, tw, th = r['title']
         self.text.draw(cr, layout, tx, ty + (th - self.text.size(layout)[1]) // 2, (255, 255, 255))
@@ -872,7 +927,7 @@ class Screen:
             cr.paint()
             cr.restore()
             lx, ly, lw, lh = r[name + '_label']
-            layout = self.text.layout(a.dialog[number][0], points(int(a.string('msgina', 20128) or 9)),
+            layout = self.text.layout(a.dialog[number][0], self.pt(int(a.string('msgina', 20128) or 9)),
                                       bold=True, mnemonic=True, width=lw, align='center',
                                       family=a.string('msgina', 20127) or None)
             self.text.draw(cr, layout, lx, ly, (255, 255, 255) if enabled else (160, 160, 160))
@@ -904,7 +959,7 @@ class Screen:
             cr.set_source_rgb(243 / 255, 243 / 255, 239 / 255)
             cr.rectangle(x + 1, y + 1, w - 2, h - 2)
             cr.fill()
-        layout = self.text.layout(caption, points(9), width=w, align='center')
+        layout = self.text.layout(caption, self.pt(9), width=w, align='center')
         self.text.draw(cr, layout, x, y + (h - self.text.size(layout)[1]) // 2, (0, 0, 0))
 
     def render(self, width, height, fade=1.0):

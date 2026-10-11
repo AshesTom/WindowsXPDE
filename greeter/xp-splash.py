@@ -34,6 +34,7 @@ def user_picture(name, home):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('logon', 'logoff'))
+    parser.add_argument('--dpi', type=int, default=96, help="the XP shell's LogPixels")
     args = parser.parse_args()
     try:
         import welcome
@@ -47,7 +48,7 @@ def main():
     entry = pwd.getpwuid(os.getuid())
     full_name = entry.pw_gecos.split(',')[0]
     picture = user_picture(entry.pw_name, entry.pw_dir) or welcome.default_picture(config, assets)
-    screen = welcome.Screen(assets, [welcome.User(entry.pw_name, full_name or None, picture)])
+    screen = welcome.Screen(assets, [welcome.User(entry.pw_name, full_name or None, picture)], dpi=args.dpi)
     if args.mode == 'logon':
         screen.mode, screen.selected = 'logon', 0
     else:

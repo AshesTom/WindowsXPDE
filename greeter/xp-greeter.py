@@ -61,7 +61,7 @@ class Greeter:
         default = welcome.default_picture(config, assets)
         self.screen = welcome.Screen(assets, [
             welcome.User(u.get_name(), u.get_display_name() or u.get_name(), self.picture(u, default))
-            for u in users])
+            for u in users], dpi=welcome.config_dpi(config))
         self.screen.prompt = False
         self.screen.can_standby = LightDM.get_can_suspend()
         self.message = None
@@ -367,7 +367,8 @@ def main():
         # XP's cursors (greeter/cursors.py), for this window and the root.
         theme = config.get('cursor_theme', 'win4wine-xp')
         if theme and (Path('/usr/share/icons') / theme / 'cursors/left_ptr').is_file():
-            os.environ.update(XCURSOR_THEME=theme, XCURSOR_SIZE='32')
+            # XP's cursors double above 144 DPI.
+            os.environ.update(XCURSOR_THEME=theme, XCURSOR_SIZE='64' if welcome.config_dpi(config) > 144 else '32')
         import gi
         gi.require_version('Gtk', '3.0')
         gi.require_version('Gdk', '3.0')

@@ -6,7 +6,9 @@ python3 tests/greeter_layout.py ASSETS   (extract/extract.py's output, with logo
 Each state is drawn the way XP showed it (accounts Administrator, builder and
 taro with XP's beach and palm tree pictures, 96 DPI) and the bounding box of
 one kind of pixel in a region is compared with the box measured on XP's
-screen (stage 9). Only these numbers are kept, no XP pixels.
+screen (stage 9). At 120 and 144 DPI (stage 10, XP changed to the DPI from 96
+with Display Properties) the boxes may be a pixel off: DirectUI rounds some
+parts of its scaled layout differently. Only these numbers are kept, no XP pixels.
 Needs python3-gi, gir1.2-pango-1.0 and python3-gi-cairo (and GdkPixbuf).
 """
 import argparse
@@ -60,17 +62,37 @@ CHECKS = [
     ('tooltip', (1280, 800), 'title', (628, 334, 944, 360), 'dark', (637, 342, 713, 353)),
     ('tooltip', (1280, 800), 'text', (628, 362, 944, 400), 'dark', (637, 369, 933, 391)),
 ]
+# dpi, state, size, what, region, kind, box measured on XP at that DPI (within a pixel).
+DPI_CHECKS = [
+    (144, 'list', (1280, 800), 'logo', (300, 280, 540, 420), 'not background', (300, 280, 511, 419)),
+    (144, 'list', (1280, 800), 'help text', (150, 415, 540, 475), 'white', (170, 423, 475, 468)),
+    (144, 'list', (1280, 800), 'first picture', (580, 200, 700, 320), 'not background', (594, 219, 699, 302)),
+    (144, 'list', (1280, 800), 'first name', (690, 212, 900, 245), 'not background', (693, 220, 825, 236)),
+    (144, 'list', (1280, 800), 'third name', (690, 452, 900, 485), 'not background', (693, 463, 730, 476)),
+    (144, 'list', (1280, 800), 'turn off label', (80, 680, 300, 740), 'white', (85, 690, 216, 711)),
+    (144, 'list', (1280, 800), 'instructions', (760, 680, 1270, 740), 'white', (785, 689, 1212, 723)),
+    (144, 'logon', (1280, 800), 'status', (690, 350, 1000, 400), 'status blue', (692, 360, 909, 376)),
+    (144, 'logoff', (1280, 800), 'logo', (560, 250, 800, 420), 'not background', (764, 373, 799, 403)),
+    (144, 'logoff', (1280, 800), 'status', (500, 420, 800, 470), 'not background', (642, 436, 799, 456)),
+    (120, 'list', (1280, 800), 'logo', (380, 300, 590, 410), 'not background', (431, 318, 564, 398)),
+    (120, 'list', (1280, 800), 'help text', (180, 415, 590, 470), 'white', (225, 424, 535, 461)),
+    (120, 'list', (1280, 800), 'first picture', (620, 235, 712, 330), 'not background', (635, 250, 704, 319)),
+    (120, 'list', (1280, 800), 'first name', (712, 245, 900, 272), 'not background', (717, 250, 829, 263)),
+    (120, 'list', (1280, 800), 'third name', (712, 445, 900, 472), 'not background', (717, 452, 749, 463)),
+    (120, 'list', (1280, 800), 'turn off label', (60, 700, 300, 740), 'white', (71, 706, 180, 723)),
+    (120, 'list', (1280, 800), 'instructions', (800, 700, 1270, 745), 'white', (869, 707, 1225, 734)),
+]
 # The bottom band's gradient on XP at 1280 pixels wide (row 760).
 GRADIENT = {0: (57, 52, 173), 1: (56, 51, 172), 100: (52, 51, 171), 320: (42, 50, 168),
             640: (28, 49, 164), 960: (14, 48, 160), 1100: (8, 48, 158)}
 
 
-def screen(welcome, assets, state):
+def screen(welcome, assets, state, dpi=96):
     pictures = assets.pictures
     users = [welcome.User('Administrator', picture=pictures / 'beach.bmp'),
              welcome.User('builder', picture=pictures / 'beach.bmp'),
              welcome.User('taro', picture=pictures / 'palmtree.bmp')]
-    s = welcome.Screen(assets, users)
+    s = welcome.Screen(assets, users, dpi=dpi)
     s.caret = False
     if state in ('password', 'wrong', 'tooltip'):
         s.selected = 1
@@ -119,6 +141,13 @@ def main():
             failures += not ok
             print(f'{"ok" if ok else "FAIL"}: {state} {size[0]}x{size[1]} {what}: {got}'
                   + ('' if ok else f', XP {expected}'))
+        for dpi, state, size, what, region, kind, expected in DPI_CHECKS:
+            if (state, size, dpi) not in renders:
+                renders[state, size, dpi] = pixels(screen(welcome, assets, state, dpi).render(*size))
+            got = bbox(renders[state, size, dpi], region, kind)
+            ok = got is not None and max(abs(a - b) for a, b in zip(got, expected)) <= 1
+            failures += not ok
+            print(f'{"ok" if ok else "FAIL"}: {state} {dpi} DPI {what}: {got}, XP {expected}')
         pixel = renders['list', (1280, 800)]
         got = {x: pixel(x, 760) for x in GRADIENT}
         ok = got == GRADIENT
