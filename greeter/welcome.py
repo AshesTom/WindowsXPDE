@@ -575,9 +575,11 @@ class Screen:
         px = self.px
         x = g['list_x'] + px(71)
         # The edit is as tall as its Arial 16pt line and borders; the empty keyboard element and
-        # the go button each keep a 5px margin.
-        row = top + px(ITEM) - px(29)
-        return {'edit': (x, row, px(163), px(29)), 'go': (x + px(163) + px(5 + 5), row + px(1), px(26), px(26))}
+        # the go button each keep a 5px margin. Above 96 DPI XP's edit is a pixel lower than 29
+        # scaled (35 at 120 DPI, 43 at 144), its bottom where it is at 96 DPI.
+        height = px(29) - (self.dpi > 96)
+        row = top + px(ITEM) - height
+        return {'edit': (x, row, px(163), height), 'go': (x + px(163) + 2 * px(5), row + px(1), px(26), px(26))}
 
     def dialog_rects(self, width, height):
         controls = self.assets.dialog
@@ -803,7 +805,7 @@ class Screen:
             cr.fill()
         cr.restore()
         gx, gy, gw, gh = rects['go']
-        blit(a.bitmap('logonui', 103, key='corner', dimmed=dimmed), gx, gy, gw, gh, nearest=self.dpi == 96)
+        blit(a.bitmap('logonui', 103, key='corner', dimmed=dimmed), gx, gy, gw, gh)
         if self.error and not self.dialog:
             self.draw_balloon(cr, x + w // 2 - 1, y + h // 2)
 
