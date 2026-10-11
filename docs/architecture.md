@@ -224,3 +224,23 @@ Programs（`C:\ProgramData\Microsoft\Windows\Start Menu\Programs`）にショー
   デスクトップ（Progman）とタスクバー（Shell_TrayWnd）をクリックすると、WM はそのウィンドウに X のフォーカスを渡し
   （そのイベントの時刻で WM_TAKE_FOCUS。Wine は前面のウィンドウがフォーカスを得た時刻より古い要求を無視する）、
   `_NET_ACTIVE_WINDOW` を 0 にする（アプリのタスクは無くなる）。タスクボタンでの最小化と復元は今までどおり。
+
+## ログイン画面（段階 9）
+
+`greeter/xp-greeter.py` は LightDM の greeter（lightdm の利用者で動く）。`/etc/win4wine/greeter.json` の `assets` から、利用者の
+XP の媒体の logonui.exe・msgina.dll・winlogon.exe・luna.msstyles・字体・ユーザー画像を読む（`greeter/install.sh` が写す）。
+足りなければ LightDM に接続する前に `fallback` の greeter を exec する。LightDM の UserList のアカウントを並べ、選ぶと
+`authenticate`、PAM がパスワードを聞くとパスワード欄を出して `respond` する。認証が済むと「ようこそ」の画面にし、その画像を
+root の背景に残してから `start_session_sync` する。終了オプションのボタンは LightDM の suspend・shutdown・restart。
+
+画面は `greeter/welcome.py` が cairo と Pango で全画面を1枚の画像に描き、GTK の窓はそれを貼るだけ（状態が変わったときだけ
+描き直す。終了オプションの背景は普通と暗い2枚を一度だけ描いて重ねる）。`greeter/xpres.py` は PE の資源の表から
+ビットマップ・文字列・ダイアログのテンプレートを取り出す。DIB（RLE8・24-bit・32-bit のアルファ）は自前で cairo の画像にする。
+文字は GDI の DrawText の置き方（`Text`）: 全角と半角の連なりごとに Pango で並べ、OS/2 の winAscent・winDescent で行を置き、
+太字・斜体・下線を GDI と同じ方法で作る。fontconfig の設定は抽出した字体を加え、gasp に合わせてなじませを止める。
+
+`greeter/xp-splash.py` は XP シェルのセッションの中で動く（supervisor が起動する）。python-xlib の override-redirect の窓に
+同じ描画の画像を貼る。`logon` はタスクバーが出るまで「個人設定を適用しています...」、`logoff` は stdin の語（`saving`、
+`shutdown`）で文を変える。後から出た窓や自分のすぐ上に上げられた窓があると上に戻り、終わるときは最後の画像を root の背景に
+残す（`greeter/xdraw.py`）。
+

@@ -14,12 +14,18 @@ FILES = {
     **dict.fromkeys(('shell32.dll', 'browseui.dll', 'shdocvw.dll', 'shlwapi.dll',
                      'browselc.dll', 'shdoclc.dll', 'msgina.dll', 'comctl32.dll', 'linkinfo.dll', 'uxtheme.dll', 'shellstyle.dll', 'explorer.exe.manifest',
                      # Only the icons of My Documents and My Pictures are read from mydocs.dll.
-                     'mydocs.dll'), 'system32'),
+                     'mydocs.dll',
+                     # The login screen reads images and strings from these (greeter/).
+                     'logonui.exe', 'winlogon.exe'), 'system32'),
     **dict.fromkeys(('tahoma.ttf', 'tahomabd.ttf', 'msgothic.ttc', 'marlett.ttf',
-                     'trebuc.ttf', 'trebucbd.ttf', 'trebucit.ttf', 'trebucbi.ttf'), 'fonts'),
+                     'trebuc.ttf', 'trebucbd.ttf', 'trebucit.ttf', 'trebucbi.ttf', 'arial.ttf'), 'fonts'),
     'luna.msstyles': 'themes/Luna', 'luna.theme': 'themes',
-    # XP's default wallpaper and the user picture of the reference account.
-    'bliss.jpg': 'web/wallpaper', 'beach.bmp': 'pictures',
+    # XP's default wallpaper and its 23 default user account pictures (48x48).
+    'bliss.jpg': 'web/wallpaper',
+    **dict.fromkeys(('airplane.bmp', 'astro.bmp', 'beach.bmp', 'butterfl.bmp', 'car.bmp', 'cat.bmp',
+                     'chess.bmp', 'dirtbike.bmp', 'dog.bmp', 'drip.bmp', 'duck.bmp', 'fish.bmp',
+                     'frog.bmp', 'guitar.bmp', 'horses.bmp', 'kick.bmp', 'liftoff.bmp', 'palmtree.bmp',
+                     'pnkflowr.bmp', 'redflowr.bmp', 'skater.bmp', 'snwflake.bmp', 'soccer.bmp'), 'pictures'),
     'blue_ss.dll': 'themes/Luna/Shell/NormalColor',
     'home_ss.dll': 'themes/Luna/Shell/Homestead',
     'metal_ss.dll': 'themes/Luna/Shell/Metallic',

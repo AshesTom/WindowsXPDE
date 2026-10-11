@@ -71,6 +71,9 @@ class Session:
         self.power_commands = {'shutdown': config.get('shutdown_command', ['systemctl', 'poweroff']),
                                'reboot': config.get('reboot_command', ['systemctl', 'reboot'])}
         self.processes = []
+        # XP's Welcome screen covers the shell's start and the session's end (greeter/xp-splash.py).
+        self.welcome_screen = config.get('welcome_screen', True)
+        self.welcome = None
         self.wine_envs = [self.env]
         self.logs = []
         self.stopping = False
@@ -206,6 +209,31 @@ class Session:
         self.processes.append(process)
         return process
 
+    def show_welcome(self, mode):
+        if not self.welcome_screen:
+            return
+        self.hide_welcome()
+        log = (self.state / 'welcome.log').open('ab', buffering=0)
+        self.logs.append(log)
+        self.welcome = subprocess.Popen([sys.executable, str(ROOT / 'greeter/xp-splash.py'), mode],
+                                        stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
+                                        start_new_session=True)
+
+    def tell_welcome(self, word):
+        """Change the line of the log-off screen ('saving', 'shutdown')."""
+        if self.welcome and self.welcome.poll() is None:
+            try:
+                self.welcome.stdin.write(word.encode() + b'\n')
+                self.welcome.stdin.flush()
+            except OSError:
+                pass
+
+    def hide_welcome(self):
+        if self.welcome:
+            self.halt(self.welcome)
+            self.welcome.stdin.close()
+            self.welcome = None
+
     def tray(self):
         # The taskbar found last time is checked first; a full search asks
         # the X server about every top-level window.
@@ -276,6 +304,7 @@ class Session:
             subprocess.run([str(server), '-w'], env=env, timeout=10, check=False)
 
     def run(self):
+        self.show_welcome('logon')
         wm = self.spawn(['python3', str(ROOT / 'bridge-wm/wm.py'), '--ipc', str(self.ipc)], 'wm')
         time.sleep(.5)
         if wm.poll() is not None:
@@ -311,6 +340,7 @@ class Session:
                 if has_tray and not ready:
                     ready = True
                     self.status('xp-shell', attempt=attempt)
+                    self.hide_welcome()
                 if ready and not has_tray:
                     break
                 if not ready and (time.monotonic()-started > self.readiness_timeout or shell.poll() is not None):
@@ -357,19 +387,23 @@ class Session:
             return False
         if request not in ('logoff', 'shutdown', 'reboot'):
             return False
+        self.show_welcome('logoff')
         try:
             shell.wait(timeout=30)  # let wineboot end the applications first
         except subprocess.TimeoutExpired:
             pass
         self.status('ending', request=request)
+        self.tell_welcome('saving')
         self.stopping = True
         command = self.power_commands.get(request)
         if command:
+            self.tell_welcome('shutdown')
             subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
         return True
 
     def fallback(self, wm):
+        self.hide_welcome()
         env = dict(self.env)
         env.pop('WIN4WINE_EXTERNAL_SHELL', None)
         # Native shell COM registrations can also affect builtin explorer. Keep
@@ -395,6 +429,8 @@ class Session:
         try:
             self.stop_wine()
         finally:
+            # The log-off screen leaves its last image as the root window's background.
+            self.hide_welcome()
             for f in self.logs:
                 f.close()
             try:

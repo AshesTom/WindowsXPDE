@@ -100,3 +100,11 @@ XP のデスクトップとタスクバーが現れることを確認する。
 実測ログと画像の一覧は [検証状況](status.md)。実際の今回の検証では headless QMP
 screendump と、ネットワークを使わない VM 専用 virtio-serial の試験用コマンド経路も使った。
 それらは `.local/` のみに置き、製品セッションには組み込まない。
+
+## ログイン画面（段階 9）
+
+ゲストに `gir1.2-lightdm-1`、`python3-cairo`、`python3-gi-cairo` を入れ（ネットワークが無いので .deb をホストで取得して
+`dpkg -i`）、新しい抽出物（logonui.exe などを含むもの）をゲストに置いて `greeter/install.sh` を root で実行する。
+上の `90-xp-test.conf` は自動ログインで、greeter はログオフの後に出る。greeter から試すときは、ゲストにだけ
+`/etc/lightdm/lightdm.conf.d/96-s9-test.conf`（`[Seat:*]` と空の `autologin-user=`）を置き、builder に試験用のパスワードを付けて
+LightDM を再起動する。終わったらこのファイルを消す。操作は `DISPLAY=:0 XAUTHORITY=/var/run/lightdm/root/:0 xdotool ...`。

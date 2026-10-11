@@ -656,3 +656,39 @@ prefix では次の起動で stage.py が profile を一度当て直す。tray.p
 ```sh
 ./scripts/debian.sh run bash -c 'cd /work && python3 tests/tray_host.py'   # SNI に加え、Xvfb で XEmbed のアイコンも試す
 ```
+
+## ログイン画面（2026-10-11、段階 9）
+
+LightDM の greeter を XP のようこそ画面にする（`greeter/xp-greeter.py`）。ログインは LightDM と PAM が行う。Wine とパッチ、
+registry profile は変わらない。
+
+1. 抽出し直す。`extract/extract.py` は logonui.exe・winlogon.exe・arial.ttf と XP の既定のユーザー画像 23 枚も取り出す
+   （既存の出力先には書かないので、新しい出力先に抽出する。prefix はそのまま使える）。
+2. パッケージ（Debian 13）: `lightdm`、`gir1.2-lightdm-1`、`gir1.2-gtk-3.0`、`python3-gi`、`python3-gi-cairo`、`python3-xlib`。
+   使えないときに切り替える `lightdm-gtk-greeter` も入れておく。
+3. greeter を入れる（コードと必要な XP のファイルを `/usr/local/share/win4wine/greeter` に写し、
+   `/etc/lightdm/lightdm.conf.d/95-xp-greeter.conf` で LightDM の greeter にする）。LightDM を再起動する。
+
+```sh
+./greeter/install.sh /absolute/path/to/extracted-assets
+sudo systemctl restart lightdm
+```
+
+- 元の greeter に戻す: `./greeter/install.sh --remove` の後に LightDM を再起動する（写したファイルは
+  `/usr/local/share/win4wine/greeter`、`/usr/share/xgreeters/xp-greeter.desktop`、`/etc/win4wine/greeter.json`。消してもよい）。
+- `/etc/lightdm/lightdm.conf` 自体に `greeter-session` を書いているとそちらが優先される（conf.d より後に読まれる）。
+- 設定は `/etc/win4wine/greeter.json`: `assets`（写したファイルの場所）、`fallback`（使えないときの greeter、既定
+  `lightdm-gtk-greeter`）、`picture`（自分の画像が無い利用者の画像、既定 `beach.bmp`）。利用者の画像は AccountsService の
+  ものか `~/.face`。
+- 必要なファイルや GTK・LightDM のバインディングが無いと、greeter は `fallback` に切り替える（理由は
+  `/var/log/lightdm/seat0-greeter.log`）。リポジトリを更新したら `greeter/install.sh` を再び実行する。
+- ログイン後とログオフ中の XP の画面は、XP シェルのセッション（`session/supervisor.py`）が同じ設定を読んで出す。
+  `session.json` に `"welcome_screen": false` と書くと出さない。設定が無ければ出さずに進む（`welcome.log` に理由）。
+
+試験:
+
+```sh
+./scripts/debian.sh run python3 /work/tests/greeter_layout.py /work/.local/ASSETS   # XP で測った配置と比べる
+```
+
+試験 VM での手順は `docs/vm.md` の「ログイン画面」。

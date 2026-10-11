@@ -991,3 +991,41 @@ upstream のコードの数え違いだが、新しい Windows での結果は�
 古い prefix を更新し、シェルの登録を書き戻す。stage.py がその更新を自分で行ったかどうかに頼らず、更新の印が変われば当て直す。
 **判断: 非クライアント領域の試験の既知の失敗と TB_GETBUTTONSIZE の差は直さない。** 前者は試験の期待値が XP の描き方ではなく
 （実XPでも失敗する）、後者は XP の comctl32 の中の値で、ボタンの配置はすべて実XPと同じ。
+## ログイン画面（2026-10-11、段階 9）
+
+**判断: greeter は Python と GTK 3 の自作にし、画面は cairo と Pango で描く。** web-greeter（nody-greeter など）は Debian に
+パッケージが無く、WebKit を入れることになる。lightdm-gtk-greeter のテーマ（CSS）では DirectUI の配置や GDI の文字の置き方を
+画素単位で合わせられない。LightDM の GObject バインディング（gir1.2-lightdm-1）で認証を進め、GTK は全画面の窓と入力だけに使う。
+**判断: XP の logonui.exe と msgina.dll は動かさず、資源だけを読む。** 方針どおり、パスワードを扱う場所で MS のコードを動かさない。
+logonui.exe のビットマップと文字列、msgina.dll のダイアログのテンプレートと画像、winlogon.exe の状態の文、luna.msstyles の押し
+ボタンの画像を、PE の資源の表をたどって読む（`greeter/xpres.py`。コードは読まない）。文字列も媒体から読むので、リポジトリに
+XP の文は入らず、媒体の言語の文になる。logonui.exe の UIFILE（DirectUI の配置の記述）は構造を理解する参考にしたが、数値は
+実XPの画面で測ったものを使った（使う数値は `greeter/welcome.py` の定数と `tests/greeter_layout.py`）。
+**判断: 文字は GDI の置き方をまねて描く。** Pango の行の高さとベースラインは FreeType の丸め（切り上げ）で、MS UI Gothic 12px では
+XP より1px下になる。OS/2 の winAscent・winDescent を四捨五入した値で行を置く。字体に無い太字と斜体は、Pango（fontconfig の
+合成）に任せると縦にも太り、傾きも違うので、GDI と同じく1px右に重ねて送りを1px広げ、1/3 傾ける。fontconfig は gasp 表に
+合わせ、MS UI Gothic は 24px まで、Arial は 17px までなじませずに描く（XP の標準のスムージングと同じ）。
+**判断: 文字列は全角と半角の連なりに分けて Pango に渡す。** MS UI Gothic は BASE 表を持ち、Pango は日本語の後の英字（「(S)」の S、
+「Windows」）を別のベースラインに置いて2px上げる。GDI は1本のベースラインに並べるので、連なりごとに配置して同じベースラインに
+並べる（字体の代わり（フォールバック）は連なりの中で効く）。
+**判断: ログオン中とログオフ中の画面は supervisor が出す（`greeter/xp-splash.py`、python-xlib）。** XP はシェルの準備ができるまで
+「ようこそ」を出し、ログオフでは「ログオフしています...」「設定を保存しています...」を出す。greeter はログインした時点で終わる
+ので、greeter は最後の画面を root の背景に残し（Esetroot と同じく RetainPermanent のピクスマップ）、supervisor が起動の最初に
+「個人設定を適用しています...」の画面を出して、タスクバーが出たら消す。ログオフ（と終了・再起動）の要求ではその画面を出して
+文を変え、最後に root の背景に残す。画面は override-redirect の窓で、後から出た窓や上に上げられた窓の上に戻る（周期では
+起きない）。設定や画像が無ければ何も出さずに終わり、セッションはそのまま進む。`session.json` の `welcome_screen: false` で止められる。
+**判断: greeter と画像は /usr/local/share に写す。** LightDM は greeter を lightdm の利用者で動かすので、利用者のホーム（Debian 13 の
+既定は 0700）にあるリポジトリや抽出物を読めない。`greeter/install.sh` がコードと必要なファイルだけを写し、LightDM の設定は
+`/etc/lightdm/lightdm.conf.d/95-xp-greeter.conf` の1つだけにする（`--remove` で消せば前の greeter に戻る）。
+**判断: 画像が無いときは通常の greeter に切り替える。** greeter は LightDM に接続する前に、設定・必要なファイル・GTK と LightDM の
+バインディングを確かめ、足りなければ `fallback`（既定 lightdm-gtk-greeter）を exec する。LightDM の greeter の PATH には sbin が
+無いので、/usr/sbin なども探す。
+**判断: 利用者の画像は AccountsService（`~/.face`）のものを使い、無ければ beach.bmp。** XP は作ったときに無作為に選ぶが、XP の
+prefix はスタートメニューに beach.bmp を出すので、ログイン画面もそれに合わせる（`greeter.json` の `picture` で変えられる）。
+抽出で XP の既定の画像 23 枚も取り出す。
+**判断: 終了オプションのボタンは LightDM の suspend・shutdown・restart を呼ぶ。** スタンバイは LightDM が可能と言うときだけ使える。
+休止状態（Shift）は作らない。
+**判断: 暗くなる背景は XP の最後の状態の一次式で近似し、約1秒後から 2.5 秒かけて重ねる。** XP の途中の状態は上から順に変わる
+帯で、色の変化も一次式ではない（最大 11 の差）。
+**判断: 参照用 XP の画面の大きさと利用者は、測るときだけ変えて戻した。** ようこそ画面にパスワードのある・ないアカウントを
+並べるため、試験用の利用者を作った。測った後に消し、画面を 640×480 に戻した。

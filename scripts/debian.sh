@@ -29,6 +29,7 @@ case ${1:-help} in
         sudo chroot "$fs" apt-get install -y --no-install-recommends \
             build-essential flex bison pkg-config git ca-certificates \
             python3 python3-xlib cabextract p7zip-full xvfb xauth xterm x11-utils xdotool imagemagick \
+            python3-gi-cairo gir1.2-pango-1.0 \
             libx11-dev libxext-dev libxrender-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev \
             libfreetype-dev libfontconfig-dev libgnutls28-dev libgl-dev libasound2-dev libdbus-1-dev \
             libudev-dev gcc-mingw-w64-i686 gcc-mingw-w64-x86-64
