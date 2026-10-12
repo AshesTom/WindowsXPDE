@@ -166,3 +166,86 @@ labwc 0.8.3 と wlroots 0.18.2（Debian 13 の版）を改変し、入れ子の 
     影は透明度つきの窓で描けば読み取りが要らない。
   - 試験 VM での実機の出力（DRM）と、セッションの起動（supervisor）。
 - 見積もりは前の表（2〜4 週間）から大きく外れない。いちばん重いのは bridge-wm の機能の移植。
+
+## 8. Wayland のセッション（2026-10-12、段階 11）
+
+方式 A を本格的に作り、ログイン画面で選べる 2 つ目のセッション「XP Shell (Wine, Wayland)」にした。X11 のセッション
+（bridge-wm）はそのまま残り、動きも変わらない。
+
+### 使い方
+
+- `scripts/setup.sh --media ISO --wayland` で、labwc と wlroots をビルドして（`wayland/build.sh`、`.local/labwc-install`）、
+  セッションを登録する（`session/install.sh --wayland`）。`--greeter` と一緒なら、XP のようこそ画面の既定のセッションも
+  Wayland になる。
+- 出力の倍率と位置は `session.json` の `"outputs"`、Win32 の主モニターは `"primary"`（出力の名前）。
+  例: `"outputs": {"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}, "primary": "HDMI-A-1"`。
+  `mode`（`wlr-randr --mode`）も書ける。出力の名前は `wlr-randr` で見る。
+- XP のシェルの DPI（LogPixels）は 1 つで、主に使う出力の倍率に合わせる（倍率 1.5 なら 144）。Wayland のアプリは出力ごとの
+  倍率で描かれ、GTK と Qt の分数の倍率も効く。
+
+### 作ったもの
+
+| 場所 | 中身 |
+|---|---|
+| `wayland/patches/wlroots/0001` | scene の surface を 1/倍率 の大きさで、また一部だけを切り取って表示する |
+| `wayland/patches/wlroots/0002` | XWM が `_NET_WM_STATE_ABOVE`（Win32 の最前面の窓）を落とさずに保ち、変化を知らせる |
+| `wayland/patches/labwc/0001` | `xwayland-scale.c`（Xwayland を出力の画素で動かす）と `win4wine.c`（bridge-wm の役） |
+| `wayland/build.sh`, `upstream.env` | labwc 0.8.3 に wlroots 0.18.2 と libsfdo を静的に組み込んでビルドする（システムの wlroots は使わない） |
+| `wayland/labwc/` | labwc の設定（Alt+F4 だけのキー、空のメニュー） |
+| `wayland/session.sh` | IPC の場所を決めて labwc を起動し、その中で supervisor を動かす。supervisor が終わるとセッションが終わる |
+| `session/supervisor.py` | labwc の中では bridge-wm を起動せず、出力を設定し（`wlr-randr`）、主モニターを labwc に伝える |
+| Wine 0027 | rootless の Xwayland では画面を読めないので、XP の影を透明度つきの黒い窓で描く（X11 では今までどおり） |
+
+**Xwayland を出力の画素で動かす（xwayland-scale.c）。**
+- Xwayland には自前の xdg-output を見せ、各出力を画素の大きさで横に並べる（X の空間）。主モニターを先頭（X の 0,0）に置き、
+  Xwayland の RandR の primary にもする。Win32 の 0,0 が主モニターの左上になり、XP のデスクトップのアイコンと壁紙が主モニターに出る。
+- X の窓は、載っている出力の倍率で 1/倍率 に縮めて置く（X の 1 画素が出力の 1 画素）。倍率の違う出力にまたがる窓は、
+  出力ごとに切り取った部分を並べる。
+- 窓の位置と大きさの要求、size hints、作業領域（`_NET_WORKAREA` と出力ごとの `_GTK_WORKAREAS_D0`）、押したまま窓の外に出た
+  ポインターの位置を、X の空間とレイアウトの座標の間で変換する。
+
+**bridge-wm の役（win4wine.c、`WIN4WINE_IPC` のときだけ）。**
+- proxy.exe との IPC は bridge-wm と同じ（`windows.tsv`、`geometry.tsv`、`frames.tsv`、`*.cmd`、`switch.tsv`、
+  `shellkeys.tsv`、`icon-*.argb`）。IPC のファイルは inotify、窓の変化は labwc の中から、まとめて次の idle で書く。
+- Linux の窓（Wayland と、Wine 以外の X11 の窓）に XP の枠を付ける。枠は窓のすぐ下に重ね、移動・大きさの変更・最大化・
+  最小化・閉じる・ドラッグを窓に結び付ける。最大化の大きさは枠の分を除いた作業領域。アイコンは、Wayland の窓はアプリの
+  desktop エントリーから、X11 の窓は `_NET_WM_ICON` から。
+- Wine の窓の種類（`_WIN4WINE_CLASS`、`_WIN4WINE_HWND`）を、labwc 自身の X の接続で読む。XP のデスクトップは一番下、
+  タスクバー・スタートメニュー・最前面の窓（とその所有する窓）は上に置き、X の重なり順も合わせる（Xwayland はポインターの
+  下の窓を X の重なり順で決める）。
+- Alt+Tab は XP の切り替え窓、Windows キーと Ctrl+Esc は Linux の窓の上でも XP のシェルへ送る。タスクバーの分を作業領域から除く。
+- 活性化は Wine に合わせる: Wine の窓が消えたときに次に活性化する窓は Wine が選ぶ。Wine が活性化しないと印を付けた窓
+  （`_NET_WM_USER_TIME` 0）と、最前面の全画面の窓（XP のログオフの暗い画面）は、表示しても活性化しない。
+  Linux の窓が活性のときは、その枠を `_NET_ACTIVE_WINDOW` に書いて XP の枠を活性の色にする（X のフォーカスは移さない。
+  移すと fcitx5 が XIM で枠を入力先と取り違える）。
+- Xwayland に relative pointer を見せない。Xwayland はボタンをその装置から送り、その位置は絶対座標の移動（タブレット、VM の
+  ポインター）では動かないので、最初のクリックが別の場所に届いていた（試作の「最初のドラッグが活性化だけで終わる」の原因）。
+
+### 確かめたこと
+
+入れ子の labwc（chroot、出力 2 つ、倍率 1 と 1.5、144 DPI）と、試験 VM の実機の出力（DRM、1280×800、倍率 1 の 96 DPI と
+倍率 1.5 の 144 DPI）で確かめた。
+
+- XP のシェル: デスクトップ、タスクバー、スタートメニュー、メニューの影、ファイル名を指定して実行、マイ コンピュータ、
+  ログオフのダイアログ。Wine の窓の最大化（作業領域に合う）、元に戻す、ドラッグ。倍率 1.5 でもぼけない。
+- Linux の窓: foot（Wayland）、mousepad（GTK3、Wayland）、xterm（X11）に XP の枠とタスクバーのボタン、アイコン。
+  枠のドラッグ（最初の 1 回から）、右端での大きさの変更、最大化（枠ごと作業領域に収まる）、元に戻す、最小化、タスクバーからの
+  復元、閉じる。枠の活性の色が窓の活性に従う。
+- キー: Alt+Tab（XP の切り替え窓）、Win+R、Win+E、Ctrl+Esc を Linux の窓の上で。
+- 日本語入力: foot（text-input-v3、fcitx5 + Mozc）と、Wine の「ファイル名を指定して実行」（XIM）で変換して確定できた。
+- 出力 2 つ: XP のデスクトップは主モニターに出て、Wine の窓は両方の出力に出せる。主モニターは `"primary"` で選べる。
+- セッションの終わり: XP のログオフで labwc が終わり、ログイン画面に戻る。
+- X11 のセッション: 同じ VM で X11 のセッションに戻し、bridge-wm で起動し、メニューの影も今までどおり出ることを確かめた。
+
+### X11 のセッションとの違い・残っていること
+
+- XP のログオフ・終了の暗い画面: X11 では画面を灰色にした写しになるが、Wayland では画面を読めないので、Wine の窓が
+  無い所は黒（または灰色）になる。
+- 主モニター以外の出力: XP のデスクトップの窓は広がるが、壁紙は主モニターにだけ描かれ、他は背景色になる。
+- X の空間では主モニターが先頭なので、主モニターの左にある出力へ Wine の窓をドラッグする途中は、隣の出力に
+  はみ出した部分が元の出力の倍率で（小さく）描かれる。出力の上に移し終えれば、その出力の倍率で描かれる。
+- 倍率が整数でない出力では、X の窓どうしの位置が出力の 1 画素ずれることがある（レイアウトの座標が整数のため）。
+  メニューと影、枠と窓の境目で目立つことがある。
+- Linux のアプリのダイアログ（親のある窓）には XP の枠が付かず、labwc の枠になる（X11 でも XP の枠は付かない）。
+- GTK4 と libadwaita のアプリはクライアント側の装飾を描くので、XP の枠と二重になる（未確認）。
+- labwc の 1 つの大きなパッチ（`wayland/patches/labwc/0001`）にまとめてある。Wine のパッチのように目的ごとには分けていない。

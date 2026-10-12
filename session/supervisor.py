@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Xsession supervisor with shell readiness checks and bounded recovery."""
+"""Session supervisor with shell readiness checks and bounded recovery.
+
+In the X11 session it starts bridge-wm; in the Wayland session
+(xp-shell-wayland-session) win4wine's labwc is the window manager, runs
+this as its session command and gives the IPC directory in WIN4WINE_IPC."""
 import argparse
 from collections import deque
 import glob
@@ -40,7 +44,12 @@ class Session:
         for log in self.state.glob('*.log'):
             log.replace(log.with_name(log.name + '.1'))
         runtime = Path(os.environ.get('XDG_RUNTIME_DIR', '/tmp'))
-        self.ipc = Path(tempfile.mkdtemp(prefix=f'win4wine-{os.getuid()}-', dir=runtime))
+        # Under win4wine's labwc the compositor is the window manager and owns the IPC directory.
+        self.compositor = bool(os.environ.get('WIN4WINE_IPC') and os.environ.get('WAYLAND_DISPLAY'))
+        if self.compositor:
+            self.ipc = Path(os.environ['WIN4WINE_IPC']).resolve(strict=True)
+        else:
+            self.ipc = Path(tempfile.mkdtemp(prefix=f'win4wine-{os.getuid()}-', dir=runtime))
         self.env = dict(os.environ, WINEPREFIX=str(self.prefix),
                         WIN4WINE_EXTERNAL_SHELL='1', WINEDEBUG=config.get('debug', '+timestamp,+seh,+loaddll'),
                         WINEDLLOVERRIDES='explorer=b;xp-explorer=n;mscoree,mshtml=;uxtheme=b')
@@ -62,11 +71,16 @@ class Session:
             # An input method framework already chosen for this login (for
             # example by im-config from Xsession) keeps its variables.
             if not any(os.environ.get(name) for name in IM_VARIABLES):
-                self.env.update(XMODIFIERS='@im=fcitx', GTK_IM_MODULE='fcitx', QT_IM_MODULE='fcitx',
-                                SDL_IM_MODULE='fcitx')
+                self.env.update(XMODIFIERS='@im=fcitx', QT_IM_MODULE='fcitx', SDL_IM_MODULE='fcitx')
+                # On Wayland GTK talks to fcitx5 through the compositor (text-input-v3).
+                if not self.compositor:
+                    self.env.update(GTK_IM_MODULE='fcitx')
         # Linux applications take the XP shell's DPI (LogPixels) too.
         self.dpi = dpi.prefix_dpi(self.prefix)
-        self.env.update(dpi.environment(self.dpi))
+        self.env.update(dpi.environment(self.dpi, wayland=self.compositor))
+        # Wayland: each output's scale, and the one Win32 takes as its primary monitor.
+        self.outputs = config.get('outputs', {})
+        self.primary = config.get('primary')
         # XP's cursors (greeter/install.sh installs them as an X cursor theme): winex11
         # shows Windows' standard cursors through the theme, Linux applications use it too.
         self.cursor_theme = config.get('cursor_theme', 'win4wine-xp')
@@ -128,8 +142,10 @@ class Session:
                 '  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>\n'
                 f'  <dir>{escape(str(self.prefix / "drive_c/windows/Fonts"))}</dir>\n'
                 f'{aliases}'
-                '  <match target="pattern"><edit name="dpi" mode="assign">'
-                f'<double>{self.dpi}</double></edit></match>\n</fontconfig>\n')
+                + ('' if self.compositor else
+                   '  <match target="pattern"><edit name="dpi" mode="assign">'
+                   f'<double>{self.dpi}</double></edit></match>\n')
+                + '</fontconfig>\n')
         target = directory / 'fonts.conf'
         tmp = directory / 'fonts.tmp'
         tmp.write_text(text)
@@ -325,13 +341,53 @@ class Session:
             subprocess.run([str(server), '-k'], env=env, timeout=10, check=False)
             subprocess.run([str(server), '-w'], env=env, timeout=10, check=False)
 
+    def configure_outputs(self):
+        """Wayland: the outputs' scale and place (wlr-randr), and Win32's primary monitor.
+
+        The compositor puts the primary output first for Xwayland and
+        makes it RandR's primary; Wine puts Win32's 0,0 at its top-left.
+        Without "primary" in the configuration it is the leftmost output."""
+        if self.primary:
+            temporary = self.ipc / 'primary.tmp'
+            temporary.write_text(str(self.primary) + '\n')
+            temporary.replace(self.ipc / 'primary')
+        names = []
+        try:
+            listing = subprocess.run(['wlr-randr', '--json'], env=self.env, capture_output=True,
+                                     text=True, timeout=10, check=True).stdout
+            names = [o['name'] for o in json.loads(listing) if o.get('enabled', True)]
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+            print('wlr-randr is not available: outputs keep their settings', file=sys.stderr)
+        command = ['wlr-randr']
+        for name, settings in self.outputs.items():
+            if name not in names:
+                continue
+            # One call for all outputs: one at a time, the compositor would
+            # move the others out of the way in between.
+            command += ['--output', name]
+            if 'mode' in settings:
+                command += ['--mode', str(settings['mode'])]
+            if 'custom_mode' in settings:
+                command += ['--custom-mode', str(settings['custom_mode'])]
+            if 'position' in settings:
+                command += ['--pos', str(settings['position'])]
+            if 'scale' in settings:
+                command += ['--scale', str(settings['scale'])]
+        if len(command) > 1:
+            subprocess.run(command, env=self.env, timeout=10, check=False)
+
     def run(self):
+        if self.compositor:
+            # win4wine's labwc manages the windows; it ends the session when this exits.
+            wm = None
+            self.configure_outputs()
         self.show_welcome('logon')
-        wm = self.spawn(['python3', str(ROOT / 'bridge-wm/wm.py'), '--ipc', str(self.ipc)], 'wm')
-        time.sleep(.5)
-        if wm.poll() is not None:
-            raise RuntimeError('WM failed; see wm.log')
-        if self.cursor_theme and shutil.which('xsetroot'):
+        if not self.compositor:
+            wm = self.spawn(['python3', str(ROOT / 'bridge-wm/wm.py'), '--ipc', str(self.ipc)], 'wm')
+            time.sleep(.5)
+            if wm.poll() is not None:
+                raise RuntimeError('WM failed; see wm.log')
+        if self.cursor_theme and shutil.which('xsetroot') and not self.compositor:
             # The WM's root cursor comes from the core cursor font; xsetroot takes the theme's.
             subprocess.run(['xsetroot', '-cursor_name', 'left_ptr'], env=self.env, check=False)
         # Linux tray icons (StatusNotifierItem) reach the XP notification
@@ -347,7 +403,7 @@ class Session:
         crashes = deque()
         attempt = 0
         while not self.stopping:
-            if wm.poll() is not None:
+            if wm and wm.poll() is not None:
                 raise RuntimeError('WM exited during session')
             attempt += 1
             self.request.unlink(missing_ok=True)
@@ -357,7 +413,7 @@ class Session:
             started = time.monotonic()
             ready = False
             while not self.stopping:
-                if wm.poll() is not None:
+                if wm and wm.poll() is not None:
                     raise RuntimeError('WM exited during session')
                 if im and im.poll() is not None:
                     im = self.restart_input_method(im_restarts)
@@ -442,7 +498,7 @@ class Session:
         fallback = self.spawn([self.wine, 'explorer', home], 'fallback', env)
         terminal = self.spawn(['xterm', '-title', 'XP shell recovery'], 'recovery-terminal', env)
         while not self.stopping:
-            if wm.poll() is not None:
+            if wm and wm.poll() is not None:
                 raise RuntimeError('WM exited during fallback')
             if fallback.poll() is not None and terminal.poll() is not None:
                 break

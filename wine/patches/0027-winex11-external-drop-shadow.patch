@@ -17,19 +17,22 @@ mapped just before the window; they go when it is unmapped, moved or
 destroyed. A popup mapped while its class lacked the style gets its shadow,
 stacked under it, when its position next changes. The darkening is computed
 in double so that the 32-bit (x87) and 64-bit (SSE) builds round alike.
+A rootless X server (Xwayland in win4wine's Wayland session) cannot read
+the root window back; the shadow is then a translucent black 32-bit window
+with the same profile as its alpha, which the compositor blends.
 Evidence: the ratios under the desktop's context menu equal XP's within 0.005.
 Scope: only with WIN4WINE_EXTERNAL_SHELL.
 Old patches: 0072.
 ---
- dlls/winex11.drv/window.c | 136 ++++++++++++++++++++++++++++++++++++++++++++++
+ dlls/winex11.drv/window.c | 194 ++++++++++++++++++++++++++++++++++++++++++++++
  dlls/winex11.drv/x11drv.h |   2 +
- 2 files changed, 138 insertions(+)
+ 2 files changed, 196 insertions(+)
 
 diff --git a/dlls/winex11.drv/window.c b/dlls/winex11.drv/window.c
-index 6eb70e8..eb5d533 100644
+index 6eb70e8..9ad98c8 100644
 --- a/dlls/winex11.drv/window.c
 +++ b/dlls/winex11.drv/window.c
-@@ -1400,6 +1400,134 @@ static void window_set_net_wm_state( struct x11drv_win_data *data, UINT new_stat
+@@ -1400,6 +1400,192 @@ static void window_set_net_wm_state( struct x11drv_win_data *data, UINT new_stat
      }
  }
  
@@ -74,6 +77,68 @@ index 6eb70e8..eb5d533 100644
 +    return (double)shadow_edge[across] * fade;
 +}
 +
++static int shadow_image_error( Display *display, XErrorEvent *event, void *arg )
++{
++    return 1;
++}
++
++static void stack_and_map_shadow( Display *display, Window window, Window above )
++{
++#ifdef HAVE_LIBXSHAPE
++    XShapeCombineRectangles( display, window, ShapeInput, 0, 0, NULL, 0, ShapeSet, YXBanded );
++#endif
++    if (above)
++    {
++        XWindowChanges changes;
++        changes.sibling = above;
++        changes.stack_mode = Below;
++        XConfigureWindow( display, window, CWSibling | CWStackMode, &changes );
++    }
++    XMapWindow( display, window );
++}
++
++/* A rootless X server (Xwayland) cannot read the root window back; its
++ * compositor blends a translucent black shadow instead. */
++static Window create_alpha_shadow( Display *display, Window above, int part, int x, int y, int width, int height )
++{
++    Window root = DefaultRootWindow( display ), window;
++    XSetWindowAttributes attr;
++    XImage *image;
++    Pixmap pixmap;
++    char *bits;
++    GC gc;
++
++    if (!argb_visual.visualid || width <= 0 || height <= 0) return 0;
++    if (!(bits = malloc( width * height * 4 ))) return 0;
++    image = XCreateImage( display, argb_visual.visual, 32, ZPixmap, 0, bits, width, height, 32, 0 );
++    if (!image)
++    {
++        free( bits );
++        return 0;
++    }
++    for (int k = 0; k < height; k++)
++        for (int i = 0; i < width; i++)
++        {
++            double darkness = shadow_darkness( part, i, k, part ? width : height );
++            XPutPixel( image, i, k, (unsigned long)(darkness * 255 + 0.5) << 24 );
++        }
++    pixmap = XCreatePixmap( display, root, width, height, 32 );
++    gc = XCreateGC( display, pixmap, 0, NULL );
++    XPutImage( display, pixmap, gc, image, 0, 0, 0, 0, width, height );
++    XFreeGC( display, gc );
++    XDestroyImage( image );
++    attr.override_redirect = True;
++    attr.background_pixmap = pixmap;
++    attr.border_pixel = 0;
++    attr.colormap = XCreateColormap( display, root, argb_visual.visual, AllocNone );
++    window = XCreateWindow( display, root, x, y, width, height, 0, 32, InputOutput, argb_visual.visual,
++                            CWOverrideRedirect | CWBackPixmap | CWBorderPixel | CWColormap, &attr );
++    XFreeColormap( display, attr.colormap );
++    XFreePixmap( display, pixmap );
++    stack_and_map_shadow( display, window, above );
++    return window;
++}
++
 +static Window create_shadow( Display *display, Window above, int part, int x, int y, int width, int height )
 +{
 +    Window root = DefaultRootWindow( display ), window;
@@ -89,7 +154,13 @@ index 6eb70e8..eb5d533 100644
 +    if (cx <= 0 || cy <= 0) return 0;
 +    x = max( x, 0 );
 +    y = max( y, 0 );
-+    if (!(image = XGetImage( display, root, x, y, cx, cy, AllPlanes, ZPixmap ))) return 0;
++    X11DRV_expect_error( display, shadow_image_error, NULL );
++    image = XGetImage( display, root, x, y, cx, cy, AllPlanes, ZPixmap );
++    if (X11DRV_check_error() || !image)
++    {
++        if (image) XDestroyImage( image );
++        return create_alpha_shadow( display, above, part, left, top, width, height );
++    }
 +    if (image->bits_per_pixel != 32 || image->red_mask != 0xff0000 || image->green_mask != 0xff00 ||
 +        image->blue_mask != 0xff)
 +    {
@@ -115,17 +186,7 @@ index 6eb70e8..eb5d533 100644
 +    window = XCreateWindow( display, root, x, y, cx, cy, 0, DefaultDepth( display, screen ), InputOutput,
 +                            DefaultVisual( display, screen ), CWOverrideRedirect | CWBackPixmap, &attr );
 +    XFreePixmap( display, pixmap );
-+#ifdef HAVE_LIBXSHAPE
-+    XShapeCombineRectangles( display, window, ShapeInput, 0, 0, NULL, 0, ShapeSet, YXBanded );
-+#endif
-+    if (above)
-+    {
-+        XWindowChanges changes;
-+        changes.sibling = above;
-+        changes.stack_mode = Below;
-+        XConfigureWindow( display, window, CWSibling | CWStackMode, &changes );
-+    }
-+    XMapWindow( display, window );
++    stack_and_map_shadow( display, window, above );
 +    return window;
 +}
 +
@@ -164,7 +225,7 @@ index 6eb70e8..eb5d533 100644
  static void window_set_config( struct x11drv_win_data *data, RECT rect, BOOL above )
  {
      UINT style = NtUserGetWindowLongW( data->hwnd, GWL_STYLE ), mask = 0;
-@@ -1425,6 +1553,8 @@ static void window_set_config( struct x11drv_win_data *data, RECT rect, BOOL abo
+@@ -1425,6 +1611,8 @@ static void window_set_config( struct x11drv_win_data *data, RECT rect, BOOL abo
      data->desired_state.above = above;
      if (!data->whole_window) return; /* no window, nothing to update */
      if (EqualRect( old_rect, new_rect ) && (old_above || !above || data->managed)) return; /* rects are the same, no need to be raised, nothing to update */
@@ -173,7 +234,7 @@ index 6eb70e8..eb5d533 100644
      if (window_needs_config_change_delay( data ))
      {
          TRACE( "window %p/%lx is updating _NET_WM_STATE/_MOTIF_WM_HINTS, delaying request\n", data->hwnd, data->whole_window );
-@@ -1630,11 +1760,13 @@ static void window_set_wm_state( struct x11drv_win_data *data, UINT new_state, B
+@@ -1630,11 +1818,13 @@ static void window_set_wm_state( struct x11drv_win_data *data, UINT new_state, B
      case MAKELONG(WithdrawnState, IconicState):
      case MAKELONG(WithdrawnState, NormalState):
      case MAKELONG(IconicState, NormalState):
@@ -187,7 +248,7 @@ index 6eb70e8..eb5d533 100644
          if (data->embedded) set_xembed_flags( data, 0 );
          else if (!data->managed) XUnmapWindow( data->display, data->whole_window );
          else XWithdrawWindow( data->display, data->whole_window, data->vis.screen );
-@@ -2645,6 +2777,7 @@ void X11DRV_DestroyWindow( HWND hwnd )
+@@ -2645,6 +2835,7 @@ void X11DRV_DestroyWindow( HWND hwnd )
  
      if (!(data = get_win_data( hwnd ))) return;
  
@@ -195,7 +256,7 @@ index 6eb70e8..eb5d533 100644
      destroy_whole_window( data, FALSE );
      if (thread_data->last_focus == hwnd) thread_data->last_focus = 0;
      if (thread_data->last_xic_hwnd == hwnd) thread_data->last_xic_hwnd = 0;
-@@ -3356,6 +3489,9 @@ void X11DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UIN
+@@ -3356,6 +3547,9 @@ void X11DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UIN
          update_net_wm_states( data );
      }
  

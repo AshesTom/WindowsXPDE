@@ -2,7 +2,7 @@
 # Set up the XP shell session on this Debian 13 machine, from a fresh install.
 #
 #   scripts/setup.sh --media PATH [--greeter | --no-greeter] [--theme luna|classic]
-#                    [--dpi N] [--wine-install DIR | --jobs N]
+#                    [--dpi N] [--wayland] [--wine-install DIR | --jobs N]
 #
 #   --media PATH   the user's Windows XP SP3 (x86) ISO or Windows directory
 #   --greeter      also make LightDM show XP's Welcome screen (greeter/), with XP's
@@ -15,6 +15,9 @@
 #   --dpi N        the screen's DPI as XP sets it (LogPixels): 96 (normal), 120 (large)
 #                  or any value from 19 to 480; for the XP shell, the Linux
 #                  applications in its session and the Welcome screen
+#   --wayland      also build win4wine's labwc (wayland/build.sh) and register the
+#                  "XP Shell (Wine, Wayland)" session: per-monitor and fractional
+#                  scales (session.json "outputs"), Wayland applications with XP frames
 #   --wine-install DIR
 #                  use a Wine built elsewhere with this repository's patches (the
 #                  .local/wine-install of another Debian 13 machine, copied anywhere)
@@ -35,6 +38,7 @@ jobs=$(nproc)
 theme=luna
 theme_given=no
 dpi=
+wayland=no
 prebuilt=
 while (($#)); do
     case $1 in
@@ -44,6 +48,7 @@ while (($#)); do
         --jobs) jobs=${2:?--jobs needs a number}; shift 2 ;;
         --theme) theme=${2:?--theme needs luna or classic}; theme_given=yes; shift 2 ;;
         --dpi) dpi=${2:?--dpi needs a number}; shift 2 ;;
+        --wayland) wayland=yes; shift ;;
         --wine-install) prebuilt=$(realpath -e -- "${2:?--wine-install needs a directory}"); shift 2 ;;
         -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
         *) printf 'Unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
@@ -78,6 +83,18 @@ packages=(
     locales fcitx5 fcitx5-mozc fcitx5-frontend-gtk3 fcitx5-frontend-gtk4
     fcitx5-frontend-qt5 fcitx5-frontend-qt6 fcitx5-config-qt
 )
+if [[ $wayland == yes ]]; then
+    packages+=(
+        # labwc and wlroots (wayland/build.sh), Xwayland, the outputs' settings
+        meson ninja-build wayland-protocols libwayland-dev libxkbcommon-dev libxml2-dev
+        libcairo2-dev libpango1.0-dev libglib2.0-dev libinput-dev libpixman-1-dev libpng-dev
+        librsvg2-dev libdrm-dev libgbm-dev libegl-dev libgles-dev libseat-dev libdisplay-info-dev
+        libliftoff-dev liblcms2-dev hwdata libxcb1-dev libxcb-composite0-dev libxcb-dri3-dev
+        libxcb-errors-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-present-dev libxcb-randr0-dev
+        libxcb-render0-dev libxcb-render-util0-dev libxcb-res0-dev libxcb-shm0-dev
+        libxcb-xfixes0-dev libxcb-xinput-dev xwayland wlr-randr
+    )
+fi
 if [[ $greeter == yes ]]; then
     packages+=(lightdm lightdm-gtk-greeter gir1.2-lightdm-1 gir1.2-gtk-3.0 python3-gi-cairo)
 elif [[ ! -e /etc/X11/default-display-manager ]]; then
@@ -128,6 +145,19 @@ fi
 step 'Bridge'
 "$root/bridge-wm/build.sh"
 printf 'Built .local/bridge\n'
+
+labwc=$local/labwc-install/bin/labwc
+if [[ $wayland == yes ]]; then
+    step 'Wayland compositor'
+    if [[ -x $labwc ]]; then
+        printf 'Built: %s\n' "$("$labwc" --version)"
+    else
+        printf 'Building labwc and wlroots (log: .local/labwc-build.log)\n'
+        JOBS=$jobs "$root/wayland/build.sh" > "$local/labwc-build.log" 2>&1 ||
+            { tail -20 "$local/labwc-build.log" >&2; printf 'labwc build failed; see .local/labwc-build.log\n' >&2; exit 1; }
+        "$labwc" --version
+    fi
+fi
 
 step 'XP files'
 assets=$local/assets
@@ -180,11 +210,15 @@ open(config, 'w').write(json.dumps({'wine': wine, 'prefix': prefix, 'locale': 'j
 EOF
     printf 'Wrote %s\n' "$config"
 fi
-"$root/session/install.sh"
+if [[ $wayland == yes ]]; then
+    "$root/session/install.sh" --wayland "$labwc"
+else
+    "$root/session/install.sh"
+fi
 
 step 'Login screen and cursors'
 if [[ $greeter == yes ]]; then
-    "$root/greeter/install.sh" "$assets"
+    "$root/greeter/install.sh" "$assets" "$([[ $wayland == yes ]] && echo xp-shell-wayland || echo xp-shell)"
     if [[ -n $dpi ]]; then
         # XP's Welcome screen takes the machine's DPI.
         sudo python3 - "$dpi" <<'EOF'
@@ -211,5 +245,8 @@ if [[ $greeter == yes ]]; then
     printf 'Restart the display manager (or reboot): the XP Welcome screen logs in to the XP shell.\n'
 else
     printf 'Restart the display manager (or reboot) and choose "XP Shell (Wine, X11)" at the login screen.\n'
+fi
+if [[ $wayland == yes ]]; then
+    printf 'The Wayland session is "XP Shell (Wine, Wayland)"; outputs and scales: session.json "outputs".\n'
 fi
 printf 'Logs of the session: ~/.local/state/win4wine/\n'

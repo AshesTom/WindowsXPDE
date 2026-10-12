@@ -42,11 +42,13 @@ def cursor_size(dpi):
     return 64 if dpi > 144 else 32
 
 
-def environment(dpi):
-    """Variables for Linux applications started in the session."""
+def environment(dpi, wayland=False):
+    """Variables for Linux applications started in the session.
+
+    On Wayland, applications take each output's scale from the compositor."""
     env = {'XCURSOR_SIZE': str(cursor_size(dpi))}
     scale = dpi // DEFAULT
-    if scale >= 2:
+    if scale >= 2 and not wayland:
         env.update(GDK_SCALE=str(scale), GDK_DPI_SCALE=f'{1 / scale:g}')
     return env
 

@@ -1,7 +1,9 @@
 #!/bin/bash
 # Make LightDM show XP's Welcome screen (greeter/xp-greeter.py).
-#   greeter/install.sh ASSETS    copy the greeter and the XP files it reads from ASSETS
-#                                (extract/extract.py's output), then make it LightDM's greeter
+#   greeter/install.sh ASSETS [SESSION]
+#                                copy the greeter and the XP files it reads from ASSETS
+#                                (extract/extract.py's output), then make it LightDM's greeter;
+#                                SESSION is the default session (xp-shell, or xp-shell-wayland)
 #   greeter/install.sh --remove  go back to the greeter LightDM used before
 # Restart LightDM afterwards. Without the XP files the greeter starts lightdm-gtk-greeter.
 set -euo pipefail
@@ -47,5 +49,5 @@ else
 fi
 sudo install -Dm644 "$root/greeter/xp-greeter.desktop" /usr/share/xgreeters/xp-greeter.desktop
 # The Welcome screen has no session menu: users without a last session get the XP shell.
-printf '[Seat:*]\ngreeter-session=xp-greeter\nuser-session=xp-shell\n' | sudo install -Dm644 /dev/stdin "$seat"
+printf '[Seat:*]\ngreeter-session=xp-greeter\nuser-session=%s\n' "${2:-xp-shell}" | sudo install -Dm644 /dev/stdin "$seat"
 printf 'Installed the XP Welcome screen as %s. Settings: /etc/win4wine/greeter.json\n' "$seat"

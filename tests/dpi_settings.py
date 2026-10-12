@@ -64,6 +64,10 @@ class Environment(unittest.TestCase):
         self.assertEqual(dpi.environment(192)['GDK_DPI_SCALE'], '0.5')
         self.assertEqual(dpi.environment(288)['GDK_SCALE'], '3')
 
+    def test_wayland_leaves_scale_to_outputs(self):
+        self.assertNotIn('GDK_SCALE', dpi.environment(192, wayland=True))
+        self.assertEqual(dpi.environment(192, wayland=True)['XCURSOR_SIZE'], '64')
+
 
 @unittest.skipUnless(os.environ.get('DISPLAY'), 'needs an X display')
 class XftDpi(unittest.TestCase):
