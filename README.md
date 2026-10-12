@@ -28,6 +28,9 @@ Windows XP の `explorer.exe` を、パッチを当てた Wine の上で **Linux
 
 Microsoft のファイルは同梱していません。お手元の XP の ISO から、必要なファイルだけを取り出して使います。
 
+XP の ISO が無い方は、XP のシェルの代わりに **[ReactOS](https://reactos.org/) のシェル**（Windows 2000 風のクラシックの見た目）でも
+試せます。ReactOS は自由なソフトウェアなので、導入スクリプトが公式のリリースから取得します（[docs/reactos.md](docs/reactos.md)）。
+
 ## できること
 
 - **XP のシェル**: Luna（またはクラシック）のタスクバー、スタートメニュー、デスクトップ、マイ コンピュータ、フォルダウィンドウ。
@@ -45,6 +48,8 @@ Microsoft のファイルは同梱していません。お手元の XP の ISO �
   動かすセッションです。モニターごとの倍率や 125%・150% などの倍率が使え、XP のシェルはぼけずに描かれます。Wayland のアプリにも
   XP の枠が付きます。作ったばかりで、確かめた範囲は X11 のセッションより狭く、既知の制限もあります（[docs/wayland.md](docs/wayland.md)）。
   ふだん試すなら X11 のセッションをおすすめします。
+- **ReactOS のシェル（任意）**: XP の ISO の代わりに ReactOS 0.4.16 の explorer で動かすセッションです。日本語と英語に対応します。
+  XP のシェルと並べて入れられます。
 
 ## 試してみる
 
@@ -58,6 +63,14 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 ```
 
 3. 再起動すると、XP のようこそ画面からそのまま XP のシェルに入ります。
+
+XP の ISO が無いときは、ReactOS のシェルで試せます（ISO は要りません）。
+
+```sh
+scripts/setup.sh --shell reactos --lang ja   # 英語なら --lang en
+```
+
+ログイン画面でセッション「ReactOS Shell (Wine, X11)」を選びます。
 
 詳しい手順とオプションは 🔗 [導入手順（INSTALL.md）](INSTALL.md) にあります。Wine をソースからビルドするので、4 コアで 1 時間半ほどかかります。
 
@@ -100,3 +113,4 @@ LightDM ─ XP のようこそ画面 (greeter/)
 [LGPL-2.1-or-later](LICENSE)（Wine と同じ）です。対象はこのリポジトリのコードとパッチだけです。
 ただし `wayland/patches/labwc/` は labwc と同じ GPL-2.0-only、`wayland/patches/wlroots/` は wlroots と同じ MIT です。
 Windows XP のファイルと、スクリーンショットに写っている XP の画面の著作権は Microsoft にあります。
+ReactOS のシェルで使う ReactOS のファイルは、ReactOS のライセンス（GPL-2.0-or-later、DLL の多くは LGPL-2.1-or-later）に従います。

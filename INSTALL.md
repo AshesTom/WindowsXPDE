@@ -35,6 +35,8 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `--wayland` | Wayland のセッション「XP Shell (Wine, Wayland)」も入れます（labwc と wlroots をビルドします）。モニターごとの倍率、125%・150% などの倍率が使え、Wayland のアプリにも XP の枠が付きます。`--greeter` と一緒なら、ようこそ画面の既定のセッションになります。**X11 のセッション以上に実験的です**（確かめた範囲が狭く、既知の制限があります。[docs/wayland.md](docs/wayland.md)） |
 | `--wine-install DIR` | 別の Debian 13 マシンでビルドした Wine（その `.local/wine-install` を写したもの）を使い、ここではビルドしません |
 | `--jobs N` | Wine のビルドの並列数です（既定は CPU の数） |
+| `--shell reactos` | XP のシェルの代わりに ReactOS のシェルを入れます（`--media` は要りません。下の「ReactOS のシェル」） |
+| `--lang ja\|en` | ReactOS のシェルの言語です（既定は今のロケールが日本語なら `ja`、ほかは `en`） |
 
 途中で失敗しても、そのまま実行し直せば、済んだ段階は飛ばします。ビルドしたものはすべて、このチェックアウトの `.local/` に入ります。
 
@@ -50,6 +52,21 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 8. `--greeter` のときは XP のようこそ画面を入れます。
 9. `--wayland` のときは labwc と wlroots にパッチを当ててビルドし（`.local/labwc-install`。ログは `.local/labwc-build.log`）、
    セッション「XP Shell (Wine, Wayland)」も登録します。
+
+## ReactOS のシェル
+
+XP の ISO が無いときは、ReactOS のシェル（クラシックの見た目）を入れられます。
+
+```sh
+scripts/setup.sh --shell reactos --lang ja
+```
+
+- ReactOS 0.4.16 のリリース（約 200 MB）を GitHub から取得し、SHA-256 を確かめて、シェルのファイルだけを `.local/assets-reactos` に
+  取り出します。取得した zip は `.local/dl` に残ります。
+- prefix は `.local/prefix-reactos`、設定は `~/.config/win4wine/reactos-session.json`、セッションは「**ReactOS Shell (Wine, X11)**」です。
+  XP のシェルの設定とセッションには触れないので、両方を入れられます（Wine と bridge は共通です）。
+- `--greeter`、`--theme`、`--wayland` は XP のシェルのためのもので、ReactOS のシェルとは一緒に使えません。
+- 詳しくは [docs/reactos.md](docs/reactos.md) にあります。
 
 ## 3. ログインする
 
@@ -82,6 +99,7 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `cursor_theme` | `win4wine-xp` | カーソルのテーマ。`null` で使いません |
 | `shutdown_command`, `reboot_command` | `systemctl poweroff` / `reboot` | 終了オプションで実行するコマンド |
 | `outputs` | （無し） | Wayland のセッションの、出力ごとの設定。例: `{"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}`（`mode` も書けます。出力の名前は `wlr-randr` で見られます） |
+| `shell` | `xp` | `reactos` で ReactOS のシェル（`reactos-session.json` に setup.sh が書きます） |
 | `primary` | 一番左の出力 | Wayland のセッションで Win32 の主モニターにする出力の名前。XP のデスクトップとタスクバーはここに出ます |
 
 見た目を後から変えるときは、セッションを止めてから `scripts/setup.sh --media ISO --theme classic`（または `luna`）を実行してください。
@@ -103,6 +121,7 @@ Wayland のセッションでは、Linux のアプリは出力ごとの倍率（
 greeter/install.sh --remove                     # ようこそ画面をやめる（LightDM の元の画面に戻ります）
 sudo rm /usr/share/xsessions/xp-shell.desktop /usr/local/bin/xp-shell-session   # セッションの登録を消す
 sudo rm /usr/share/wayland-sessions/xp-shell-wayland.desktop /usr/local/bin/xp-shell-wayland-session   # Wayland のセッションも
+sudo rm /usr/share/xsessions/reactos-shell.desktop /usr/local/bin/reactos-shell-session   # ReactOS のシェルのセッションも
 python3 session/linux_apps.py .local/prefix --wine .local/wine-install/bin/wine --remove   # 作ったスタートメニューの項目を消す
 ```
 

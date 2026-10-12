@@ -35,6 +35,8 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `--wayland` | also install the Wayland session "XP Shell (Wine, Wayland)" (builds labwc and wlroots): a scale per monitor, scales such as 125% or 150%, XP frames for Wayland applications; with `--greeter` it becomes the Welcome screen's default session. **Even more experimental than the X11 session** (tested less, with known limits; [docs/wayland.md](../../docs/wayland.md)) |
 | `--wine-install DIR` | use a Wine built on another Debian 13 machine (a copy of its `.local/wine-install`) instead of building it here |
 | `--jobs N` | parallel jobs for the Wine build (default: the number of CPUs) |
+| `--shell reactos` | set up ReactOS's shell instead of XP's (no `--media`; see "The ReactOS shell" below) |
+| `--lang ja\|en` | the ReactOS shell's language (default: `ja` if the current locale is Japanese, else `en`) |
 
 If it fails, just run it again: finished steps are skipped. Everything it builds stays in `.local/` of this checkout.
 
@@ -50,6 +52,21 @@ If it fails, just run it again: finished steps are skipped. Everything it builds
 8. With `--greeter`, installs XP's Welcome screen.
 9. With `--wayland`, builds labwc and wlroots with their patches (`.local/labwc-install`; log in `.local/labwc-build.log`)
    and registers the session "XP Shell (Wine, Wayland)" too.
+
+## The ReactOS shell
+
+Without an XP ISO, set up ReactOS's shell (classic look):
+
+```sh
+scripts/setup.sh --shell reactos --lang en
+```
+
+- It downloads the ReactOS 0.4.16 release (about 200 MB) from GitHub, checks its SHA-256 and extracts only the shell's files into
+  `.local/assets-reactos`; the zip stays in `.local/dl`.
+- The prefix is `.local/prefix-reactos`, the settings `~/.config/win4wine/reactos-session.json` and the session
+  "**ReactOS Shell (Wine, X11)**". The XP shell's settings and session are left alone, so both can be set up (Wine and the bridge are shared).
+- `--greeter`, `--theme` and `--wayland` are for the XP shell and cannot be combined with it.
+- Details: [docs/reactos.md](../../docs/reactos.md) (Japanese).
 
 ## 3. Log in
 
@@ -82,6 +99,7 @@ Restart the display manager (or reboot).
 | `cursor_theme` | `win4wine-xp` | cursor theme; `null` for none |
 | `shutdown_command`, `reboot_command` | `systemctl poweroff` / `reboot` | commands run by Turn Off Computer |
 | `outputs` | (none) | the Wayland session's settings per output, e.g. `{"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}` (`mode` too; `wlr-randr` lists the names) |
+| `shell` | `xp` | `reactos` for ReactOS's shell (setup.sh writes it into `reactos-session.json`) |
 | `primary` | the leftmost output | the output the Wayland session makes Win32's primary monitor; XP's desktop and taskbar are on it |
 
 To change the look later, stop the session and run `scripts/setup.sh --media ISO --theme classic` (or `luna`).
@@ -104,6 +122,7 @@ crisp on every output; set the DPI to the scale of the output you mostly use (14
 greeter/install.sh --remove                     # stop using the Welcome screen (back to LightDM's previous greeter)
 sudo rm /usr/share/xsessions/xp-shell.desktop /usr/local/bin/xp-shell-session   # unregister the session
 sudo rm /usr/share/wayland-sessions/xp-shell-wayland.desktop /usr/local/bin/xp-shell-wayland-session   # and the Wayland one
+sudo rm /usr/share/xsessions/reactos-shell.desktop /usr/local/bin/reactos-shell-session   # and the ReactOS shell's
 python3 session/linux_apps.py .local/prefix --wine .local/wine-install/bin/wine --remove   # remove the Start menu entries it made
 ```
 
