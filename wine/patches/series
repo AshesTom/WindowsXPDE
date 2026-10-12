@@ -64,3 +64,4 @@
 0064-uxtheme-negative-theme-margins.patch
 0065-user32-external-switch-to-this-window.patch
 0066-user32-external-reactos-dialog-resource-names.patch
+0067-win32u-external-expose-flush.patch

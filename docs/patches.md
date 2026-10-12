@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 66 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 67 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -142,10 +142,16 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0065 | user32: SwitchToThisWindow で窓を前面にもする（ReactOS のタスクバー。Wayland のセッションで戻した窓が有効にならなかった） | あり |
 | 0066 | user32: ダイアログの部品のリソースの番号を、ReactOS と同じ「#番号」の名前で渡す（ReactOS の Static がバナーとアイコンを読めるように。`WIN4WINE_SHELL=reactos` のときだけ） | あり |
 
+### その後の修正（0067）
+
+| 番号 | 内容 | opt-in |
+|---|---|---|
+| 0067 | win32u: X が見えるようにした窓の部分を、すぐ画面に出す（ドラッグした窓の下の窓が、次のメッセージまで黒いままだった） | あり |
+
 ## 並び順の考え方
 
 まとまりは「opt-in の要らない修正 → XP の部品が呼ぶ API → 外部シェルの基盤 → bridge との連携 → ウィンドウ → 文字と画素 →
-コントロール → uxtheme → Wayland のセッション → ReactOS のシェル」の順です。同じまとまりの中では、後のパッチが前のパッチのコードを使う順にしてあります
+コントロール → uxtheme → Wayland のセッション → ReactOS のシェル」の順で、その後の修正は末尾に足します。同じまとまりの中では、後のパッチが前のパッチのコードを使う順にしてあります
 （例: 0050〜0052 は 0049 の枠の描画を前提にしています）。
 
 ## 書式
