@@ -89,6 +89,10 @@ ReactOS の msgina.dll のダイアログ（「Ctrl-Alt-Delete キーを押し�
 - 見た目は ReactOS に近づけましたが、XP のシェルのように画素単位では合わせていません。とくに字は、ReactOS が太字を
   標準の Tahoma から合成するのに対し、Wine は `tahomabd.ttf` を使うので、太字の幅が違います。
 - 「ヘルプとサポート」、ネットワーク、プリンターの設定は Wine にその部品が無いので使えません。
+- フォルダの窓の「フォルダ」の一覧には、Wine の Unix のルート（`/`）も出ます（デスクトップには出しません）。
+- Linux のアプリは、`.desktop` に作業ディレクトリ（`Path`）が無いと prefix の `C:\windows` から始まります（XP のシェルと同じ）。
+- Wayland のセッションでは、スタートメニューを Esc で閉じた直後など、どの窓にもキーボードが渡っていないときは、Windows キーの
+  ホットキー（Win+E など）が効きません。デスクトップや窓をクリックすると効きます。
 - Wayland のセッション（`--wayland`、「ReactOS Shell (Wine, Wayland)」）は XP のシェルの Wayland のセッションと同じ labwc で動きます。
   XP のシェルと同じく、X11 のセッションより実験的です（[wayland.md](wayland.md)）。
 
