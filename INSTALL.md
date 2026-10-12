@@ -1,6 +1,6 @@
 # 導入手順
 
-🇯🇵 日本語 · [🇬🇧 English](.github/readme/INSTALL.en.md)
+**日本語** · [English](.github/readme/INSTALL.en.md)
 
 > [!WARNING]
 > - Windows XP の ISO はご自身で入手してください。利用は自己責任でお願いします（[README の注意](README.md#注意)）。

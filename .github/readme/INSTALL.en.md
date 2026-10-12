@@ -1,6 +1,6 @@
 # Installation
 
-[🇯🇵 日本語](../../INSTALL.md) · 🇬🇧 English
+[日本語](../../INSTALL.md) · **English**
 
 > [!WARNING]
 > - Obtain the Windows XP ISO yourself, and use this at your own risk (see [Caution in the README](README.en.md#caution)).
