@@ -28,7 +28,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'reactos-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 2
+VERSION = 3
 # Loaded natively by ros-explorer.exe only; Wine has builtin modules of these names.
 SHELL_DLLS = ('shell32', 'browseui', 'shdocvw', 'shlwapi', 'comctl32', 'zipfldr')
 # ReactOS-only modules (no Wine builtin of the name): ros-explorer.exe loads them by name.
@@ -145,6 +145,10 @@ class Prefix:
         # process hands the window to the running shell.
         self.reg(r'HKCR\Folder\shell\open\command', None, r'C:\ros\ros-explorer.exe "%1"')
         self.reg(r'HKCR\Folder\shell\explore\command', None, r'C:\ros\ros-explorer.exe /e,"%1"')
+        # Wine's ShellExecute runs executables itself; ReactOS's needs their
+        # association, or a shortcut to a program opens its first menu item.
+        for extension in ('.exe', '.com'):
+            self.reg('HKCR\\' + extension, None, 'exefile')
         # Wine has no help viewer for Help and Support.
         self.reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoSMHelp', 1, 'REG_DWORD')
         # Wine rewrites the system links for the prefix's locale.
