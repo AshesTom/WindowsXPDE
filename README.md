@@ -51,6 +51,19 @@ XP の ISO が無い方は、XP のシェルの代わりに **[ReactOS](https://
 - **ReactOS のシェル（任意）**: XP の ISO の代わりに ReactOS 0.4.16 の explorer で動かすセッションです。日本語と英語に対応します。
   XP のシェルと並べて入れられます。
 
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/images/screenshot-classic.png" alt="クラシックのテーマの XP のシェルと Linux のアプリ" width="400" /><br />
+      XP のクラシック（<code>--theme classic</code>）
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/images/screenshot-reactos.png" alt="ReactOS のシェルと Linux のアプリ" width="400" /><br />
+      ReactOS のシェル（<code>--shell reactos</code>。XP の ISO は要りません）
+    </td>
+  </tr>
+</table>
+
 ## 試してみる
 
 1. 日本語版 Windows XP Professional SP3（x86）の ISO を**ご自身で**用意してください。

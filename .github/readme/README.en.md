@@ -73,6 +73,19 @@ ReactOS is free software, so the setup script downloads it from its official rel
 - **ReactOS shell (optional)**: the session with ReactOS 0.4.16's explorer instead of XP's, in Japanese or English; it can be set
   up beside the XP shell.
 
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="../../docs/images/screenshot-classic.png" alt="The XP shell with the classic theme and Linux applications" width="400" /><br />
+      XP's classic theme (<code>--theme classic</code>)
+    </td>
+    <td align="center" width="50%">
+      <img src="../../docs/images/screenshot-reactos.png" alt="The ReactOS shell and Linux applications" width="400" /><br />
+      The ReactOS shell (<code>--shell reactos</code>; no XP ISO needed)
+    </td>
+  </tr>
+</table>
+
 ## Caution
 
 > [!WARNING]
