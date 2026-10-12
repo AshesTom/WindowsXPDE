@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 62 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 63 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -15,6 +15,7 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
   ntdll は Rtl の関数で、wow64.dll（0017）は ntdll の関数で同じ変数を読みます。
 - opt-in なしで効くのは、文書化された Win32 の挙動の修正（0001〜0012）と、普通のアプリの見た目と動作を変えない 0019・0020 です。
 - 0018 は `WIN4WINE_SESSION_REQUEST` があるときだけ効きます。
+- 0063 は、さらに `WIN4WINE_FOLDER_SHELL` があるときだけ効きます（ReactOS のシェルのセッションだけが設定します）。
 
 ## 一覧
 
@@ -80,7 +81,7 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 | 0032 | win32u: ポップアップメニューを XP と同じく並べて描く | あり |
 | 0033 | user32: WM_PRINT の画像に子孫の窓も描く | あり |
 | 0034 | user32: ReBar の既定の配置を明示する | あり |
-| 0035 | user32: 拡大の壁紙を描く | あり |
+| 0035 | user32: 拡大の壁紙を描く（ReactOS のシェルの「合わせる」「塗りつぶす」も） | あり |
 
 ### 文字と GDI の画素（0036〜0044）
 
@@ -131,10 +132,16 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 
 labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.md](wayland.md)）。書式は Wine のパッチと同じです。
 
+### ReactOS のシェル（0063）
+
+| 番号 | 内容 | opt-in |
+|---|---|---|
+| 0063 | explorer: `explorer.exe` で開くフォルダの窓を、外部のシェルの explorer に渡す（`WIN4WINE_FOLDER_SHELL` があるときだけ） | あり |
+
 ## 並び順の考え方
 
 まとまりは「opt-in の要らない修正 → XP の部品が呼ぶ API → 外部シェルの基盤 → bridge との連携 → ウィンドウ → 文字と画素 →
-コントロール → uxtheme → Wayland のセッション」の順です。同じまとまりの中では、後のパッチが前のパッチのコードを使う順にしてあります
+コントロール → uxtheme → Wayland のセッション → ReactOS のシェル」の順です。同じまとまりの中では、後のパッチが前のパッチのコードを使う順にしてあります
 （例: 0050〜0052 は 0049 の枠の描画を前提にしています）。
 
 ## 書式
