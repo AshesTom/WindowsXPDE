@@ -68,7 +68,7 @@ scripts/setup.sh --shell reactos --lang ja
 - `--greeter` を付けると、ログイン画面が ReactOS のログオンの画面になります。
 - `--theme` は `classic`（既定。Windows 2000 風のクラシック）か、ReactOS のテーマ `lautus`、`lunar`、`mizu` です。作った後でも
   `--theme` を付けて実行し直せば変わります。
-- `--wayland` は XP のシェルのためのもので、ReactOS のシェルとは一緒に使えません。
+- `--wayland` を付けると、Wayland のセッション「ReactOS Shell (Wine, Wayland)」も入れます（X11 のセッション以上に実験的です）。
 - 詳しくは [docs/reactos.md](docs/reactos.md) にあります。
 
 ## 3. ログインする
@@ -125,6 +125,7 @@ greeter/install.sh --remove                     # ようこそ画面をやめる
 sudo rm /usr/share/xsessions/xp-shell.desktop /usr/local/bin/xp-shell-session   # セッションの登録を消す
 sudo rm /usr/share/wayland-sessions/xp-shell-wayland.desktop /usr/local/bin/xp-shell-wayland-session   # Wayland のセッションも
 sudo rm /usr/share/xsessions/reactos-shell.desktop /usr/local/bin/reactos-shell-session   # ReactOS のシェルのセッションも
+sudo rm /usr/share/wayland-sessions/reactos-shell-wayland.desktop /usr/local/bin/reactos-shell-wayland-session
 python3 session/linux_apps.py .local/prefix --wine .local/wine-install/bin/wine --remove   # 作ったスタートメニューの項目を消す
 ```
 

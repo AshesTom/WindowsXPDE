@@ -89,6 +89,7 @@ ReactOS の msgina.dll のダイアログ（「Ctrl-Alt-Delete キーを押し�
 - 見た目は ReactOS に近づけましたが、XP のシェルのように画素単位では合わせていません。とくに字は、ReactOS が太字を
   標準の Tahoma から合成するのに対し、Wine は `tahomabd.ttf` を使うので、太字の幅が違います。
 - 「ヘルプとサポート」、ネットワーク、プリンターの設定は Wine にその部品が無いので使えません。
-- Wayland のセッションはまだありません。
+- Wayland のセッション（`--wayland`、「ReactOS Shell (Wine, Wayland)」）は XP のシェルの Wayland のセッションと同じ labwc で動きます。
+  XP のシェルと同じく、X11 のセッションより実験的です（[wayland.md](wayland.md)）。
 
 試験は `tests/reactos_session.py`（[development.md](development.md)）です。

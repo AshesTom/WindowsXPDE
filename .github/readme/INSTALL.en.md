@@ -68,7 +68,7 @@ scripts/setup.sh --shell reactos --lang en
 - With `--greeter`, the login screen becomes ReactOS's logon screen.
 - `--theme` is `classic` (the default, a Windows 2000-like classic look) or one of ReactOS's themes, `lautus`, `lunar` or
   `mizu`; run setup.sh again with `--theme` to change it later.
-- `--wayland` is for the XP shell and cannot be combined with it.
+- With `--wayland`, the Wayland session "ReactOS Shell (Wine, Wayland)" is installed too (even more experimental than X11).
 - Details: [docs/reactos.md](../../docs/reactos.md) (Japanese).
 
 ## 3. Log in
@@ -126,6 +126,7 @@ greeter/install.sh --remove                     # stop using the Welcome screen 
 sudo rm /usr/share/xsessions/xp-shell.desktop /usr/local/bin/xp-shell-session   # unregister the session
 sudo rm /usr/share/wayland-sessions/xp-shell-wayland.desktop /usr/local/bin/xp-shell-wayland-session   # and the Wayland one
 sudo rm /usr/share/xsessions/reactos-shell.desktop /usr/local/bin/reactos-shell-session   # and the ReactOS shell's
+sudo rm /usr/share/wayland-sessions/reactos-shell-wayland.desktop /usr/local/bin/reactos-shell-wayland-session
 python3 session/linux_apps.py .local/prefix --wine .local/wine-install/bin/wine --remove   # remove the Start menu entries it made
 ```
 
