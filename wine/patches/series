@@ -63,3 +63,4 @@
 0063-explorer-external-folder-shell.patch
 0064-uxtheme-negative-theme-margins.patch
 0065-user32-external-switch-to-this-window.patch
+0066-user32-external-reactos-dialog-resource-names.patch

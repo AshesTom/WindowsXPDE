@@ -4,7 +4,7 @@
 #   scripts/setup.sh --media PATH [--greeter | --no-greeter] [--theme luna|classic]
 #                    [--dpi N] [--wayland] [--wine-install DIR | --jobs N]
 #   scripts/setup.sh --shell reactos [--lang ja|en] [--theme T] [--greeter] [--dpi N]
-#                    [--wine-install DIR | --jobs N]
+#                    [--wayland] [--wine-install DIR | --jobs N]
 #
 #   --media PATH   the user's Windows XP SP3 (x86) ISO or Windows directory
 #   --shell S      xp (the default) or reactos: ReactOS's shell (classic look),
@@ -76,7 +76,6 @@ if [[ $shell == reactos ]]; then
     [[ $theme_given == yes ]] || theme=classic
     [[ $theme =~ ^(classic|lautus|lunar|mizu)$ ]] ||
         { printf -- '--theme for the ReactOS shell is classic, lautus, lunar or mizu\n' >&2; exit 2; }
-    [[ $wayland == no ]] || { printf -- 'The ReactOS shell has no Wayland session yet\n' >&2; exit 2; }
     if [[ -z $lang ]]; then
         [[ ${LANG:-} == ja* ]] && lang=ja || lang=en
     fi
@@ -281,7 +280,9 @@ open(config, 'w').write(json.dumps(settings, indent=2) + '\n')
 EOF
     printf 'Wrote %s\n' "$config"
 fi
-if [[ $wayland == yes ]]; then
+if [[ $wayland == yes && $shell == reactos ]]; then
+    "$root/session/install.sh" --reactos --wayland "$labwc"
+elif [[ $wayland == yes ]]; then
     "$root/session/install.sh" --wayland "$labwc"
 elif [[ $shell == reactos ]]; then
     "$root/session/install.sh" --reactos
@@ -292,7 +293,8 @@ fi
 step 'Login screen and cursors'
 if [[ $shell == reactos ]]; then
     if [[ $greeter == yes ]]; then
-        "$root/greeter/install.sh" --reactos "$assets" "$lang"
+        "$root/greeter/install.sh" --reactos "$assets" "$lang" \
+            "$([[ $wayland == yes ]] && echo reactos-shell-wayland || echo reactos-shell)"
     fi
     # ReactOS's cursors for the session (and the logon screen).
     theme=$(mktemp -d)
@@ -335,7 +337,9 @@ elif [[ $greeter == yes ]]; then
 else
     printf 'Restart the display manager (or reboot) and choose "XP Shell (Wine, X11)" at the login screen.\n'
 fi
-if [[ $wayland == yes ]]; then
+if [[ $wayland == yes && $shell == reactos ]]; then
+    printf 'The Wayland session is "ReactOS Shell (Wine, Wayland)"; outputs and scales: reactos-session.json "outputs".\n'
+elif [[ $wayland == yes ]]; then
     printf 'The Wayland session is "XP Shell (Wine, Wayland)"; outputs and scales: session.json "outputs".\n'
 fi
 printf 'Logs of the session: ~/.local/state/win4wine/\n'
