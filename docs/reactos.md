@@ -47,6 +47,7 @@ GPL と LGPL に従い、対応するソース（`manifest.json` の `source`、
 - フォルダの「開く」と「エクスプローラ」は ros-explorer.exe で開きます（ReactOS の hivecls.inf と同じ形）。
 - 日本語では、Tahoma などの UI のフォントに DroidSansFallback を FontLink でつなぎます。Wine はロケールの違う起動で
   FontLink を作り直すので、prefix はそのロケールで作り、セッションの前の `stage` で入れ直します。
+  FontLink の届かない所（フォルダの窓のアドレス欄など）と Linux のアプリのために、`setup.sh` は日本語のとき `fonts-noto-cjk` も入れます。
 - 見た目（作るときだけ）: テーマを切り（クラシック）、ReactOS の既定の配色（`win32ss/gdi/ntgdi/stockobj.c`）と寸法と
   フォント（`boot/bootdata/hivedef.inf`）、壁紙 Nebula（塗りつぶし）、スタートメニューの「ログオフ」。
   Wine の名前空間の「Internet」と「/」はデスクトップに出しません。「ヘルプとサポート」は出しません（Wine にヘルプが無いため）。

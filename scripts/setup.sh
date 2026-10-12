@@ -139,6 +139,11 @@ if [[ $wayland == yes ]]; then
         libxcb-xfixes0-dev libxcb-xinput-dev xwayland wlr-randr
     )
 fi
+if [[ $shell == reactos && $lang == ja ]]; then
+    # Japanese text where ReactOS's DroidSansFallback is not linked in (the folder
+    # window's address bar, Linux applications); the XP shell has XP's MS Gothic
+    packages+=(fonts-noto-cjk)
+fi
 if [[ $greeter == yes ]]; then
     packages+=(lightdm lightdm-gtk-greeter gir1.2-lightdm-1 gir1.2-gtk-3.0 python3-gi-cairo)
 elif [[ ! -e /etc/X11/default-display-manager ]]; then
