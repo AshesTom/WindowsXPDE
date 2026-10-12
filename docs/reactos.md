@@ -24,6 +24,7 @@ SHA-256 を確かめて、ISO から次のものだけを `.local/assets-reactos
 | `tahoma`、`tahomabd`、`Marlett`、`DroidSansFallback` | ReactOS の自由なフォント（日本語の字は DroidSansFallback） |
 | `user32.dll` | カーソルだけを読み、X のカーソルテーマ `win4wine-reactos` を作ります |
 | `Nebula.bmp` | ReactOS の既定の壁紙 |
+| `lautus`、`lunar`、`mizu` の `.msstyles` | 任意のテーマ（既定はクラシック） |
 
 32bit 版（i386）を使います。XP のシェルと同じ WoW64 の 32bit の経路で動き、64bit の ReactOS は毎晩のビルドしかないためです。
 
@@ -63,6 +64,12 @@ session.json（`~/.config/win4wine/reactos-session.json`）の `"shell": "reacto
 
 bridge と XP 向けのパッチは、そのまま ReactOS のシェルにも効きます（タスクバーのボタン、Linux の窓の枠、Alt+Tab、
 Windows キーと Ctrl+Esc、通知領域、ログオフとシャットダウン）。
+
+## テーマ（任意）
+
+既定はクラシックですが、ReactOS の 3 つのテーマも選べます。`scripts/setup.sh --shell reactos --theme lautus`（`lunar`、`mizu`）、
+または `python3 prefix/reactos.py theme PREFIX lautus`。テーマは Wine の uxtheme が描きます（`prefix/theme-settings.c` の
+`msstyles` で当てます）。ReactOS のテーマのスタートボタンは負の余白を持つので、Wine のパッチ 0064 で余白の負の値を読めるようにしました。
 
 ## ログイン画面（任意）
 

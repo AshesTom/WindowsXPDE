@@ -43,6 +43,9 @@ FILES = {
     # The cursors are read from user32.dll's resources (greeter/cursors.py).
     'system32/user32.dll': 'resources/user32.dll',
     'Web/Wallpaper/Nebula.bmp': 'wallpaper/Nebula.bmp',
+    # ReactOS's visual styles, for the shell's optional themes (classic is the default).
+    **{f'Resources/Themes/{name}/{name.lower()}.msstyles': f'themes/{name}/{name.lower()}.msstyles'
+       for name in ('Lautus', 'Lunar', 'Mizu')},
 }
 
 

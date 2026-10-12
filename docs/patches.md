@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 63 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 64 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -13,7 +13,7 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 
 - 判定は 0013 が加える `include/wine/win4wine.h` の `win4wine_external_shell()` に 1 つにまとめています。
   ntdll は Rtl の関数で、wow64.dll（0017）は ntdll の関数で同じ変数を読みます。
-- opt-in なしで効くのは、文書化された Win32 の挙動の修正（0001〜0012）と、普通のアプリの見た目と動作を変えない 0019・0020 です。
+- opt-in なしで効くのは、文書化された Win32 の挙動の修正（0001〜0012、0064）と、普通のアプリの見た目と動作を変えない 0019・0020 です。
 - 0018 は `WIN4WINE_SESSION_REQUEST` があるときだけ効きます。
 - 0063 は、さらに `WIN4WINE_FOLDER_SHELL` があるときだけ効きます（ReactOS のシェルのセッションだけが設定します）。
 - ReactOS のシェルのセッションは `WIN4WINE_SHELL=reactos` も設定します。0047 はそのとき、XP のための部品の差し替えをしません。
@@ -133,11 +133,12 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 
 labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.md](wayland.md)）。書式は Wine のパッチと同じです。
 
-### ReactOS のシェル（0063）
+### ReactOS のシェル（0063〜0064）
 
 | 番号 | 内容 | opt-in |
 |---|---|---|
 | 0063 | explorer: `explorer.exe` で開くフォルダの窓を、外部のシェルの explorer に渡す（`WIN4WINE_FOLDER_SHELL` があるときだけ） | あり |
+| 0064 | uxtheme: テーマの余白（MARGINS）の負の値を正しく読む（ReactOS のテーマのスタートボタン。XP の Luna に負の余白は無い） | なし |
 
 ## 並び順の考え方
 

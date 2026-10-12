@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Create or stage a dedicated 64-bit (WoW64) prefix for ReactOS's shell.
 
-  reactos.py create ASSETS PREFIX [--home DIR] [--wine WINE] [--lang ja|en]
+  reactos.py create ASSETS PREFIX [--home DIR] [--wine WINE] [--lang ja|en] [--theme THEME]
   reactos.py stage PREFIX [--wine WINE]
+  reactos.py theme PREFIX THEME [--wine WINE]
+
+THEME is classic (ReactOS's default classic look, the default) or one of
+ReactOS's visual styles: lautus, lunar or mizu.
 
 ASSETS comes from extract/reactos.py. ReactOS's explorer runs as
 C:\\ros\\ros-explorer.exe, a 32-bit process; it loads ReactOS's shell DLLs,
@@ -35,6 +39,9 @@ SHELL_DLLS = ('shell32', 'browseui', 'shdocvw', 'shlwapi', 'comctl32', 'zipfldr'
 EXTRA_DLLS = ('msgina',)
 SXS = 'x86_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
+# ReactOS's visual styles: directory and file, color and size names (their COLORNAMES and SIZENAMES).
+THEMES = {'lautus': ('Lautus', 'Normal Color', 'Normal Size'), 'lunar': ('Lunar', 'ReactOS', 'Normal Size'),
+          'mizu': ('Mizu', 'Normal Color', 'Normal Size')}
 
 # ReactOS's default classic colors (win32ss/gdi/ntgdi/stockobj.c), the
 # "Windows Standard" scheme of Windows 2000, by their registry names.
@@ -158,15 +165,28 @@ class Prefix:
                     self.reg(r'HKLM\Software\Microsoft\Windows NT\CurrentVersion\FontLink\SystemLink', face,
                              'DroidSansFallback.ttf,Droid Sans Fallback', 'REG_MULTI_SZ', view=view)
 
-    def appearance(self):
-        """ReactOS's classic look, as a new ReactOS user gets it with the Classic theme.
-
-        Only a new prefix gets it; the user may change these settings later."""
+    def theme(self, name):
+        """Turn visual styles off (classic) or apply one of ReactOS's."""
         helper = ROOT / '.local/bridge/theme-settings.exe'
         if not helper.is_file():
             raise SystemExit('Run bridge-wm/build.sh first: missing self-built theme settings helper')
-        subprocess.run([str(self.wine), str(helper), 'classic'], env=dict(self.env, WIN4WINE_EXTERNAL_SHELL='1'),
+        if name == 'classic':
+            args = ['classic']
+        else:
+            directory, color, size = THEMES[name]
+            path = f'C:\\windows\\Resources\\Themes\\{directory}\\{directory.lower()}.msstyles'
+            if not (self.path / 'drive_c/windows/Resources/Themes' / directory / f'{directory.lower()}.msstyles').is_file():
+                raise SystemExit(f'Missing the {directory} theme: extract the ReactOS files again')
+            args = ['msstyles', path, color, size]
+        subprocess.run([str(self.wine), str(helper), *args], env=dict(self.env, WIN4WINE_EXTERNAL_SHELL='1'),
                        check=True, stdout=subprocess.DEVNULL, timeout=300)
+
+    def appearance(self, theme='classic'):
+        """ReactOS's classic look, as a new ReactOS user gets it with the Classic theme.
+
+        Only a new prefix gets it; the user may change these settings later."""
+        # The classic colors and metrics are the base under any visual style too.
+        self.theme('classic')
         for name, (r, g, b) in COLORS:
             self.reg(r'HKCU\Control Panel\Colors', name, f'{r} {g} {b}')
         metrics = r'HKCU\Control Panel\Desktop\WindowMetrics'
@@ -185,9 +205,22 @@ class Prefix:
         self.reg(explorer, 'Logon User Name', pwd.getpwuid(os.getuid()).pw_name)
         for clsid in HIDDEN_DESKTOP_ITEMS:
             self.reg(explorer + r'\HideDesktopIcons\ClassicStartMenu', clsid, 1, 'REG_DWORD')
+        if theme != 'classic':
+            self.wait()
+            self.theme(theme)
 
 
-def create(assets, dest, home, wine, lang):
+def copy_themes(assets, dest):
+    """ReactOS's visual styles from the extracted files, where Windows keeps themes."""
+    for directory, _, _ in THEMES.values():
+        source = Path(assets) / 'themes' / directory / f'{directory.lower()}.msstyles'
+        if source.is_file():
+            target = dest / 'drive_c/windows/Resources/Themes' / directory
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target / source.name)
+
+
+def create(assets, dest, home, wine, lang, theme='classic'):
     assets, dest, home = assets.resolve(strict=True), dest.resolve(), home.resolve(strict=True)
     if dest.exists():
         raise SystemExit(f'Refusing existing prefix: {dest}')
@@ -211,6 +244,7 @@ def create(assets, dest, home, wine, lang):
         shutil.copyfile(assets / 'fonts' / name, fonts / name)
     # Wine has a Marlett of its own; ReactOS's has the glyphs its menus use.
     shutil.copyfile(assets / 'fonts/Marlett.ttf', fonts / 'ros-marlett.ttf')
+    copy_themes(assets, dest)
     wallpaper = dest / 'drive_c/windows/Web/Wallpaper'
     wallpaper.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(assets / 'wallpaper/Nebula.bmp', wallpaper / 'Nebula.bmp')
@@ -225,7 +259,7 @@ def create(assets, dest, home, wine, lang):
         prefix.wait()
         prefix.place_files()
         prefix.registrations()
-        prefix.appearance()
+        prefix.appearance(theme)
     finally:
         prefix.stop()
     update = (dest / '.update-timestamp').read_text().strip()
@@ -272,14 +306,28 @@ if __name__ == '__main__':
     p.add_argument('--home', type=Path, default=Path.home())
     p.add_argument('--wine', default=os.environ.get('WINE', 'wine'))
     p.add_argument('--lang', choices=sorted(LOCALES), default='en')
+    p.add_argument('--theme', choices=['classic', *sorted(THEMES)], default='classic')
     p = commands.add_parser('stage')
     p.add_argument('prefix', type=Path)
     p.add_argument('--wine')
+    p = commands.add_parser('theme')
+    p.add_argument('prefix', type=Path)
+    p.add_argument('name', choices=['classic', *sorted(THEMES)])
+    p.add_argument('--wine')
     args = parser.parse_args()
     if args.command == 'create':
-        create(args.assets, args.prefix, args.home, args.wine, args.lang)
+        create(args.assets, args.prefix, args.home, args.wine, args.lang, args.theme)
     else:
         path = args.prefix.resolve(strict=True)
         if not (path / MARKER).is_file():
             raise SystemExit('Not a ReactOS shell prefix')
-        stage(path, args.wine)
+        if args.command == 'stage':
+            stage(path, args.wine)
+        else:
+            config = json.loads((path / MARKER).read_text())
+            copy_themes(config['assets'], path)
+            prefix = Prefix(path, args.wine or config['wine'], config.get('lang', 'en'))
+            try:
+                prefix.theme(args.name)
+            finally:
+                prefix.stop()

@@ -3,7 +3,8 @@
 #
 #   scripts/setup.sh --media PATH [--greeter | --no-greeter] [--theme luna|classic]
 #                    [--dpi N] [--wayland] [--wine-install DIR | --jobs N]
-#   scripts/setup.sh --shell reactos [--lang ja|en] [--dpi N] [--wine-install DIR | --jobs N]
+#   scripts/setup.sh --shell reactos [--lang ja|en] [--theme T] [--greeter] [--dpi N]
+#                    [--wine-install DIR | --jobs N]
 #
 #   --media PATH   the user's Windows XP SP3 (x86) ISO or Windows directory
 #   --shell S      xp (the default) or reactos: ReactOS's shell (classic look),
@@ -20,7 +21,9 @@
 #                  cursors are still installed for the session
 #   --theme T      luna (XP's default, the default here, with XP's Start menu) or
 #                  classic (with the classic Start menu), for a new prefix; given
-#                  explicitly, it is applied to an existing prefix too
+#                  explicitly, it is applied to an existing prefix too. For the
+#                  ReactOS shell: classic (the default) or one of ReactOS's visual
+#                  styles, lautus, lunar or mizu
 #   --dpi N        the screen's DPI as XP sets it (LogPixels): 96 (normal), 120 (large)
 #                  or any value from 19 to 480; for the XP shell, the Linux
 #                  applications in its session and the Welcome screen
@@ -70,7 +73,9 @@ done
 [[ $shell == xp || $shell == reactos ]] || { printf -- '--shell is xp or reactos\n' >&2; exit 2; }
 if [[ $shell == reactos ]]; then
     [[ -z $media ]] || { printf -- '--media is for the XP shell; the ReactOS shell needs no media\n' >&2; exit 2; }
-    [[ $theme_given == no ]] || { printf -- 'The ReactOS shell has the classic look only; leave out --theme\n' >&2; exit 2; }
+    [[ $theme_given == yes ]] || theme=classic
+    [[ $theme =~ ^(classic|lautus|lunar|mizu)$ ]] ||
+        { printf -- '--theme for the ReactOS shell is classic, lautus, lunar or mizu\n' >&2; exit 2; }
     [[ $wayland == no ]] || { printf -- 'The ReactOS shell has no Wayland session yet\n' >&2; exit 2; }
     if [[ -z $lang ]]; then
         [[ ${LANG:-} == ja* ]] && lang=ja || lang=en
@@ -80,7 +85,7 @@ else
     [[ -z $lang ]] || { printf -- '--lang is for the ReactOS shell; the XP shell follows its media\n' >&2; exit 2; }
     [[ -n $media ]] || { printf 'Give the XP media with --media (see --help)\n' >&2; exit 2; }
 fi
-[[ $theme == luna || $theme == classic ]] || { printf -- '--theme is luna or classic\n' >&2; exit 2; }
+[[ $shell == reactos || $theme == luna || $theme == classic ]] || { printf -- '--theme is luna or classic\n' >&2; exit 2; }
 [[ -z $dpi || ( $dpi =~ ^[0-9]+$ && $dpi -ge 19 && $dpi -le 480 ) ]] ||
     { printf -- '--dpi is a number from 19 to 480\n' >&2; exit 2; }
 [[ -z $media ]] || media=$(realpath -e -- "$media")
@@ -236,14 +241,19 @@ else
 
     step 'ReactOS shell prefix'
     prefix=$local/prefix-reactos
-    if [[ -f $prefix/reactos-shell.json ]]; then
-        printf 'Created already: %s\n' "$prefix"
-    else
+    if [[ ! -f $prefix/reactos-shell.json ]]; then
         [[ ! -e $prefix ]] || { printf '%s exists but is incomplete; move it away and run again\n' "$prefix" >&2; exit 1; }
         xvfb-run -a -s '-screen 0 1280x800x24' python3 "$root/prefix/reactos.py" create "$assets" "$prefix" \
-            --home "$HOME" --wine "$wine" --lang "$lang" > "$local/prefix-reactos.log" 2>&1 ||
+            --home "$HOME" --wine "$wine" --lang "$lang" --theme "$theme" > "$local/prefix-reactos.log" 2>&1 ||
             { tail -20 "$local/prefix-reactos.log" >&2; printf 'Prefix creation failed; see .local/prefix-reactos.log\n' >&2; exit 1; }
         printf 'Created %s\n' "$prefix"
+    elif [[ $theme_given == yes ]]; then
+        xvfb-run -a -s '-screen 0 1280x800x24' python3 "$root/prefix/reactos.py" theme "$prefix" "$theme" --wine "$wine" \
+            >> "$local/prefix-reactos.log" 2>&1 ||
+            { tail -20 "$local/prefix-reactos.log" >&2; printf 'Setting the theme failed; see .local/prefix-reactos.log\n' >&2; exit 1; }
+        printf 'Theme: %s\n' "$theme"
+    else
+        printf 'Created already: %s\n' "$prefix"
     fi
     if [[ -n $dpi ]]; then
         WINEPREFIX=$prefix WINE=$wine python3 "$root/prefix/display.py" --dpi "$dpi" >> "$local/prefix-reactos.log" 2>&1 ||
