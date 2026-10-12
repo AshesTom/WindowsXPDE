@@ -332,7 +332,9 @@ class Screen:
                 cr.set_source_surface(self.assets.banner.surface, px, py)
                 cr.paint()
             elif c.kind == 'static' and c.text == 20001:
-                cr.set_source_surface(self.assets.bar.surface, px, py)
+                # In CJK templates the bar's place is inside the banner; msgina moves it
+                # below the banner (AdjustStatusMessageWindow), here for every dialog.
+                cr.set_source_surface(self.assets.bar.surface, px, max(py, cy + self.assets.banner.height))
                 cr.paint()
             elif c.kind == 'static' and isinstance(c.text, int):
                 icon = self.assets.icons.get(c.text)
