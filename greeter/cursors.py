@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Make an X cursor theme from the cursors in the user's XP user32.dll.
 
-python3 greeter/cursors.py USER32.DLL THEME_DIRECTORY
+python3 greeter/cursors.py USER32.DLL THEME_DIRECTORY [--reactos]
+
+With --reactos the user32.dll is ReactOS's: its cursors get no shadow, as in
+ReactOS and Windows 2000.
 
 Wine shows Windows' standard cursors through the X cursor theme (winex11
 maps them to names such as left_ptr), Linux applications and the greeter use
@@ -173,10 +176,11 @@ def cursors(user32):
         yield number, names, decode(resources.find(RT_CURSOR, resource))
 
 
-def write_theme(user32, directory):
+def write_theme(user32, directory, reactos=False):
     directory = Path(directory)
     (directory / 'cursors').mkdir(parents=True, exist_ok=True)
     for _, names, (width, height, hot_x, hot_y, rows, shadowed) in cursors(user32):
+        shadowed = shadowed and not reactos
         large = doubled(width, height, rows)
         data = xcursor((32, SIZE, SIZE, hot_x, hot_y, with_shadow(width, height, rows, shadowed)),
                        (LARGE, LARGE_SIZE, LARGE_SIZE, 2 * hot_x, 2 * hot_y,
@@ -188,10 +192,13 @@ def write_theme(user32, directory):
             if link.is_symlink() or link.exists():
                 link.unlink()
             link.symlink_to(names[0])
-    (directory / 'index.theme').write_text('[Icon Theme]\nName=win4wine-xp\nComment=Windows XP cursors from the user\'s media\n')
+    if reactos:
+        (directory / 'index.theme').write_text('[Icon Theme]\nName=win4wine-reactos\nComment=ReactOS cursors\n')
+    else:
+        (directory / 'index.theme').write_text('[Icon Theme]\nName=win4wine-xp\nComment=Windows XP cursors from the user\'s media\n')
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4) or sys.argv[3:] not in ([], ['--reactos']):
         sys.exit(__doc__)
-    write_theme(sys.argv[1], sys.argv[2])
+    write_theme(sys.argv[1], sys.argv[2], reactos=len(sys.argv) == 4)

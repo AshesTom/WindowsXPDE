@@ -21,8 +21,11 @@ parser.add_argument('--font-rendering', choices=('xp', 'wine'),
                     help='Prefix-wide Wine synthetic bold/italic antialiasing policy')
 args = parser.parse_args()
 prefix = Path(os.environ['WINEPREFIX']).resolve(strict=True)
-if not (prefix / 'xp-shell.json').is_file():
+reactos = (prefix / 'reactos-shell.json').is_file()
+if not reactos and not (prefix / 'xp-shell.json').is_file():
     raise SystemExit('Not a dedicated XP prefix')
+if reactos and (args.theme or args.menu):
+    raise SystemExit("The ReactOS shell has the classic look and Start menu only; give --dpi alone")
 if args.theme == 'luna' and not (prefix / 'drive_c/windows/Resources/Themes/Luna/luna.msstyles').is_file():
     raise SystemExit('Luna must be extracted from your local XP media first')
 theme_helper = Path(__file__).resolve().parents[1] / '.local/bridge/theme-settings.exe'
