@@ -84,6 +84,7 @@ wlroots は `SOURCE/subprojects/wlroots` に `wayland/patches/wlroots` を当て
 | `tests/linux_apps.py` | Linux のアプリのスタートメニュー |
 | `tests/recovery_integration.py CONFIG.json` | シェルが落ちたときの切り替え |
 | `tests/reactos_session.py CONFIG.json` | ReactOS のシェルのセッション: タスクバーとデスクトップ、`explorer.exe` で開くフォルダ（0063）、ログオフ（0018） |
+| `tests/reactos_greeter.py ASSETS [OUTDIR]` | ReactOS のログイン画面の配置（英語と日本語）。ASSETS は `extract/reactos.py` が取り出したもの |
 | `tests/greeter_layout.py ASSETS`, `tests/cursor_theme.py ASSETS` | ようこそ画面の配置（96・120・144 DPI）、カーソル（32 と 64） |
 | `tests/patch_state.py`, `tests/font_*.py`, `tests/workarea.py`, `tests/dpi_settings.py` | 単体の試験 |
 | `tests/*.c` | 公開 API のプローブ。同じものを Wine と実際の XP で動かして数値を比べます（DPI は `dpi-metrics.c`、`char-widths-dpi.c`、`caption-glyph-dpi.c`、`text-bits-dpi.c`） |

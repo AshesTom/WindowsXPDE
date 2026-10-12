@@ -11,7 +11,9 @@
 #                  It is registered as its own session, "ReactOS Shell (Wine, X11)",
 #                  beside the XP shell's if that is set up too
 #   --lang L       ja or en: the language of the ReactOS shell and its session
-#                  (default: ja when the current locale is Japanese, else en)
+#                  (default: ja when the current locale is Japanese, else en);
+#                  with --greeter, LightDM shows ReactOS's logon screen instead
+#                  of XP's Welcome screen
 #   --greeter      also make LightDM show XP's Welcome screen (greeter/), with XP's
 #                  cursors; LightDM becomes the display manager
 #   --no-greeter   keep the display manager's own login screen (the default); XP's
@@ -69,7 +71,6 @@ done
 if [[ $shell == reactos ]]; then
     [[ -z $media ]] || { printf -- '--media is for the XP shell; the ReactOS shell needs no media\n' >&2; exit 2; }
     [[ $theme_given == no ]] || { printf -- 'The ReactOS shell has the classic look only; leave out --theme\n' >&2; exit 2; }
-    [[ $greeter == no ]] || { printf -- '--greeter shows XP'"'"'s Welcome screen; it is for the XP shell\n' >&2; exit 2; }
     [[ $wayland == no ]] || { printf -- 'The ReactOS shell has no Wayland session yet\n' >&2; exit 2; }
     if [[ -z $lang ]]; then
         [[ ${LANG:-} == ja* ]] && lang=ja || lang=en
@@ -280,14 +281,17 @@ fi
 
 step 'Login screen and cursors'
 if [[ $shell == reactos ]]; then
-    # ReactOS's cursors for its session; LightDM, if any, keeps its own greeter.
+    if [[ $greeter == yes ]]; then
+        "$root/greeter/install.sh" --reactos "$assets" "$lang"
+    fi
+    # ReactOS's cursors for the session (and the logon screen).
     theme=$(mktemp -d)
     python3 "$root/greeter/cursors.py" "$assets/resources/user32.dll" "$theme/win4wine-reactos" --reactos
     sudo rm -rf /usr/share/icons/win4wine-reactos
     sudo cp -r "$theme/win4wine-reactos" /usr/share/icons/
     sudo chmod -R a+rX /usr/share/icons/win4wine-reactos
     rm -rf "$theme"
-    printf 'Installed ReactOS cursors; the display manager keeps its login screen\n'
+    printf 'Installed ReactOS cursors\n'
 elif [[ $greeter == yes ]]; then
     "$root/greeter/install.sh" "$assets" "$([[ $wayland == yes ]] && echo xp-shell-wayland || echo xp-shell)"
     if [[ -n $dpi ]]; then
@@ -312,7 +316,9 @@ else
 fi
 
 step 'Done'
-if [[ $shell == reactos ]]; then
+if [[ $shell == reactos && $greeter == yes ]]; then
+    printf 'Restart the display manager (or reboot): the ReactOS logon screen logs in to the ReactOS shell.\n'
+elif [[ $shell == reactos ]]; then
     printf 'Restart the display manager (or reboot) and choose "ReactOS Shell (Wine, X11)" at the login screen.\n'
 elif [[ $greeter == yes ]]; then
     printf 'Restart the display manager (or reboot): the XP Welcome screen logs in to the XP shell.\n'

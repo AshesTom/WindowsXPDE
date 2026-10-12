@@ -64,12 +64,24 @@ session.json（`~/.config/win4wine/reactos-session.json`）の `"shell": "reacto
 bridge と XP 向けのパッチは、そのまま ReactOS のシェルにも効きます（タスクバーのボタン、Linux の窓の枠、Alt+Tab、
 Windows キーと Ctrl+Esc、通知領域、ログオフとシャットダウン）。
 
+## ログイン画面（任意）
+
+`scripts/setup.sh --shell reactos --greeter` で、LightDM のログイン画面を ReactOS のもの（`greeter/reactos-greeter.py`）にします。
+ReactOS の msgina.dll のダイアログ（「Ctrl-Alt-Delete キーを押してください」→「ログオン」、「シャットダウン」）を、テンプレートの
+配置と文言（日本語と英語）、バナーの画像のまま、ReactOS の壁紙の上にクラシックの見た目で描きます（`greeter/rosdialog.py`）。
+認証は LightDM と PAM が行います。
+
+- 「ようこそ」では Ctrl+Alt+Delete で「ログオン」に進みます。`/etc/win4wine/reactos-greeter.json` の `"ctrl_alt_del": false` で、
+  最初から「ログオン」を出します。
+- 「ログオン」の利用者名は LightDM が選ぶ利用者（前回の利用者）です。ログオン先はこのマシンの名前です。
+- 「シャットダウン」では、シャットダウンと再起動（できるならスリープ）を選べます。
+- 配置は 1024×768 の ReactOS 0.4.16 で測った位置と同じです（`tests/reactos_greeter.py`）。
+
 ## XP のシェルとの違い・制限
 
 - 見た目は ReactOS に近づけましたが、XP のシェルのように画素単位では合わせていません。とくに字は、ReactOS が太字を
   標準の Tahoma から合成するのに対し、Wine は `tahomabd.ttf` を使うので、太字の幅が違います。
 - 「ヘルプとサポート」、ネットワーク、プリンターの設定は Wine にその部品が無いので使えません。
-- ログイン画面は今のところディスプレイマネージャのものです（XP のようこそ画面は XP の画像を使うため）。
 - Wayland のセッションはまだありません。
 
 試験は `tests/reactos_session.py`（[development.md](development.md)）です。

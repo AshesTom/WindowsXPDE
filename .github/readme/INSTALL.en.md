@@ -65,7 +65,8 @@ scripts/setup.sh --shell reactos --lang en
   `.local/assets-reactos`; the zip stays in `.local/dl`.
 - The prefix is `.local/prefix-reactos`, the settings `~/.config/win4wine/reactos-session.json` and the session
   "**ReactOS Shell (Wine, X11)**". The XP shell's settings and session are left alone, so both can be set up (Wine and the bridge are shared).
-- `--greeter`, `--theme` and `--wayland` are for the XP shell and cannot be combined with it.
+- With `--greeter`, the login screen becomes ReactOS's logon screen. `--theme` and `--wayland` are for the XP shell and
+  cannot be combined with it.
 - Details: [docs/reactos.md](../../docs/reactos.md) (Japanese).
 
 ## 3. Log in

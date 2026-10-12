@@ -1,11 +1,11 @@
-"""Read bitmap and string resources from a PE file (no code is read or run).
+"""Read bitmap, string and dialog resources from a PE file (no code is read or run).
 
 The greeter draws the Welcome screen from the user's own XP files at run
 time; this module only walks the documented resource directory.
 """
 import struct
 
-RT_BITMAP, RT_STRING = 2, 6
+RT_BITMAP, RT_DIALOG, RT_STRING = 2, 5, 6
 
 
 class Resources:
@@ -44,11 +44,16 @@ class Resources:
         length = struct.unpack_from('<H', self.data, offset)[0]
         return self.data[offset + 2:offset + 2 + 2 * length].decode('utf-16-le')
 
-    def find(self, rtype, name):
-        """The data of the first language of resource TYPE/NAME (numbers or names), or None."""
+    def find(self, rtype, name, language=None):
+        """The data of resource TYPE/NAME (numbers or names) in LANGUAGE (a LANGID)
+        if it has it, else in its first language; or None."""
         level = self.base
         for key in (rtype, name, None):
-            for entry, target in self.entries(level):
+            entries = list(self.entries(level))
+            if key is None and language is not None:
+                chosen = [(entry, target) for entry, target in entries if self.name(entry) == language]
+                entries = chosen + entries
+            for entry, target in entries:
                 if key is None or self.name(entry) == key:
                     break
             else:
@@ -80,3 +85,46 @@ class Resources:
             position += 2 + 2 * struct.unpack_from('<H', block, position)[0]
         length = struct.unpack_from('<H', block, position)[0]
         return block[position + 2:position + 2 + 2 * length].decode('utf-16-le') or None
+
+    def dialog(self, name, language=None):
+        """An extended dialog template (DLGTEMPLATEEX): its caption, font and
+        controls, each (class, text, id, x, y, width, height, style), in dialog units."""
+        data = self.find(RT_DIALOG, name, language)
+        if data is None or struct.unpack_from('<HH', data)[1] != 0xffff:
+            raise KeyError(f'extended dialog {name}')
+
+        def text(position):
+            """A sz_Or_Ord field: (string or number, next position)."""
+            first = struct.unpack_from('<H', data, position)[0]
+            if first == 0xffff:
+                return struct.unpack_from('<H', data, position + 2)[0], position + 4
+            end = position
+            while struct.unpack_from('<H', data, end)[0]:
+                end += 2
+            return data[position:end].decode('utf-16-le'), end + 2
+
+        def align(position):
+            return (position + 3) & ~3
+
+        count, _, _, dialog_width, dialog_height = struct.unpack_from('<HhhhH', data, 16)
+        style = struct.unpack_from('<I', data, 12)[0]
+        _, position = text(26)                  # menu
+        _, position = text(position)            # class
+        caption, position = text(position)
+        font = None
+        if style & 0x40 or style & 0x48:        # DS_SETFONT / DS_SHELLFONT
+            size, weight, italic, charset = struct.unpack_from('<HHBB', data, position)
+            face, position = text(position + 6)
+            font = (face, size, weight)
+        controls = []
+        for _ in range(count):
+            position = align(position)
+            _, _, style, x, y, width, height, ident = struct.unpack_from('<IIIhhhhI', data, position)
+            kind, position = text(position + 24)
+            label, position = text(position)
+            extra = struct.unpack_from('<H', data, position)[0]
+            position += 2 + extra
+            kind = {0x80: 'Button', 0x81: 'Edit', 0x82: 'Static', 0x83: 'ListBox',
+                    0x84: 'ScrollBar', 0x85: 'ComboBox'}.get(kind, kind)
+            controls.append((kind, label, ident, x, y, width, height, style))
+        return {'caption': caption, 'font': font, 'size': (dialog_width, dialog_height), 'controls': controls}

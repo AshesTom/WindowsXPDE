@@ -65,7 +65,8 @@ scripts/setup.sh --shell reactos --lang ja
   取り出します。取得した zip は `.local/dl` に残ります。
 - prefix は `.local/prefix-reactos`、設定は `~/.config/win4wine/reactos-session.json`、セッションは「**ReactOS Shell (Wine, X11)**」です。
   XP のシェルの設定とセッションには触れないので、両方を入れられます（Wine と bridge は共通です）。
-- `--greeter`、`--theme`、`--wayland` は XP のシェルのためのもので、ReactOS のシェルとは一緒に使えません。
+- `--greeter` を付けると、ログイン画面が ReactOS のログオンの画面になります。`--theme` と `--wayland` は XP のシェルのためのもので、
+  ReactOS のシェルとは一緒に使えません。
 - 詳しくは [docs/reactos.md](docs/reactos.md) にあります。
 
 ## 3. ログインする
