@@ -28,6 +28,7 @@
 | 現在 | 変更 |
 |---|---|
 | 0035 | WallpaperStyle 6（合わせる）と 10（塗りつぶす、ReactOS の既定）も、ReactOS の PaintDesktop と同じ計算で描く。XP の 2（拡大）は今までどおり |
+| 0047 | `WIN4WINE_SHELL=reactos` のとき（ReactOS のシェル）は、スタートボタンとダイアログの部品を Wine のテーマ付きの部品に差し替えない。ReactOS の explorer はマニフェストで自分の Common Controls 6 を使う |
 | 0063 | 新規。ReactOS のシェルはコントロール パネルや検索を `explorer.exe` の起動で開き、Wine の explorer の窓が開いていた。`WIN4WINE_FOLDER_SHELL` があれば、`/desktop` 以外の起動をその exe に渡す |
 
 ## 段階 11（Wayland のセッション、2026-10-12）

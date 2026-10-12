@@ -19,8 +19,11 @@ their version, so that GetClassName still reports Button, Edit and so on.
 The alias's ComboBox follows the XP measurements above.
 Evidence: tests/toolbar-layout.c reports XP's folder window layout, and the
 drop-down button's pixels equal XP's.
-Scope: only with WIN4WINE_EXTERNAL_SHELL and a native comctl32; processes
-with Wine's own comctl32 are not affected.
+ReactOS's shell (WIN4WINE_SHELL=reactos) brings its own Common Controls 6
+through its explorer's manifest; there neither the Start button nor the
+other controls are replaced.
+Scope: only with WIN4WINE_EXTERNAL_SHELL and a native comctl32, and not with
+WIN4WINE_SHELL=reactos; processes with Wine's own comctl32 are not affected.
 Old patches: 0060, 0068.
 ---
  dlls/comctl32/comctl32.h          |  8 ++++++
@@ -33,8 +36,8 @@ Old patches: 0060, 0068.
  dlls/comctl32_v6/static.c         |  9 +++++--
  dlls/user32/class.c               | 54 +++++++++++++++++++++++++++++++++++++
  dlls/user32/controls.h            |  2 ++
- dlls/user32/win.c                 | 18 ++++++++-----
- 11 files changed, 190 insertions(+), 20 deletions(-)
+ dlls/user32/win.c                 | 28 +++++++++++++++-----
+ 11 files changed, 200 insertions(+), 20 deletions(-)
 
 diff --git a/dlls/comctl32/comctl32.h b/dlls/comctl32/comctl32.h
 index 249befa..918a303 100644
@@ -435,10 +438,25 @@ index 69c8fd9..df06c4f 100644
 +
  #endif  /* __WINE_CONTROLS_H */
 diff --git a/dlls/user32/win.c b/dlls/user32/win.c
-index 86b0fff..dbdb342 100644
+index 86b0fff..c3faaf2 100644
 --- a/dlls/user32/win.c
 +++ b/dlls/user32/win.c
-@@ -292,22 +292,26 @@ HWND WIN_CreateWindowEx( CREATESTRUCTW *cs, LPCWSTR className, HINSTANCE module,
+@@ -277,6 +277,14 @@ static BOOL is_default_coord( int x )
+     return x == CW_USEDEFAULT || x == 0x8000;
+ }
+ 
++/* ReactOS's shell instead of XP's (win4wine). */
++static BOOL reactos_shell(void)
++{
++    WCHAR value[8];
++    DWORD len = GetEnvironmentVariableW( L"WIN4WINE_SHELL", value, ARRAY_SIZE(value) );
++    return len && len < ARRAY_SIZE(value) && !wcsicmp( value, L"reactos" );
++}
++
+ /***********************************************************************
+  *           WIN_CreateWindowEx
+  *
+@@ -292,22 +300,28 @@ HWND WIN_CreateWindowEx( CREATESTRUCTW *cs, LPCWSTR className, HINSTANCE module,
      WCHAR name_buf[8];
      HMENU menu;
  
@@ -450,8 +468,10 @@ index 86b0fff..dbdb342 100644
 +    /* The taskbar Start button uses Wine's independently registered themed
 +     * Button implementation, and the XP shell's other controls Wine's themed
 +     * controls, as XP draws them with the theme. Native XP controls and their
-+     * activation context are left unchanged. */
-+    if (!IS_INTRESOURCE(className) && win4wine_external_shell())
++     * activation context are left unchanged. ReactOS's shell (WIN4WINE_SHELL
++     * is reactos) brings its own Common Controls 6 with its manifest and keeps
++     * its controls. */
++    if (!IS_INTRESOURCE(className) && win4wine_external_shell() && !reactos_shell())
      {
 +        const WCHAR *themed = NULL;
          WCHAR parent_class[64];
