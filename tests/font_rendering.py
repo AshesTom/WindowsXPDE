@@ -45,6 +45,7 @@ class FontRendering(unittest.TestCase):
                         for directory in ('drive_c/windows/system32', 'drive_c/windows/syswow64',
                                           'drive_c/windows/Fonts', 'dosdevices'):
                             (dest / directory).mkdir(parents=True, exist_ok=True)
+                        (dest / '.update-timestamp').write_text('0\n')
                     if command[1:3] == ['reg', 'query']:
                         return subprocess.CompletedProcess(command, 0 if existing is not None else 1)
                     if command[1:3] == ['reg', 'add'] and 'AntialiasFakeBoldOrItalic' in command:
