@@ -10,7 +10,7 @@ build=${LABWC_BUILD:-$root/.local/labwc-build}
 install=${LABWC_INSTALL:-$root/.local/labwc-install}
 fetch() {  # fetch DIR URL TAG COMMIT
     if [[ ! -d $1/.git ]]; then
-        echo ">>> Fetching ${1##*/}"
+        echo ">>> Fetching $(basename "$2" .git)"
         git -c advice.detachedHead=false clone -q --depth 1 --branch "$3" "$2" "$1"
     fi
     [[ $(git -C "$1" rev-parse HEAD) == "$4" ]] || { echo "Unexpected upstream commit in $1" >&2; exit 1; }
