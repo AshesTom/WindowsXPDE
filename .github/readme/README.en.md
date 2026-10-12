@@ -55,8 +55,10 @@ No Microsoft files are included. Only the files that are needed are extracted lo
 - **XP Welcome screen**: an optional LightDM greeter that shows XP's Welcome and log-off screens.
 - **XP's keys**: the Windows key, Ctrl+Esc, Win+R and Win+E.
 - **Recovery**: if the XP shell keeps crashing, the session falls back to Wine's own explorer and an xterm.
-- **Wayland session (optional, experimental)**: a patched labwc instead of the X11 WM, with a scale per monitor and
-  scales such as 125% or 150%; the XP shell stays crisp, and Wayland applications get XP's frames too.
+- **Wayland session (optional, even more experimental than the X11 session)**: a patched labwc instead of the X11 WM,
+  with a scale per monitor and scales such as 125% or 150%; the XP shell stays crisp, and Wayland applications get XP's
+  frames too. It is new, tested less than the X11 session and has known limits ([docs/wayland.md](../../docs/wayland.md),
+  Japanese). The X11 session is the one to try first.
 
 ## Caution
 

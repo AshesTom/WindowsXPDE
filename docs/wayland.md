@@ -3,7 +3,7 @@
 ログイン画面で選べる 2 つ目のセッション「XP Shell (Wine, Wayland)」の説明です。X11 のウィンドウマネージャー（bridge-wm）の
 代わりに、パッチを当てた labwc（wlroots の compositor）が同じ役を持ちます。X11 のセッションはそのまま残り、動きも変わりません。
 
-まだ試験中の機能です。どの compositor を選んだか、その比較と最初の試作の結果は [history/wayland-study.md](history/wayland-study.md) にあります。
+**X11 のセッション以上に実験的な機能です。** 作ったばかりで、確かめた範囲は X11 のセッションより狭く、下の「X11 のセッションとの違い・残っていること」の制限があります。どの compositor を選んだか、その比較と最初の試作の結果は [history/wayland-study.md](history/wayland-study.md) にあります。
 
 ## 何ができるようになるか
 

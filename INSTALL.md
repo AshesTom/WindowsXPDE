@@ -32,7 +32,7 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `--no-greeter` | 今のログイン画面のままにします（既定）。XP のカーソルだけ入れます |
 | `--theme luna\|classic` | 見た目です。`luna`（既定、XP 形式のスタートメニュー）か `classic`（クラシック形式） |
 | `--dpi N` | 画面の DPI（XP の「DPI 設定」）です。96（通常）、120（大きいサイズ）、または 19〜480 の任意の値。XP のシェル、セッションの Linux のアプリ、ようこそ画面に効きます |
-| `--wayland` | Wayland のセッション「XP Shell (Wine, Wayland)」も入れます（labwc と wlroots をビルドします）。モニターごとの倍率、125%・150% などの倍率が使え、Wayland のアプリにも XP の枠が付きます。`--greeter` と一緒なら、ようこそ画面の既定のセッションになります。試験中の機能です |
+| `--wayland` | Wayland のセッション「XP Shell (Wine, Wayland)」も入れます（labwc と wlroots をビルドします）。モニターごとの倍率、125%・150% などの倍率が使え、Wayland のアプリにも XP の枠が付きます。`--greeter` と一緒なら、ようこそ画面の既定のセッションになります。**X11 のセッション以上に実験的です**（確かめた範囲が狭く、既知の制限があります。[docs/wayland.md](docs/wayland.md)） |
 | `--wine-install DIR` | 別の Debian 13 マシンでビルドした Wine（その `.local/wine-install` を写したもの）を使い、ここではビルドしません |
 | `--jobs N` | Wine のビルドの並列数です（既定は CPU の数） |
 
