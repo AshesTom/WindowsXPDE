@@ -66,3 +66,5 @@
 0066-user32-external-reactos-dialog-resource-names.patch
 0067-win32u-external-expose-flush.patch
 0068-win32u-external-no-selection-fade.patch
+0069-winex11-external-on-the-spot-spot.patch
+0070-imm32-external-stale-ime-ui-window.patch

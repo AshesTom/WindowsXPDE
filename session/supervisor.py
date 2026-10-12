@@ -186,8 +186,17 @@ class Session:
         a window gets the focus; for XIM clients (Wine) it then leaves that
         window black until it hides it. The tray icon already shows the mode.
         Options that the user set in fcitx5's configuration are kept."""
-        wanted = {'ShowInputMethodInformation': 'False', 'showInputMethodInformationWhenFocusIn': 'False'}
-        config = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'fcitx5/config'
+        base = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'fcitx5'
+        self.fcitx_option(base / 'config', '[Behavior]',
+                          {'ShowInputMethodInformation': 'False', 'showInputMethodInformationWhenFocusIn': 'False'})
+        # Japanese input shows the text being converted in the text box itself
+        # (on-the-spot); fcitx5 offers XIM clients only over-the-spot otherwise,
+        # which shows it in the candidate window. Wine gives the caret's place.
+        self.fcitx_option(base / 'conf/xim.conf', None, {'UseOnTheSpot': 'True'})
+
+    @staticmethod
+    def fcitx_option(config, section, wanted):
+        """Add the options of WANTED that CONFIG does not set, under SECTION."""
         try:
             lines = config.read_text().splitlines()
         except FileNotFoundError:
@@ -196,13 +205,15 @@ class Session:
         missing = [f'{key}={value}' for key, value in wanted.items() if key not in keys]
         if not missing:
             return
-        if '[Behavior]' in lines:
-            index = lines.index('[Behavior]') + 1
+        if section is None:
+            lines = missing + lines
+        elif section in lines:
+            index = lines.index(section) + 1
             lines[index:index] = missing
         else:
-            lines += ['[Behavior]', *missing]
+            lines += [section, *missing]
         config.parent.mkdir(parents=True, exist_ok=True)
-        temporary = config.with_name('config.win4wine')
+        temporary = config.with_name(config.name + '.win4wine')
         temporary.write_text('\n'.join(lines) + '\n')
         temporary.replace(config)
 
