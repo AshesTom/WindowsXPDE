@@ -45,6 +45,7 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 1. パッケージを入れます（Wine のビルドの依存、Xorg、python3-xlib、fcitx5 + Mozc など）。ディスプレイマネージャが無ければ LightDM も入れます。
 2. `ja_JP.UTF-8` のロケールを作ります。
 3. Wine 11.0 を取得し、パッチを当ててビルドします（`.local/wine-install`。4 コアで 1 時間半ほど。ログは `.local/wine-build.log`）。
+   ビルドの間は、段階、コンパイルしたファイルの数と割合、残りの目安の時間、出力の最後の数行だけを画面に出します。
 4. bridge（ウィンドウマネージャーと代理ウィンドウ）をビルドします。
 5. ISO から必要なファイルだけを取り出します（`.local/assets`）。
 6. XP 用の Wine の prefix を作ります（`.local/prefix`）。

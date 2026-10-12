@@ -45,6 +45,7 @@ If it fails, just run it again: finished steps are skipped. Everything it builds
 1. Installs packages (Wine's build dependencies, Xorg, python3-xlib, fcitx5 + Mozc, …), and LightDM if there is no display manager.
 2. Generates the `ja_JP.UTF-8` locale.
 3. Fetches Wine 11.0, applies the patches and builds it (`.local/wine-install`; about 90 minutes on 4 cores; log in `.local/wine-build.log`).
+   While it builds, only the step, the number and share of files compiled, an estimate of the time left and the last few lines of output are shown.
 4. Builds the bridge (the WM and the proxy windows).
 5. Extracts only the needed files from the ISO (`.local/assets`).
 6. Creates the XP prefix (`.local/prefix`).

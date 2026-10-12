@@ -188,7 +188,7 @@ elif [[ -x $wine && -f $local/wine-install/lib/wine/x86_64-windows/win4wine-cont
     printf 'Built: %s\n' "$("$wine" --version)"
 else
     printf 'Building Wine with %s jobs (log: .local/wine-build.log); this takes a long time\n' "$jobs"
-    JOBS=$jobs "$root/wine/build.sh" > "$local/wine-build.log" 2>&1 ||
+    JOBS=$jobs python3 "$root/scripts/progress.py" "$local/wine-build.log" Wine -- "$root/wine/build.sh" ||
         { tail -20 "$local/wine-build.log" >&2; printf 'Wine build failed; see .local/wine-build.log\n' >&2; exit 1; }
     "$wine" --version
 fi
@@ -204,7 +204,7 @@ if [[ $wayland == yes ]]; then
         printf 'Built: %s\n' "$("$labwc" --version)"
     else
         printf 'Building labwc and wlroots (log: .local/labwc-build.log)\n'
-        JOBS=$jobs "$root/wayland/build.sh" > "$local/labwc-build.log" 2>&1 ||
+        JOBS=$jobs python3 "$root/scripts/progress.py" "$local/labwc-build.log" labwc -- "$root/wayland/build.sh" ||
             { tail -20 "$local/labwc-build.log" >&2; printf 'labwc build failed; see .local/labwc-build.log\n' >&2; exit 1; }
         "$labwc" --version
     fi

@@ -40,6 +40,7 @@ chroot の中で次のように作ります。
 ```sh
 cd /work
 ./wine/build.sh > .local/wine-build.log 2>&1    # Wine の取得、パッチ、ビルド
+# 進み具合を見るなら: scripts/progress.py .local/wine-build.log Wine -- ./wine/build.sh
 ./bridge-wm/build.sh                            # .local/bridge（proxy.exe、linux-launch.exe など）
 ./tests/build.sh                                # プローブ
 ./extract/extract.py localres/WindowsXPSP3.iso .local/assets

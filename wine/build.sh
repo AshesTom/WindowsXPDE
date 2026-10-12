@@ -6,9 +6,11 @@ src=${WINE_SOURCE:-$root/.local/wine-upstream}
 build=${WINE_BUILD:-$root/.local/wine-build}
 install=${WINE_INSTALL:-$root/.local/wine-install}
 if [[ ! -d $src/.git ]]; then
-    git clone --depth 1 --branch "$WINE_TAG" "$WINE_URL" "$src"
+    echo '>>> Fetching Wine'
+    git clone --progress --depth 1 --branch "$WINE_TAG" "$WINE_URL" "$src"
 fi
 [[ $(git -C "$src" rev-parse HEAD) == "$WINE_COMMIT" ]] || { echo 'Unexpected upstream commit' >&2; exit 1; }
+echo '>>> Patching'
 python3 "$root/wine/patch-state.py" "$src" "$root/wine/patches" --apply
 mkdir -p "$build" "$install"
 cd "$build"
@@ -19,8 +21,17 @@ for version in {33..43}; do extra+=("--disable-d3dx10_$version"); done
 for version in {33..42} 46 47; do extra+=("--disable-d3dcompiler_$version"); done
 # New WoW64: 64-bit Unix libraries only, with i386 and x86_64 PE modules, so
 # the host needs no i386 libraries and runs 32-bit and 64-bit applications.
+echo '>>> Configuring'
 "$src/configure" --prefix="$install" --enable-archs=i386,x86_64 --without-wayland --disable-tests "${extra[@]}"
+if [[ -n ${WIN4WINE_PROGRESS:-} ]]; then
+    # For scripts/progress.py: the compiler runs that make has left to do
+    echo '>>> Counting the files to compile'
+    echo ">>> Compiling $(make -n 2>/dev/null | grep -c -- ' -c -o ') files"
+else
+    echo '>>> Compiling'
+fi
 make -j"${JOBS:-6}"
+echo '>>> Installing'
 make install
 # Isolate Wine's themed controls from the XP common-control module. Since
 # Wine 11 they are in comctl32_v6; comctl32 is the version 5 module.
