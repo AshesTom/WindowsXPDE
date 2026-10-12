@@ -117,6 +117,10 @@ def create(assets, dest, home, wine):
     (dest / '.xp-registry-version').write_text(f'{registry.VERSION} {update}\n')
     (dest / 'xp-shell.json').write_text(json.dumps({'assets': str(assets), 'home': str(home),
                                                    'wine': wine, 'profile': 'shell'}, indent=2) + '\n')
+    # The running wineserver keeps the system DLLs it mapped at its start as
+    # KnownDlls: Wine's own shell32 and shlwapi, not the XP ones copied above.
+    # Let it end, so the next program (the Start menu setting) gets XP's.
+    subprocess.run([str(wine_path.with_name('wineserver')), '-w'], env=env, check=True)
     print(f'Prefix ready: {dest}')
 
 if __name__ == '__main__':

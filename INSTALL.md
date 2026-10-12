@@ -1,6 +1,6 @@
 # 導入手順
 
-🇯🇵 日本語 · [🇬🇧 English](.github/readme/INSTALL.en.md)
+**日本語** · [English](.github/readme/INSTALL.en.md)
 
 > [!WARNING]
 > - Windows XP の ISO はご自身で入手してください。利用は自己責任でお願いします（[README の注意](README.md#注意)）。
@@ -117,6 +117,8 @@ Wayland のセッションでは、Linux のアプリは出力ごとの倍率（
 
 - セッションのログは `~/.local/state/win4wine/` にあります（前回の分は `*.log.1`）。
 - XP のシェルが続けて落ちると、Wine 標準の explorer と xterm に切り替わります。
+- 2026-10-13 より前の `setup.sh` は、新しい prefix の見た目の設定（`Setting the theme failed`）で失敗することがありました。
+  更新してから `scripts/setup.sh --media ISO --theme luna`（または `classic`）を実行し直してください。
 - ようこそ画面が出ないときは `/var/log/lightdm/seat0-greeter.log` を見てください。必要なものが足りないと、通常の LightDM の画面に切り替わります。
 
 ## 元に戻す

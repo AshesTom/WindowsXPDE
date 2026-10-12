@@ -11,8 +11,8 @@
   <img src="https://img.shields.io/badge/status-experimental-orange?style=flat" alt="Status: experimental">
 </p>
 <p align="center">
-  <strong title="日本語" aria-label="日本語">🇯🇵</strong> ·
-  <a href=".github/readme/README.en.md" title="English" aria-label="English">🇬🇧</a>
+  <strong>日本語</strong> ·
+  <a href=".github/readme/README.en.md">English</a>
 </p>
 
 > [!IMPORTANT]

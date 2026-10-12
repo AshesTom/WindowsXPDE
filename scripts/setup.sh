@@ -231,14 +231,17 @@ if [[ $shell == xp ]]; then
             --home "$HOME" --wine "$wine" > "$local/prefix.log" 2>&1 ||
             { tail -20 "$local/prefix.log" >&2; printf 'Prefix creation failed; see .local/prefix.log\n' >&2; exit 1; }
         printf 'Created %s\n' "$prefix"
-        theme_given=yes
+        # Until the theme is set, a later run sets it too
+        touch "$prefix/.theme-pending"
     fi
+    [[ ! -f $prefix/.theme-pending ]] || theme_given=yes
     if [[ $theme_given == yes ]]; then
         WINEPREFIX=$prefix WINE=$wine xvfb-run -a -s '-screen 0 1280x800x24' \
             python3 "$root/prefix/display.py" --theme "$theme" --menu "$([[ $theme == luna ]] && echo xp || echo classic)" \
             >> "$local/prefix.log" 2>&1 ||
             { tail -20 "$local/prefix.log" >&2; printf 'Setting the theme failed; see .local/prefix.log\n' >&2; exit 1; }
         "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
+        rm -f "$prefix/.theme-pending"
         printf 'Theme: %s\n' "$theme"
     fi
     if [[ -n $dpi ]]; then
