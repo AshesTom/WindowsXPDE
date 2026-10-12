@@ -8,12 +8,16 @@ Before: a scene surface is always shown at its surface size in layout
 coordinates; the output's scale then enlarges (and blurs) it.
 Change: wlr_scene_surface_set_dest_scale() shows the surface SCALE times
 smaller (its input coordinates are scaled back); wlr_scene_surface_set_crop()
-shows only a part of it (the existing clip of subsurface trees).
+shows only a part of it (the existing clip of subsurface trees). On an
+output of that scale the surface is drawn one to one: its node size is
+rounded up and the destination box is the buffer's pixels, so the rounding
+of the size in layout coordinates neither stretches it nor shifts its edge.
 Used by: labwc's xwayland-scale.c (win4wine).
 ---
  include/wlr/types/wlr_scene.h | 15 +++++++++++++++
- types/scene/surface.c         | 26 ++++++++++++++++++++++++++
- 2 files changed, 41 insertions(+)
+ types/scene/surface.c         | 32 ++++++++++++++++++++++++++++++++
+ types/scene/wlr_scene.c       | 25 +++++++++++++++++++++++++
+ 3 files changed, 72 insertions(+)
 
 diff --git a/include/wlr/types/wlr_scene.h b/include/wlr/types/wlr_scene.h
 index a8fc215..7abf09e 100644
@@ -49,10 +53,13 @@ index a8fc215..7abf09e 100644
   * If this buffer is backed by a surface, then the struct wlr_scene_surface is
   * returned. If not, NULL will be returned.
 diff --git a/types/scene/surface.c b/types/scene/surface.c
-index 1905b4d..794ac29 100644
+index 1905b4d..4d83689 100644
 --- a/types/scene/surface.c
 +++ b/types/scene/surface.c
-@@ -3,6 +3,7 @@
+@@ -1,8 +1,10 @@
+ #include <assert.h>
++#include <math.h>
+ #include <stdlib.h>
  #include <wlr/types/wlr_alpha_modifier_v1.h>
  #include <wlr/types/wlr_compositor.h>
  #include <wlr/types/wlr_scene.h>
@@ -60,21 +67,26 @@ index 1905b4d..794ac29 100644
  #include <wlr/types/wlr_fractional_scale_v1.h>
  #include <wlr/types/wlr_presentation_time.h>
  #include <wlr/util/transform.h>
-@@ -140,6 +141,13 @@ static void surface_reconfigure(struct wlr_scene_surface *scene_surface) {
+@@ -140,6 +142,18 @@ static void surface_reconfigure(struct wlr_scene_surface *scene_surface) {
  		pixman_region32_intersect_rect(&opaque, &opaque, 0, 0, width, height);
  	}
  
 +	if (scene_surface->dest_scale > 0 && scene_surface->dest_scale != 1) {
++		/*
++		 * Rounded up: on an output of this scale the node covers all of
++		 * the surface's pixels, which are drawn there one to one (see
++		 * scene_entry_render).
++		 */
 +		float scale = 1 / scene_surface->dest_scale;
-+		width = (int)(width * scale + 0.5f);
-+		height = (int)(height * scale + 0.5f);
++		width = (int)ceilf(width * scale - 0.001f);
++		height = (int)ceilf(height * scale - 0.001f);
 +		wlr_region_scale(&opaque, &opaque, scale);
 +	}
 +
  	if (width <= 0 || height <= 0) {
  		wlr_scene_buffer_set_buffer(scene_buffer, NULL);
  		pixman_region32_fini(&opaque);
-@@ -200,6 +208,10 @@ static bool scene_buffer_point_accepts_input(struct wlr_scene_buffer *scene_buff
+@@ -200,6 +214,10 @@ static bool scene_buffer_point_accepts_input(struct wlr_scene_buffer *scene_buff
  	struct wlr_scene_surface *scene_surface =
  		wlr_scene_surface_try_from_buffer(scene_buffer);
  
@@ -85,7 +97,7 @@ index 1905b4d..794ac29 100644
  	*sx += scene_surface->clip.x;
  	*sy += scene_surface->clip.y;
  
-@@ -229,6 +241,20 @@ static const struct wlr_addon_interface surface_addon_impl = {
+@@ -229,6 +247,20 @@ static const struct wlr_addon_interface surface_addon_impl = {
  	.destroy = surface_addon_destroy,
  };
  
@@ -106,3 +118,44 @@ index 1905b4d..794ac29 100644
  struct wlr_scene_surface *wlr_scene_surface_try_from_buffer(
  		struct wlr_scene_buffer *scene_buffer) {
  	struct wlr_addon *addon = wlr_addon_find(&scene_buffer->node.addons,
+diff --git a/types/scene/wlr_scene.c b/types/scene/wlr_scene.c
+index 7b97ca3..742fc61 100644
+--- a/types/scene/wlr_scene.c
++++ b/types/scene/wlr_scene.c
+@@ -1,4 +1,5 @@
+ #include <assert.h>
++#include <math.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <wlr/backend.h>
+@@ -1226,6 +1227,30 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+ 	scene_node_get_size(node, &dst_box.width, &dst_box.height);
+ 	scale_box(&dst_box, data->scale);
+ 
++	/*
++	 * win4wine: a surface shown at 1/scale (wlr_scene_surface_set_dest_scale)
++	 * on an output of that scale keeps its pixels: drawn one to one, not
++	 * stretched by the rounding of its size in layout coordinates.
++	 */
++	if (node->type == WLR_SCENE_NODE_BUFFER) {
++		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
++		struct wlr_scene_surface *scene_surface =
++			wlr_scene_surface_try_from_buffer(scene_buffer);
++		if (scene_surface && scene_surface->dest_scale > 0 &&
++				scene_surface->dest_scale != 1 &&
++				fabsf(scene_surface->dest_scale - data->scale) < 0.001f) {
++			int width = scene_buffer->buffer_width, height = scene_buffer->buffer_height;
++			if (!wlr_fbox_empty(&scene_buffer->src_box)) {
++				width = (int)round(scene_buffer->src_box.width);
++				height = (int)round(scene_buffer->src_box.height);
++			}
++			if (width > 0 && height > 0) {
++				dst_box.width = width;
++				dst_box.height = height;
++			}
++		}
++	}
++
+ 	pixman_region32_t opaque;
+ 	pixman_region32_init(&opaque);
+ 	scene_node_opaque_region(node, x, y, &opaque);

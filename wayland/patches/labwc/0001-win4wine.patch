@@ -54,8 +54,8 @@ Linux window's frame shown active through _NET_ACTIVE_WINDOW only.
  src/win4wine.c             | 1842 ++++++++++++++++++++++++++++++++++++++++++++
  src/xwayland-scale.c       |  445 +++++++++++
  src/xwayland-unmanaged.c   |   40 +-
- src/xwayland.c             |  269 +++++--
- 25 files changed, 2853 insertions(+), 96 deletions(-)
+ src/xwayland.c             |  304 ++++++--
+ 25 files changed, 2887 insertions(+), 97 deletions(-)
 
 diff --git a/include/ssd.h b/include/ssd.h
 index 5cbac60..2500f57 100644
@@ -3301,10 +3301,18 @@ index 38d3c31..ff47ce5 100644
  	/*
  	 * Mark the node as gone so a racing configure event
 diff --git a/src/xwayland.c b/src/xwayland.c
-index 1eb9c1a..a3c1317 100644
+index 1eb9c1a..6aa006b 100644
 --- a/src/xwayland.c
 +++ b/src/xwayland.c
-@@ -17,6 +17,8 @@
+@@ -2,6 +2,7 @@
+ #define _POSIX_C_SOURCE 200809L
+ #include <assert.h>
+ #include <stdlib.h>
++#include <time.h>
+ #include <wlr/xwayland.h>
+ #include "common/array.h"
+ #include "common/macros.h"
+@@ -17,6 +18,8 @@
  #include "window-rules.h"
  #include "workspaces.h"
  #include "xwayland.h"
@@ -3313,7 +3321,7 @@ index 1eb9c1a..a3c1317 100644
  
  xcb_atom_t atoms[WINDOW_TYPE_LEN] = {0};
  
-@@ -50,13 +52,15 @@ xwayland_view_get_size_hints(struct view *view)
+@@ -50,13 +53,15 @@ xwayland_view_get_size_hints(struct view *view)
  	if (!hints) {
  		return (struct view_size_hints){0};
  	}
@@ -3335,7 +3343,7 @@ index 1eb9c1a..a3c1317 100644
  	};
  }
  
-@@ -166,10 +170,9 @@ ensure_initial_geometry_and_output(struct view *view)
+@@ -166,10 +171,9 @@ ensure_initial_geometry_and_output(struct view *view)
  	if (wlr_box_empty(&view->current)) {
  		struct wlr_xwayland_surface *xwayland_surface =
  			xwayland_surface_from_view(view);
@@ -3349,7 +3357,37 @@ index 1eb9c1a..a3c1317 100644
  		/*
  		 * If there is no pending move/resize yet, then set
  		 * current values (used in map()).
-@@ -215,6 +218,12 @@ handle_commit(struct wl_listener *listener, void *data)
+@@ -206,6 +210,29 @@ want_deco(struct wlr_xwayland_surface *xwayland_surface)
+ 		WLR_XWAYLAND_SURFACE_DECORATIONS_ALL;
+ }
+ 
++/*
++ * win4wine: crop the surface for each output from the buffer it has. A resize
++ * waits for the commit of the new size: cropping the old buffer to the new size
++ * can leave no slice on any output, and then no frame callback asks for that
++ * commit.
++ */
++static void
++update_slices(struct view *view)
++{
++	if (!view->surface || !view->content_tree) {
++		return;
++	}
++	struct xwayland_view *xview = xwayland_view_from_view(view);
++	struct wlr_xwayland_surface *xsurface = xview->xwayland_surface;
++	struct wlr_box xbox = {xsurface->x, xsurface->y, xsurface->width, xsurface->height};
++	if (wlr_box_empty(&xbox) || view->surface->current.width != xbox.width
++			|| view->surface->current.height != xbox.height) {
++		return;
++	}
++	xwayland_slices_show(view->server, &xview->slices, view->content_tree,
++		view->surface, &xbox, view->current.x, view->current.y);
++}
++
+ static void
+ handle_commit(struct wl_listener *listener, void *data)
+ {
+@@ -215,6 +242,12 @@ handle_commit(struct wl_listener *listener, void *data)
  	/* Must receive commit signal before accessing surface->current* */
  	struct wlr_surface_state *state = &view->surface->current;
  	struct wlr_box *current = &view->current;
@@ -3362,7 +3400,7 @@ index 1eb9c1a..a3c1317 100644
  
  	/*
  	 * If there is a pending move/resize, wait until the surface
-@@ -222,8 +231,8 @@ handle_commit(struct wl_listener *listener, void *data)
+@@ -222,9 +255,10 @@ handle_commit(struct wl_listener *listener, void *data)
  	 * the position and the size of the view at the same time,
  	 * reducing visual glitches.
  	 */
@@ -3371,9 +3409,11 @@ index 1eb9c1a..a3c1317 100644
 +	if (current->width != width || current->height != height) {
 +		view_impl_apply_geometry(view, width, height);
  	}
++	update_slices(view);
  }
  
-@@ -240,7 +249,9 @@ handle_request_move(struct wl_listener *listener, void *data)
+ static void
+@@ -240,7 +274,9 @@ handle_request_move(struct wl_listener *listener, void *data)
  	 */
  	struct view *view = wl_container_of(listener, view, request_move);
  	if (view == view->server->seat.pressed.view) {
@@ -3384,7 +3424,7 @@ index 1eb9c1a..a3c1317 100644
  	}
  }
  
-@@ -258,7 +269,8 @@ handle_request_resize(struct wl_listener *listener, void *data)
+@@ -258,7 +294,8 @@ handle_request_resize(struct wl_listener *listener, void *data)
  	struct wlr_xwayland_resize_event *event = data;
  	struct view *view = wl_container_of(listener, view, request_resize);
  	if (view == view->server->seat.pressed.view) {
@@ -3394,7 +3434,7 @@ index 1eb9c1a..a3c1317 100644
  	}
  }
  
-@@ -292,6 +304,7 @@ handle_surface_destroy(struct wl_listener *listener, void *data)
+@@ -292,6 +329,7 @@ handle_surface_destroy(struct wl_listener *listener, void *data)
  	assert(data && data == view->surface);
  
  	view->surface = NULL;
@@ -3402,7 +3442,7 @@ index 1eb9c1a..a3c1317 100644
  	wl_list_remove(&view->surface_destroy.link);
  }
  
-@@ -325,6 +338,7 @@ handle_destroy(struct wl_listener *listener, void *data)
+@@ -325,6 +363,7 @@ handle_destroy(struct wl_listener *listener, void *data)
  	wl_list_remove(&xwayland_view->associate.link);
  	wl_list_remove(&xwayland_view->dissociate.link);
  	wl_list_remove(&xwayland_view->request_activate.link);
@@ -3410,7 +3450,7 @@ index 1eb9c1a..a3c1317 100644
  	wl_list_remove(&xwayland_view->request_configure.link);
  	wl_list_remove(&xwayland_view->set_class.link);
  	wl_list_remove(&xwayland_view->set_decorations.link);
-@@ -340,8 +354,19 @@ static void
+@@ -340,9 +379,15 @@ static void
  xwayland_view_configure(struct view *view, struct wlr_box geo)
  {
  	view->pending = geo;
@@ -3423,15 +3463,34 @@ index 1eb9c1a..a3c1317 100644
 +	}
  	wlr_xwayland_surface_configure(xwayland_surface_from_view(view),
 -		geo.x, geo.y, geo.width, geo.height);
+-
 +		xbox.x, xbox.y, xbox.width, xbox.height);
-+	if (view->surface && view->content_tree) {
-+		xwayland_slices_show(view->server, &xview->slices, view->content_tree,
-+			view->surface, &xbox, geo.x, geo.y);
-+	}
- 
  	/*
  	 * For unknown reasons, XWayland surfaces that are completely
-@@ -363,6 +388,23 @@ xwayland_view_configure(struct view *view, struct wlr_box geo)
+ 	 * offscreen seem not to generate commit events. In rare cases,
+@@ -354,15 +399,45 @@ xwayland_view_configure(struct view *view, struct wlr_box geo)
+ 		!wlr_output_layout_intersects(view->server->output_layout, NULL,
+ 			&view->current);
+ 
++	/*
++	 * win4wine: Xwayland draws the new size only after a frame callback,
++	 * and a surface hidden behind others gets none (an XP frame around a
++	 * window that grows over it).
++	 */
++	if (view->surface && (view->surface->current.width != xbox.width
++			|| view->surface->current.height != xbox.height)) {
++		struct timespec now;
++		clock_gettime(CLOCK_MONOTONIC, &now);
++		wlr_surface_send_frame_done(view->surface, &now);
++	}
++
+ 	/* If not resizing, process the move immediately */
+ 	if (is_offscreen || (view->current.width == geo.width
+ 			&& view->current.height == geo.height)) {
+ 		view->current.x = geo.x;
+ 		view->current.y = geo.y;
+ 		view_moved(view);
++		update_slices(view);
  	}
  }
  
@@ -3455,7 +3514,7 @@ index 1eb9c1a..a3c1317 100644
  static void
  handle_request_configure(struct wl_listener *listener, void *data)
  {
-@@ -375,8 +417,12 @@ handle_request_configure(struct wl_listener *listener, void *data)
+@@ -375,8 +450,12 @@ handle_request_configure(struct wl_listener *listener, void *data)
  
  	if (view_is_floating(view) && !ignore_configure_requests) {
  		/* Honor client configure requests for floating views */
@@ -3469,7 +3528,7 @@ index 1eb9c1a..a3c1317 100644
  		view_adjust_size(view, &box.width, &box.height);
  		xwayland_view_configure(view, box);
  	} else {
-@@ -410,18 +456,46 @@ handle_request_activate(struct wl_listener *listener, void *data)
+@@ -410,18 +489,46 @@ handle_request_activate(struct wl_listener *listener, void *data)
  	desktop_focus_view(view, /*raise*/ true);
  }
  
@@ -3517,7 +3576,7 @@ index 1eb9c1a..a3c1317 100644
  	if (!view->mapped) {
  		ensure_initial_geometry_and_output(view);
  		/*
-@@ -442,6 +516,10 @@ handle_request_fullscreen(struct wl_listener *listener, void *data)
+@@ -442,6 +549,10 @@ handle_request_fullscreen(struct wl_listener *listener, void *data)
  {
  	struct view *view = wl_container_of(listener, view, request_fullscreen);
  	bool fullscreen = xwayland_surface_from_view(view)->fullscreen;
@@ -3528,7 +3587,7 @@ index 1eb9c1a..a3c1317 100644
  	if (!view->mapped) {
  		ensure_initial_geometry_and_output(view);
  	}
-@@ -589,7 +667,9 @@ handle_map_request(struct wl_listener *listener, void *data)
+@@ -589,7 +700,9 @@ handle_map_request(struct wl_listener *listener, void *data)
  	 *   2. set decorations (depends on fullscreen state)
  	 *   3. set maximized (geometry depends on decorations)
  	 */
@@ -3539,7 +3598,7 @@ index 1eb9c1a..a3c1317 100644
  	if (!view->been_mapped) {
  		if (want_deco(xsurface)) {
  			view_set_ssd_mode(view, LAB_SSD_MODE_FULL);
-@@ -604,7 +684,9 @@ handle_map_request(struct wl_listener *listener, void *data)
+@@ -604,7 +717,9 @@ handle_map_request(struct wl_listener *listener, void *data)
  	if (xsurface->maximized_vert) {
  		axis |= VIEW_AXIS_VERTICAL;
  	}
@@ -3550,7 +3609,7 @@ index 1eb9c1a..a3c1317 100644
  	/*
  	 * We could also call set_initial_position() here, but it's not
  	 * really necessary until the view is actually mapped (and at
-@@ -727,15 +809,25 @@ xwayland_view_map(struct view *view)
+@@ -727,15 +842,25 @@ xwayland_view_map(struct view *view)
  		view->surface_destroy.notify = handle_surface_destroy;
  		wl_signal_add(&view->surface->events.destroy, &view->surface_destroy);
  
@@ -3579,7 +3638,7 @@ index 1eb9c1a..a3c1317 100644
  	}
  
  	/*
-@@ -1005,6 +1097,7 @@ xwayland_view_create(struct server *server,
+@@ -1005,6 +1130,7 @@ xwayland_view_create(struct server *server,
  	CONNECT_SIGNAL(xsurface, xwayland_view, associate);
  	CONNECT_SIGNAL(xsurface, xwayland_view, dissociate);
  	CONNECT_SIGNAL(xsurface, xwayland_view, request_activate);
@@ -3587,7 +3646,7 @@ index 1eb9c1a..a3c1317 100644
  	CONNECT_SIGNAL(xsurface, xwayland_view, request_configure);
  	CONNECT_SIGNAL(xsurface, xwayland_view, set_class);
  	CONNECT_SIGNAL(xsurface, xwayland_view, set_decorations);
-@@ -1096,6 +1189,9 @@ handle_server_ready(struct wl_listener *listener, void *data)
+@@ -1096,6 +1222,9 @@ handle_server_ready(struct wl_listener *listener, void *data)
  	sync_atoms(xcb_conn);
  	wlr_log(WLR_DEBUG, "Disconnecting from xwayland");
  	xcb_disconnect(xcb_conn);
@@ -3597,7 +3656,7 @@ index 1eb9c1a..a3c1317 100644
  }
  
  static void
-@@ -1166,6 +1262,26 @@ xwayland_server_init(struct server *server, struct wlr_compositor *compositor)
+@@ -1166,6 +1295,26 @@ xwayland_server_init(struct server *server, struct wlr_compositor *compositor)
   * - start scrolling
   * - all scroll events should end up on the maximized window on the other workspace
   */
@@ -3624,7 +3683,7 @@ index 1eb9c1a..a3c1317 100644
  void
  xwayland_adjust_stacking_order(struct server *server)
  {
-@@ -1349,65 +1465,86 @@ xwayland_update_workarea(struct server *server)
+@@ -1349,65 +1498,86 @@ xwayland_update_workarea(struct server *server)
  		return;
  	}
  
@@ -3754,7 +3813,7 @@ index 1eb9c1a..a3c1317 100644
  	struct wlr_box workarea = {
  		.x = workarea_left,
  		.y = workarea_top,
-@@ -1415,4 +1552,6 @@ xwayland_update_workarea(struct server *server)
+@@ -1415,4 +1585,6 @@ xwayland_update_workarea(struct server *server)
  		.height = workarea_bottom - workarea_top,
  	};
  	wlr_xwayland_set_workareas(server->xwayland, &workarea, 1);
