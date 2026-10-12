@@ -1,260 +1,161 @@
-# 構成
+# 仕組み
 
-`extract/extract.py SOURCE OUTPUT` はローカル ISO または XP Windows ディレクトリから選択したファイルのみを抽出する。ネットワーク処理はない。出力と出典・ハッシュは `.local/` に置く。フォント・アイコンの資源を再配布せず、DLL 内のアイコンもそのままローカルで利用する。
+win4wine がどの部品でできていて、どうつながっているかの説明です。なぜそうしたかは [design.md](design.md) にあります。
 
-`prefix/create.py ASSETS PREFIX` は Wine が生成するクリーンな 64-bit（WoW64）の prefix（段階 7 より前は win32）のレジストリに、winxp、ホームの H: マッピング、Personal フォルダ、クラシック表示を設定する。XP explorer は `C:\xp` に置き、builtin explorer を保存する。
+## 全体の流れ
 
-`wine/build.sh` は upstream mirror の固定 commit を取得し、`wine/patches/series` を順に適用する。適用済みの判定を行う。Wine の修正には目的、対象 XP 動作、実装根拠・制約を書く。`.local/wine-upstream` の変更を直接の成果物とせず、必ずパッチに反映する。パッチの並び、書式、opt-in 判定、旧番号との対応は `docs/patches.md`。
+```text
+ディスプレイマネージャ（LightDM）
+ └─ session/supervisor.py ……………… セッションの起動と見張り
+      ├─ bridge-wm/wm.py ……………… X11 のウィンドウマネージャー（WM）
+      ├─ bridge-wm/tray.py …………… Linux のトレイアイコンの仲介
+      ├─ fcitx5 …………………………… 日本語入力
+      ├─ proxy.exe（Wine の上）……… Linux のウィンドウの代理と、XP の枠
+      └─ xp-explorer.exe（Wine の上）… XP のシェル（ISO から取り出した explorer.exe）
+                    ↑ ↓  IPC ディレクトリのファイル（WM ⇄ proxy ⇄ tray.py）
+```
 
-`bridge-wm/wm.py` は単一 X11 screen の非 reparenting WM。`_WIN4WINE_CLASS` と `_WIN4WINE_HWND` を Wine X11 ドライバから読み、デスクトップ、トレイ、代理ウィンドウを識別する。通常の Wine ウィンドウを二重に代理化しない。desktop を下げ、dock を上げる。dock の strut または位置から `_NET_WORKAREA` を生成する。Alt+Tab、click to focus、EWMH activate/close/maximize、ICCCM iconic state を処理する。
-定期的には起きない。X のイベント（MapRequest、ConfigureNotify、PropertyNotify、FocusIn など）、IPC ディレクトリの
-inotify（proxy の `*.cmd` と `frames.tsv`）、シグナルだけで起き、そのたびに状態を計算し直して内容が変わったファイルだけを書く。
-クライアントの位置・大きさ・題名・transient・`_WIN4WINE_HWND` は ConfigureNotify と PropertyNotify から記憶し、
-`geometry.tsv` を X への問い合わせなしで最初に書く。native ウィンドウが動いた直後の X サーバーは、見えるようになった
-デスクトップの再描画で混んでおり、問い合わせのたびにその後ろで待たされるため。
+準備の段階では、次のものを作ります。
 
-`bridge-wm/proxy.c` は Wine 上の Win32 プロセス。Linux の通常ウィンドウに `Win4WineProxy` HWND を割り当てる。Win32 のシェルが GetWindowText、IsWindowVisible、IsIconic 等を参照できる。代理 HWND は `WS_OVERLAPPEDWINDOW` を持ち、その X ウィンドウを native クライアントの直下に表示して Win32 のタイトルバーと枠を使う。対応するクライアントがない代理は隠す。shell hook の登録は user32 パッチで HWND の property に保存し、仲介プロセスが SHELLHOOK メッセージを配信する。完全な Win32 hook 実装ではない。
-proxy も定期的には起きない。IPC ディレクトリの変更通知、out-of-context の WinEvent（前面化、最小化の開始・終了、
-最上位ウィンドウの生成・破棄・表示・非表示、題名の変更）、自分のウィンドウへのメッセージで起き、Win32 の一覧と前回との差を
-SHELLHOOK で配信する。題名の変更は、Wine 11.0 の DefWindowProc の WM_SETTEXT が EVENT_OBJECT_NAMECHANGE で知らせる
-（Wine 10 では opt-in のパッチで出していた。段階 5 で外した）。ファイルの同期はメッセージ処理より先に行う
-（先に動いた native が枠の一部を見えるようにし、その再描画を先にすると枠の移動が遅れるため）。
+| 部品 | 役割 |
+|---|---|
+| `extract/extract.py` | ISO（または XP の Windows ディレクトリ）から、必要なファイルだけを `.local/assets` に取り出します。ネットワークは使いません。 |
+| `wine/build.sh` | Wine 11.0 を取得し、`wine/patches/` を当ててビルドします（[patches.md](patches.md)）。 |
+| `prefix/create.py`、`prefix/stage.py` | XP 用の Wine の prefix を作り、XP の DLL と COM の登録、レジストリの設定（registry profile）を入れます。 |
+| `bridge-wm/build.sh` | proxy.exe などの Win32 の補助プログラムをビルドします（`.local/bridge`）。 |
 
-仲介プロセスは、表示済みの `Shell_TrayWnd` と Start/ReBar 子ウィンドウの準備が 200ms 間隔の二回の確認で安定した後、現在の親 client サイズを使った公開 `WM_SIZE` を一度だけ送る。起動直後に保持された子の ideal 高さを、シェル自身の通常レイアウトで親に合わせ直すためで、子の寸法や字体は指定しない。応答待ちは最大 500ms。Tray HWND/PID の置換・消失で状態をリセットし、一時的な非表示では再送しない。この確認の timer は、表示中の tray がこの同期を待っている間だけ動く。Luna と Classic に適用し、`BCM_GETIDEALSIZE` の測定値は変更しない。
+## XP のシェルの動かし方
 
-WM は XSETTINGS の selection が空いているときだけその所有者になり、`Gtk/DecorationLayout` を `:` にする。
-WM はルートウィンドウのカーソルを矢印（カーソルの字体の left_ptr）にする。自分のカーソルを持たない窓（ポインタをつかんでいる間の
-Linux のアプリのメニューなど）では、X サーバーの既定の × ではなくこれが出る。
-GTK のヘッダーバーを使うアプリ（Remmina など）は自前の最小化・最大化・閉じるボタンを出さず、
-Win32 の枠のボタンだけが残る。既存の settings daemon がある場合は何もしない。他の設定は GTK の既定値。
+- XP の `explorer.exe` は `C:\xp\xp-explorer.exe` という名前で置き、Wine 自身の explorer（デスクトップの管理）とは別のプロセスにします。
+- XP の shell32・browseui・shdocvw・shlwapi・comctl32 などは、AppDefaults で **xp-explorer.exe のプロセスにだけ** XP のもの（native）を
+  使わせます。ほかの Wine のアプリは Wine の DLL のままです。
+- Wine のパッチの多くは、環境変数 `WIN4WINE_EXTERNAL_SHELL` があるときだけ効きます（opt-in。[patches.md](patches.md)）。
+- prefix は 64-bit（WoW64）で、XP の DLL は `syswow64` に置きます。XP のシェルのための COM の登録は 32-bit の側にだけ書きます。
 
-## IPC v1 と枠の拡張
+## WM（`bridge-wm/wm.py`）
 
-セッションごとの所有者のみアクセスできる 0700 ディレクトリを使う。共有の固定 `/tmp` ファイルや外部待受ソケットは使わない。
+X11 のウィンドウマネージャーです。枠を自分では描かず（reparent しません）、次のことをします。
 
-WM → proxy: `windows.tsv` を同一ディレクトリで atomic rename。行は `XID(hex) TAB minimized(0/1) TAB active(0/1) TAB UTF-8 title LF`。改行・tab はタイトルから除去する。最小化されたウィンドウは一覧に残す。破棄時に除く。Wine HWND と transient は含めない。
+- Wine の X11 ドライバが付ける `_WIN4WINE_CLASS` と `_WIN4WINE_HWND`（パッチ 0019）で、XP のデスクトップ（Progman）、タスクバー
+  （Shell_TrayWnd）、スタートメニュー（DV2ControlHost）、proxy の枠、普通の Wine の窓、Linux の窓を見分けます。
+- デスクトップを一番下、タスクバーとスタートメニューを上に置きます。Win32 の最前面の窓（`_NET_WM_STATE_ABOVE`）と、
+  それが持つ窓はタスクバーより上に置きます。
+- タスクバーの位置から作業領域（`_NET_WORKAREA`）を作ります。
+- クリックでウィンドウを有効にします。デスクトップとタスクバーをクリックすると、そこにキーボードを渡します。
+- Linux の窓の枠（proxy の窓）をその窓のすぐ下に置き、一緒に動かします（下の「Linux の窓の XP の枠」）。
+- Alt+Tab、Windows キー、Ctrl+Esc を受け取り、XP のシェルに渡します（下の「キー操作」）。
+- `Gtk/DecorationLayout` を `:` にする XSETTINGS を出し、GTK のヘッダーバーの閉じるボタンなどを隠します（ほかの settings
+  daemon が無いときだけ）。
 
-proxy → WM: `PID-SEQUENCE.cmd` を atomic rename。内容は `activate|minimize|close|maximize|restore XID(hex)` または `geometry XID(hex) x y width height`。WM は現在管理する Linux の通常ウィンドウだけを操作し、処理後削除する。proxy は最大 2048 ウィンドウまで。
+WM は周期的には起きません。X のイベント、IPC ディレクトリの inotify、シグナルで起き、内容が変わったファイルだけを書きます。
+窓の位置や題名は X のイベントから覚えておき、X への問い合わせを減らしています。
 
-Alt+Tab は XP の切り替えウィンドウを proxy が描く。WM は Alt を押している間キーボードを grab し、
-`switch.tsv`（`session steps state`、state は o=表示中・c=確定・x=取り消し）を atomic rename で更新する。
-steps は Tab の回数（Shift+Tab は負）。proxy は IPC ディレクトリの変更通知で直ちに起き、新しい session で
-Win32 の Z 順（アクティブなウィンドウが先頭）から候補を集め、選択を描く。確定時は `switch XID(hex)` を送り、
-WM は Wine のウィンドウも含めクリックと同じく活性化する（Wine は管理対象の窓の X フォーカスを WM に任せるため）。
-最小化中の Wine ウィンドウは先に元に戻す。proxy がなければ WM は従来どおり順に切り替える。
-proxy が動いているかは、proxy が `proxy.lock` の先頭1バイトにかけている LockFile で判断する。wineserver はこれを POSIX lock に
-し、proxy の終了で外すので、WM は F_GETLK で確かめられる（以前は `frames.tsv` の更新時刻が2秒以内かで見ていたが、
-変化がないと書かなくなったため）。
+Wine の窓には枠を付けず、代理も作りません。Wine の最大化の大きさは Wine 自身が決めます（パッチ 0025）。
 
-枠の同期には次の 2 ファイルを追加する。どちらも同じ IPC ディレクトリで atomic rename し、数値を空白で区切る。
+## proxy（`bridge-wm/proxy.c`）
 
-- WM → proxy の `geometry.tsv`: `XID(hex) x y width height maximized(0/1) workX workY workWidth workHeight`。座標とサイズは root 上の native クライアント領域。末尾は現在の作業領域。
-- proxy → WM の `frames.tsv`: `HWND(hex) XID(hex) left right top bottom maximized(0/1) iconic(0/1) borderX borderY`。余白は公開 `GetWindowRect` / `GetClientRect` / `ClientToScreen`、borderは`GetWindowInfo`の測定値。
+Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに、`Win4WineProxy` クラスの Win32 の窓（代理）を作ります。
 
-どちらも内容が変わったときだけ書く（相手を無駄に起こさないため）。proxy は枠の位置が既に合っていれば SetWindowPos しない。
+- XP のタスクバーは、代理を普通の Win32 の窓として扱います（題名、最小化の状態、アイコン、shell hook の通知）。
+- 代理の窓は `WS_OVERLAPPEDWINDOW` を持ち、Wine が XP（Luna）の枠を描きます。WM はこの窓を Linux の窓のすぐ下に重ねるので、
+  Linux の窓に XP の枠が付いて見えます。
+- 枠のボタンやタスクバーでの操作（最小化、最大化、閉じる、移動）は、コマンドのファイルで WM に伝えます。
+- shell hook（HSHELL_WINDOWCREATED など）は、Wine のパッチ 0020 が記録した登録先に proxy が送ります。
+- 周期的には起きません。IPC ディレクトリの変更通知と、Win32 の WinEvent（前面化、最小化、窓の生成・破棄、題名の変更）で起きます。
+- 起動直後に 1 度だけ、タスクバーに今の大きさの `WM_SIZE` を送り、XP のシェル自身の配置で子の大きさを整えさせます。
 
-`_WIN4WINE_HWND` と `frames.tsv` の HWND を照合して枠と native クライアントを組にする。
-WM は枠をクライアントのすぐ下へ積み、枠の未使用の Win32 client 領域を native の画面で覆う。
-native ウィンドウの X border は 0 にし、測定した余白を `_NET_FRAME_EXTENTS` に公開する。初めて枠を付けるとき、USPosition/PPosition のないウィンドウは XP の重ね配置の次の位置へ置く。
-位置指定のあるウィンドウは workarea の上端と左端を基準に補正し、0,0 で起動した xterm のタイトルバーも画面内に置く。
-EWMH の一覧、アクティブ ID、キーボードフォーカスは native XID のまま。
-アイコンは native の `_NET_WM_ICON` を優先し、なければ ICCCM `WM_HINTS` の pixmap / mask を読む。
-property は最大1 MiB、画像は256×256までとし、manage と icon / hints property 変更時だけ取得する。
-`icon-XID.argb` は `W4I1`、little-endian の32bit width / height、行順の straight ARGB32画素からなる。
-所有者専用 IPC へ atomic rename で公開し、proxy は更新されたファイルだけ読み、公開 Win32 API で HICON を作る。
-small / big の WM_SETICON に同じ HICON を設定し、交換・ウィンドウ破棄時に所有した HICON を一度破棄する。
-アイコンがない・壊れている場合は Wine builtin の共有 `IDI_APPLICATION` に戻す。共有アイコンは破棄しない。
-Wine の CreateIconIndirect は alpha 用 bitmap を内部で premultiply するため、bridge では二重変換しない。
-Wine パッチ 0022 は外部シェル opt-in 時だけ、別プロセス間の公開 `WM_GETICON` と、別プロセスのクラスのアイコンの `GetClassLongPtr` を許可する。
-返す値は所有者の元の borrowed HICON で、受信側で `GetIconInfo` / `DrawIconEx` / `CopyIcon` を使える。
-所有者が初期化した static icon の画素・resource metadata を wineserver に不変 snapshot として登録する。
-画像は256×256、metadata は各2048 bytes、所有プロセスは16 MiB、server 全体は64 MiBまで。
-読み手は毎回 handle generation と生存を照合し、最大64個のローカル bitmap コピーを保持する。
-GDI driver の初回初期化と bitmap import は USER lock の外で行い、cache 登録前に owner / generation を再確認する。
-同時に登録されたコピーを重複保持せず、参照中のコピーは pin し、所有者の破棄・終了後は次の読み取りを拒否する。`CopyIcon` の結果は読み手が所有する。
-foreign HICON の破棄・変更、別プロセスの `WM_SETICON`、他の GDI handle message は許可しない。
-opt-in がない通常 Wine の挙動は維持する。上限を超える画像と animated icon は foreign snapshot の対象外。
-検証用の読み取り専用 WM_APP query は引き続き proxy 内で寸法・画素 checksum を返し、実 caption は X image でも検査する。
-XP タスクバーは非同期 `WM_GETICON` の callback 後に固有 icon を描く。初期の既定画像からの切り替えと icon 更新後の表示は、taskbar の実 X 画素で検査する。
-0023 は server protocol を変更するため、wineserver / ntdll / win32u を揃えて配備し、既存 prefix server を停止して切り替える。
+## IPC（WM・proxy・tray.py の間のファイル）
 
-代理 XID への EWMH activate も native のフォーカスに変換するので、タスクが二重にならない。
-タイトルバーと角の操作は Win32 の通常の非クライアント処理を通し、移動・リサイズを
-`geometry` コマンドで native へ戻す。最小化では組を隠し、復元では proxy の非 iconic 応答を待って枠を戻す。
-withdraw / destroy 時は組を直ちに解除して残った枠を隠す。真の withdraw では WM_STATE property を削除して WithdrawnState を通知する。Wine X11 driver はこの応答を待って次の XMapWindow を発行するため、応答がないと Start の Win32 HWND は visible でも X のメニューが再表示されない。最小化された client と WM が隠した代理枠にはこの削除を行わない。次の snapshot で不要な代理 HWND も破棄される。
+セッションごとに、本人だけが読める（0700）ディレクトリを `$XDG_RUNTIME_DIR` の下に作ります。ファイルは同じディレクトリで
+一時ファイルを書いてから rename するので、読み手は書きかけのファイルを見ません。どれも内容が変わったときだけ書きます。
 
-最大化はnativeの復元位置をWMに保存する。proxyは公開WM_GETMINMAXINFOで作業領域と
-border幅を返し、ShowWindow(SW_MAXIMIZE/RESTORE)で本物のWS_MAXIMIZEを切り替える。
-外側borderは画面外へ出し、Luna/96 DPIの可視余白は左右下0、上26pxになる。
-Win4WineMaximized propertyも既存の非クライアント描画との互換用に維持する。
+| ファイル | 書く側 → 読む側 | 中身 |
+|---|---|---|
+| `windows.tsv` | WM → proxy | Linux の窓の一覧。1 行に `XID(16進) TAB 最小化(0/1) TAB 有効(0/1) TAB 題名` |
+| `geometry.tsv` | WM → proxy | `XID x y 幅 高さ 最大化(0/1) 作業領域x 作業領域y 作業領域幅 作業領域高さ`（Linux の窓の中身の位置） |
+| `frames.tsv` | proxy → WM | `HWND XID 左 右 上 下 最大化 最小化 枠の幅x 枠の幅y`（枠の余白の大きさ） |
+| `PID-番号.cmd` | proxy → WM | `activate`・`minimize`・`close`・`maximize`・`restore` と XID、または `geometry XID x y 幅 高さ`、`switch XID` |
+| `switch.tsv` | WM → proxy | Alt+Tab の状態。`番号 Tab の回数 状態`（状態は o=表示中、c=確定、x=取り消し） |
+| `shellkeys.tsv` | WM → proxy | Linux の窓の上で押された Windows キーと Ctrl+Esc。`番号 windows VK...` または `番号 ctrl-escape` |
+| `icon-XID.argb` | WM → proxy | Linux の窓のアイコン（下の「アイコン」） |
+| `tray.tsv`、`tray-ID.argb`、`menu-ID.tsv` | tray.py → proxy | トレイアイコン（下の「トレイアイコン」） |
+| `*.tray` | proxy → tray.py | トレイアイコンのクリックとメニューの選択 |
+| `proxy.lock` | proxy | proxy が動いている間、先頭 1 バイトを LockFile で押さえます。WM は F_GETLK で proxy の生存を確かめます |
 
-Wineの通常ウィンドウは代理化しない。Wine パッチ 0025 は外部shellに限り、managed最大化windowの
-位置・サイズを所有threadからX11へ送る。WMはEWMH状態を確認し、幾何を上書きしない。
-これによりWM_GETMINMAXINFOのアプリ独自制限と復元位置を尊重する。
-WMが非同期に最大化サイズを強制する方式は、Wineのpending矩形と実Xサイズを食い違わせ、
-高速復元で位置だけ・サイズだけが混ざるため採用しない。
-wm.py、proxy.exe、Wine0041を同時に更新する。
+## Linux の窓の XP の枠
 
-`DV2ControlHost` は上に積む popup として扱い、
-Alt+Tab、native snapshot、shell hook の通常タスク一覧から除く。popup には Wine の activation に必要な X フォーカスと WM_TAKE_FOCUS を与えるが、アクティブなアプリの EWMH ID は上書きしない。shell hook の WINDOWACTIVATED は現在のtask一覧に含まれるidentityだけを通知する。owned dialogは公開GW_OWNERを順に辿り、最も近いtask ownerを選ぶ。Start popupや未所属toolをactivation経由でtaskに追加しない。
-FocusIn は通常の通知だけを採用する。keyboard grab の NotifyGrab / NotifyUngrab と
-pointer 由来の通知で Alt+Tab の選択を上書きしない。
+1. WM が `windows.tsv` に Linux の窓を書くと、proxy が代理の窓を作ります。
+2. proxy は、代理の窓の枠の余白（公開 API の GetWindowRect・GetClientRect で測った値）を `frames.tsv` に書きます。
+3. WM は `_WIN4WINE_HWND` と `frames.tsv` の HWND で、枠の X の窓と Linux の窓を組にし、枠を Linux の窓のすぐ下に重ねます。
+   余白は `_NET_FRAME_EXTENTS` にも出します。
+4. 枠のタイトルバーや角を動かすと、Win32 の普通の処理で枠が動き、proxy が `geometry` コマンドで Linux の窓を動かします。
+   Linux の窓が動くと、WM が `geometry.tsv` を書き、proxy が枠を合わせます（Debian の VM で約 11 ms の遅れ）。
 
-この方式は Win32 / X11 間の reparent や native クライアントの Win32 化を行わない。
-Win32 HWND と X11 の内容は別ウィンドウで、枠と内容の移動には時間差がある（Debian VM で中央値約 11 ms）。
-native transient は snapshot の対象外なので、この経路で新たな代理枠を作らない。
-アプリの独自システムメニューや追加 caption button を native 側へ移植する処理もない。
-クリップボードの変換は Wine X11 driver の既存機能に任せ、proxy は独自の clipboard IPC を持たない。
-Microsoft の画像を Python で模写・再配布する方式ではなく、ローカルのテーマを Wine の公開描画 API で使用する。
+- 初めて枠を付けるとき、位置の指定が無い窓は XP と同じ重ね配置の次の位置に置きます。位置の指定がある窓も、タイトルバーが
+  作業領域の外に出ないように直します。
+- 最大化では、proxy が `ShowWindow(SW_MAXIMIZE)` で代理を本当に最大化し、WM が Linux の窓を「作業領域から枠の余白を
+  除いた大きさ」にします（XP と同じく、外側の枠は画面の外に出ます）。
+- 最小化では枠と窓を一緒に隠します。
+- transient（ダイアログ）の Linux の窓には枠を付けず、タスクバーにも出しません。
 
-タイトル変更、破棄、生成、アクティブ変更は SHELLHOOK に変換する。
-通常の Wine HWND も前回のタイトルを比較し、生成後に付いたフォルダ名や移動後の名前を通知する。比較は WinEvent を受けた時に行うので、
-WinEvent の処理より先に生成から破棄まで終わる短命ウィンドウは通知しないことがある。`WH_SHELL` DLL injection は実装しない。購読先の子ウィンドウも検索し、実 XP の MSTaskSwWClass への通知を確認した。
+## アイコン
 
-## Linux のトレイアイコン（段階 6）
+- Linux の窓のアイコンは `_NET_WM_ICON`（無ければ `WM_HINTS` の pixmap）から読み、`icon-XID.argb` に書きます。
+  形式は `W4I1`、幅と高さ（32bit、little endian）、straight ARGB の画素の並びです。proxy はこれで HICON を作ります。
+- XP のタスクバーは、ほかのプロセスの窓のアイコンを `WM_GETICON` と `GetClassLongPtr` で読みます。Wine はプロセスをまたぐ
+  読み出しを許さないので、パッチ 0022 が opt-in のときだけ、アイコンの画素を wineserver に登録して読めるようにします。
 
-`bridge-wm/tray.py`（python3-gi の Gio と GdkPixbuf）は、セッションバスで `org.kde.StatusNotifierWatcher` を所有し、自身を
-host として登録する。登録された StatusNotifierItem ごとに番号を振り、アイコン・ツールチップ・メニューを IPC ディレクトリへ書く。
-すでに別の watcher（デスクトップ環境のトレイ）がいれば何もせずに終わる。D-Bus と IPC ディレクトリの変更（Gio の
-FileMonitor）でだけ起きる。
+## キー操作
 
-ほかに X のトレイ（`_NET_SYSTEM_TRAY_S0` の所有者）が無ければ、tray.py は自分が所有して XEmbed のトレイにもなる（段階 8）。
-`SYSTEM_TRAY_REQUEST_DOCK` で来たアイコンの窓を、自分の作った枠（override-redirect）に入れて `XEMBED_EMBEDDED_NOTIFY` を
-送る。枠は Composite で手動の redirect にするので画面に描かれず、入力の範囲（SHAPE の Input）を空にするのでポインタも
-受けない。アイコンの窓の Damage を受けたら GetImage で画像を読み、SNI と同じ番号・`tray-ID.argb` で通知領域に出す。
-32-bit（ARGB）の窓は乗算済みのアルファを戻し、24-bit の窓は枠の背景の色（Luna の通知領域の色、`0x1397ed`）の画素を
-透明にする。`_NET_SYSTEM_TRAY_VISUAL` で ARGB の visual を知らせるので、GTK 3 などは透明な背景で描く。
-`_XEMBED_INFO` の mapped が外れたら通知領域から消す。ツールチップは窓の `_NET_WM_NAME`（無ければ `WM_NAME`、クラス）。
-クリックは、そのときだけ枠をポインタの下に置いて入力の範囲を戻し、XTest で本物のボタンの押下と離しを入れて、範囲を空に戻す
-（GTK 3 は XInput 2 でポインタを受けるので、XSendEvent の合成の押下は届かない）。メニューはアプリ自身が出し、アイコンの窓の
-位置（ポインタの位置）に合わせて置く。別のトレイが選択を取ったら、アイコンの窓をルートへ返す（アプリは `MANAGER` を見て
-そちらに入り直す）。tray.py が終わるときもルートへ返し、異常終了でも save-set でルートへ戻る。
+- **Alt+Tab**: WM が Alt を押している間キーボードをつかみ、`switch.tsv` を書きます。proxy が XP の切り替えの窓を描き、
+  確定すると `switch XID` を送り、WM がその窓を有効にします。proxy が動いていなければ、WM が順に切り替えます。
+- **Windows キーと Ctrl+Esc**: Wine の窓にフォーカスがあるときは、そのまま Wine に渡します（パッチ 0023 でスタートメニューが
+  開き、Win+R などのホットキーも Wine が処理します）。Linux の窓にフォーカスがあるときは、WM が Windows キーを離すまでの
+  キーを受け取って `shellkeys.tsv` に書き、proxy が `SendInput` で Wine に入れます。
 
-- tray.py → proxy の `tray.tsv`: `ID TAB 状態 TAB ツールチップ`。状態は A（Active）か N（NeedsAttention）。Passive は載せない。
-- tray.py → proxy の `tray-ID.argb`: アイコン。`W4I1` 形式（WM のウィンドウアイコンと同じ）。大きさは proxy が `tray-size` に書く
-  `SM_CXSMICON`。IconPixmap があればそれを、なければ IconName をアイコンテーマ（IconThemePath、`~/.local/share/icons`、
-  `/usr/share/icons` 以下のすべてのテーマと pixmaps）から探して PNG / SVG を描く。NeedsAttention のときは Attention の画像を先に使う。
-- proxy → tray.py の `*.tray`: `activate ID X Y`（左クリック、ItemIsMenu ならメニュー）、`secondary ID X Y`（中クリック）、
-  `context ID X Y`（右クリック）、`event ID SEQ ITEM`（メニューの選択）。WM の `*.cmd` とは拡張子で分ける。
-- tray.py → proxy の `menu-ID.tsv`: 右クリックのたびに `com.canonical.dbusmenu` の AboutToShow と GetLayout を呼び、先頭の行に
-  連番、続けて `深さ TAB 項目 TAB 印 TAB ラベル`（印は s 区切り、d 無効、c チェック、r ラジオ）を書く。ラベルの `_` は `&` に直す。
-  proxy は自分が求めた連番より新しいものだけを TrackPopupMenu で出し、選んだ項目を `event` で返す。古い連番の選択は捨てる。
+## トレイアイコン（`bridge-wm/tray.py`）
 
-proxy は `Win4WineTray` の隠しウィンドウで公開の `Shell_NotifyIconW` を呼び、XP の通知領域にアイコンを追加・更新・削除する。
-XP の Explorer が受け取れる形式で届くのは Wine パッチ 0028 による（Wine の builtin の形式は XP の Explorer が受け付けない）。
-`TaskbarCreated` を受けたら追加し直す。
+- **StatusNotifierItem**: セッションバスで `org.kde.StatusNotifierWatcher` を所有し、登録されたアイコンを `tray.tsv` と
+  `tray-ID.argb` に書きます。右クリックのメニューは `com.canonical.dbusmenu` から読んで `menu-ID.tsv` に書きます。
+  ほかに watcher がいれば何もしません。
+- **XEmbed**: ほかに X のトレイが無ければ `_NET_SYSTEM_TRAY_S0` を所有し、アイコンの窓を画面に出さない枠に入れて、
+  Composite で画像を読みます。クリックは XTest で本物の押下を入れます。
+- proxy は `Shell_NotifyIconW` で XP の通知領域にアイコンを出します。XP の Explorer が読める形式で届くのは、パッチ 0028 によります。
 
-## セッション
+## セッション（`session/supervisor.py`）
 
-ディスプレイマネージャが Xorg と認証を起動し、`session/supervisor.py` が WM → tray.py → 入力メソッド → proxy → XP explorer を起動する。WM 所有権取得に失敗したらセッションを中断する。トレイの存在を監視し、起動失敗・消失・proxy 終了時に専用 wineserver を終了して再試行する。120 秒以内に 3 回失敗すると native override と外部 shell フラグを解除し、独立した recovery prefix の Wine builtin ホームブラウザと復旧用 xterm を起動する。セッション終了時に子プロセス・専用 wineserver・IPC を掃除する（子のグループにまとめて SIGTERM、3秒後に残りを SIGKILL）。supervisor は周期的に起きず、ルートの SubstructureNotify、子プロセスの pidfd、シグナルで待つ（起動中のタスクバーを待つ間だけ1秒ごと）。
+- 起動の順: XP のログオン画面 → WM → tray.py → fcitx5 → prefix の更新（`prefix/stage.py`）→ Linux のアプリのスタートメニュー
+  → proxy → XP のシェル。
+- タスクバーが出たら起動できたとみなします。XP のシェルや proxy が落ちたら、Wine を止めてやり直します。
+  120 秒に 3 回失敗すると、XP の DLL を使わない別の prefix で、Wine 標準の explorer と xterm を起動します（復旧用）。
+- XP のログオフ・終了（パッチ 0018 が要求をファイルに書きます）では、ログオフの画面を出し、セッションを終えます。
+  終了・再起動では `session.json` の `shutdown_command`・`reboot_command` を実行します。
+- 環境: Wine と Linux のアプリの `PATH` の先頭にセッションの Wine を置きます。日本語入力の変数（`XMODIFIERS` など）、
+  字体の設定（`linux_font` の fontconfig）、DPI の設定（下の「DPI」）、カーソルのテーマも入れます。
+- 周期的には起きません（起動中のタスクバーを待つ間だけ 1 秒ごとに確かめます）。ログは `~/.local/state/win4wine/` に書き、
+  起動のたびに前回の分を `*.log.1` にします。
 
-`session.json` の `input_method` が `fcitx5` なら、`XMODIFIERS=@im=fcitx`、`GTK_IM_MODULE`・`QT_IM_MODULE`・`SDL_IM_MODULE=fcitx` を
-Wine と Linux アプリの環境に入れ、fcitx5 を起動して見張る（120 秒に 3 回まで起動し直す）。ログイン側（im-config など）がすでに
-これらの変数を設定していればそれに従い、XIM サーバー `@server=fcitx` がすでにあれば起動しない。`linux_font`（既定 `MS UI Gothic`、
-`null` で無効）は、prefix の `windows/Fonts` を加え、sans-serif・Sans・system-ui にその字体を優先する fontconfig の設定を
-状態ディレクトリに作り、`FONTCONFIG_FILE` で渡す。システムと利用者の fontconfig の設定は include で引き続き効く。
+## Linux のアプリのスタートメニュー（`session/linux_apps.py`）
 
-ログは状態ディレクトリの `NAME.log` に書き、起動のたびに前回のものを `NAME.log.1` にする。
-`session.json` の `linux_menu`（既定 `true`）が有効なら、XP Explorer を起動する前に `session/linux_apps.py` で Linux の
-アプリをスタートメニューへ入れ、その後は `--watch` で見張る（下の「Linux アプリのスタートメニュー」）。Wine と Linux アプリの
-`PATH` の先頭にはセッションの Wine の `bin` を置き、端末で打つ `wine` がセッションと同じ Wine と prefix を使うようにする。
+- XDG の `applications` の desktop entry を読み、表示するアプリごとに、prefix の共通の Programs にショートカットを置きます。
+  名前には ` (Linux)` を付け、分類（Categories）から XP のフォルダ（アクセサリ、インターネットなど）に入れます。
+- ショートカットの先は `linux-launch.exe`（`session/linux-launch.c`）で、`/usr/bin/env` 経由で Linux のプログラムを起動します。
+  アイコンはアイコンテーマから .ico を作ります。
+- 作ったものは `C:\xp\linux-apps\state.json` に記録し、消えたアプリの分だけを片付けます。セッション中は inotify で見張り、
+  パッケージの導入・削除に追従します。
 
-Win7 対応時も WM と IPC を維持し、DLL profile、shell readiness class、必要な Wine shim を変更する方針。
+## ログイン画面（`greeter/`）
 
-WM は native X クライアントのフォーカス・サイズ変更に合わせて、表示中の子孫へ Expose を送る。
-描画内容は消去しない。Wine HWND のあるクライアントは Wine の surface 管理に任せる。
-周期的な再描画ではない。ConfigureRequest には root 座標の
-synthetic ConfigureNotify も返す。
+- `greeter/xp-greeter.py` は LightDM の greeter です。利用者の XP の logonui.exe・msgina.dll・winlogon.exe などから、
+  画像と文字列を PE の資源として読みます（コードは動かしません）。画面は `greeter/welcome.py` が cairo と Pango で描きます。
+- 必要なファイルが無ければ、LightDM に接続する前に通常の greeter（lightdm-gtk-greeter）に切り替えます。
+- ログオン中とログオフ中の XP の画面は、セッションの中で `greeter/xp-splash.py` が出します。
+- XP のカーソルは `greeter/cursors.py` が利用者の user32.dll から X のカーソルテーマ（`win4wine-xp`）として作ります。
 
-XP のタスクボタンが他プロセスの最小化可否を調べるため、Wine パッチ 0021 は外部シェル opt-in 時に
-標準システムメニューのプロセス内コピーを返す。アプリ独自の変更は同期しない限定 shim。
-0034 は名前付き child ReBar の未指定 alignment を CCS_TOP に正規化し、フォルダの初期ずれを防ぐ。
+## DPI
 
-## Linux アプリのスタートメニュー（2026-10-11）
-
-`session/linux_apps.py PREFIX --wine WINE [--watch]` は、XDG のデータディレクトリ（`$XDG_DATA_HOME`、`$XDG_DATA_DIRS`）の
-`applications` にある desktop entry（freedesktop.org の Desktop Entry Specification）を読み、表示するアプリごとに prefix の共通の
-Programs（`C:\ProgramData\Microsoft\Windows\Start Menu\Programs`）にショートカットを1つ置く。
-
-- 表示するもの: `Type=Application` で、`NoDisplay`・`Hidden` が真でなく、`OnlyShowIn`・`NotShowIn` が今のデスクトップ
-  （`XDG_CURRENT_DESKTOP`。XP シェルのセッションでは空）に合い、`TryExec` と Exec のプログラムが見つかるもの。同じ desktop file ID
-  では先のディレクトリ（利用者の側）が勝つ。Wine 自身が Windows のアプリのために作る `applications/wine` 以下は読まない。
-- 名前は `Name` のロケールの値（`LC_ALL`・`LC_MESSAGES`・`LANG`）に ` (Linux)` を付ける（利用者の判断）。同じフォルダで重なると
-  ` (Linux 2)` …。説明（スタートメニューのツールチップ）は `Comment`、なければ `GenericName`。
-- フォルダは `Categories` の主な分類から、XP にあるものはその名前にする（日本語のロケールでは日本語）。Windows のアプリの
-  フォルダと同じ名前なら混ざる（利用者の判断）。
-
-  | 分類 | フォルダ |
-  |---|---|
-  | TerminalEmulator、Utility | アクセサリ |
-  | AudioVideo、Audio、Video | アクセサリ\エンターテイメント |
-  | System | アクセサリ\システム ツール |
-  | Network | インターネット |
-  | Game | ゲーム |
-  | Graphics、Office、Development、Education、Science、Settings | グラフィックス、オフィス、開発、教育、科学、設定 |
-  | なし | すべてのプログラムの直下 |
-
-- 起動: ショートカットの先は `C:\xp\linux-apps\linux-launch.exe`（`session/linux-launch.c`、GUI のサブシステムなのでコンソールが
-  開かない）。引数は Exec からファイルと URL のフィールドコードを除き、`%c`・`%k`・`%i` を展開した Windows の形のコマンドライン。
-  `Terminal=true` は `x-terminal-emulator -e`（なければ `xterm -e`）で包む。`Path` は作業ディレクトリ（`Z:` の形）。
-  linux-launch.exe は `CreateProcessW` で `/usr/bin/env -u WINEDEBUG PROGRAM ...` を起動する（Wine は Unix の実行ファイルを
-  そのまま起動し、Windows の形の argv[0] は env が受け流す）。セッションのデバッグの設定は Linux のアプリに渡さない。
-- アイコン: `Icon` をアイコンテーマ（`~/.config/gtk-3.0/settings.ini` のテーマとその継承、hicolor、`/usr/share/pixmaps`）から探し、
-  GdkPixbuf で 16・32・48 の 32-bit の .ico（AND マスク付き）にして `C:\xp\linux-apps\icons` に置く。
-- ショートカットは `session/linux-links.c`（`IShellLinkW`、`IPersistFile`）を Wine で1回起動して書く。そのとき
-  `winemenubuilder.exe=d` にする（Wine の shell32 はショートカットを保存すると Linux のメニューの項目を作り、それをまた読むことになる）。
-- 作ったショートカットと、作るために足したフォルダは `C:\xp\linux-apps\state.json` に記録する。変わらないものは書き直さず、
-  消えたアプリのショートカットと、空になった自分のフォルダだけを消す。利用者や Windows のアプリのファイルには触れない。
-- `--watch`: `applications` の各ディレクトリ（まだ無いものはその最も近い親）を inotify で見張り、変更が2秒止んでから同期する。
-  パッケージの導入・削除でスタートメニューが追従する。XP Explorer は開いている間もフォルダの変更を読み直す。
-
-## Windows キーとデスクトップのフォーカス（2026-10-11）
-
-- WM は Super（Windows キー）をすべての修飾の組み合わせで、Ctrl+Esc を同期モードで横取りする。Wine のウィンドウにフォーカスが
-  あるときはそのまま再送し（`ReplayKeyboard`）、Wine 自身が処理する。Linux のウィンドウにフォーカスがあるときは、Windows キーが
-  離されるまでのキーを WM が受け取り（キーの横取りは離されるまで続く）、IPC ディレクトリの `shellkeys.tsv` に
-  `番号 windows VK...`（文字・数字・F1〜F24・Tab・Pause・Space・Esc・Enter）または `番号 ctrl-escape` を書く。proxy はそれを
-  `SendInput` で Wine に入れる。Wine の前面のスレッドが新しい入力として受けるので、XP のホットキー（Win+R、Win+E など、
-  wineserver が照合する）も、スタートメニューのキー（Wine パッチ 0023）も、Win32 のウィンドウのときと同じに動く。Linux の
-  アプリにはそのキーは届かない。
-- Wine パッチ 0023: キーを受けたプロセスで、ほかのキーを挟まずに押して離した Windows キーと、Ctrl+Esc（Shift、Alt なし。Esc は
-  届けない）に対し、`Win4WineShellHook` の属性のあるウィンドウ（XP のタスク切り替えの子ウィンドウ）へ前面を渡してから
-  `HSHELL_TASKMAN` を送る。XP の Explorer はそれでスタートメニューを開く。
-- WM は左と右のクリックでウィンドウを有効にする（XP と同じ。デスクトップの右クリックメニューもキーボードを受ける）。
-  デスクトップ（Progman）とタスクバー（Shell_TrayWnd）をクリックすると、WM はそのウィンドウに X のフォーカスを渡し
-  （そのイベントの時刻で WM_TAKE_FOCUS。Wine は前面のウィンドウがフォーカスを得た時刻より古い要求を無視する）、
-  `_NET_ACTIVE_WINDOW` を 0 にする（アプリのタスクは無くなる）。タスクボタンでの最小化と復元は今までどおり。
-
-## ログイン画面（段階 9）
-
-`greeter/xp-greeter.py` は LightDM の greeter（lightdm の利用者で動く）。`/etc/win4wine/greeter.json` の `assets` から、利用者の
-XP の媒体の logonui.exe・msgina.dll・winlogon.exe・luna.msstyles・字体・ユーザー画像を読む（`greeter/install.sh` が写す）。
-足りなければ LightDM に接続する前に `fallback` の greeter を exec する。LightDM の UserList のアカウントを並べ、選ぶと
-`authenticate`、PAM がパスワードを聞くとパスワード欄を出して `respond` する。認証が済むと「ようこそ」の画面にし、その画像を
-root の背景に残してから `start_session_sync` する。終了オプションのボタンは LightDM の suspend・shutdown・restart。
-
-画面は `greeter/welcome.py` が cairo と Pango で全画面を1枚の画像に描き、GTK の窓はそれを貼るだけ（状態が変わったときだけ
-描き直す。終了オプションの背景は普通と暗い2枚を一度だけ描いて重ねる）。`greeter/xpres.py` は PE の資源の表から
-ビットマップ・文字列・ダイアログのテンプレートを取り出す。DIB（RLE8・24-bit・32-bit のアルファ）は自前で cairo の画像にする。
-文字は GDI の DrawText の置き方（`Text`）: 全角と半角の連なりごとに Pango で並べ、OS/2 の winAscent・winDescent で行を置き、
-太字・斜体・下線を GDI と同じ方法で作る。fontconfig の設定は抽出した字体を加え、gasp に合わせてなじませを止める。
-DPI（段階 10）は `greeter.json` の `dpi`（XP と同じくマシン全体で1つ）で、配置・字体・画像を XP と同じ規則で拡大する
-（`Screen(dpi=)`）。ログオン・ログオフの画面は supervisor が prefix の LogPixels を `--dpi` で渡す。
-
-## DPI（段階 10）
-
-DPI は XP と同じく prefix の `HKCU\Control Panel\Desktop\LogPixels` で決める（`prefix/display.py --dpi`）。外部シェルの
-Wine のプロセスは system DPI aware になり（パッチ 0044）、その DPI で自分で描く。supervisor は起動時に同じ値を読み
-（`session/dpi.py`）、root の `RESOURCE_MANAGER` に `Xft.dpi`、セッションの fontconfig に dpi、環境に `XCURSOR_SIZE` と
-（192 以上で）`GDK_SCALE`・`GDK_DPI_SCALE` を入れる。カーソルテーマは 32 と 64 の画像を持ち、X が大きさで選ぶ。
-
-`greeter/xp-splash.py` は XP シェルのセッションの中で動く（supervisor が起動する）。python-xlib の override-redirect の窓に
-同じ描画の画像を貼る。`logon` はタスクバーが出るまで「個人設定を適用しています...」、`logoff` は stdin の語（`saving`、
-`shutdown`）で文を変える。後から出た窓や自分のすぐ上に上げられた窓があると上に戻り、終わるときは最後の画像を root の背景に
-残す（`greeter/xdraw.py`）。
-
-`greeter/cursors.py` は利用者の XP の user32.dll のカーソルの資源（100〜114）を X のカーソルテーマ（Xcursor の形式、40×40 の画像で
-名目の大きさ 32）にする。名前は winex11 が Windows の標準カーソルに使う名前（`dlls/winex11.drv/mouse.c`）と、ツールキットの名前
-（cursor-spec と X の古い名前）。XP の影を画像に入れ、反転するカーソルは黒に白い縁にする。supervisor はテーマがあれば
-`XCURSOR_THEME` と `XCURSOR_SIZE=32` を Wine と Linux のアプリの環境に入れ、WM の起動後に xsetroot でルートの矢印も替える。
-
+- DPI は XP と同じく prefix の `HKCU\Control Panel\Desktop\LogPixels` で決めます（`prefix/display.py --dpi`）。
+- XP のシェルと Wine のアプリは、その DPI で自分で描きます（パッチ 0044 で system DPI aware にします）。
+- supervisor は同じ値を Linux のアプリに渡します（`session/dpi.py`）。`Xft.dpi`、fontconfig の dpi、`XCURSOR_SIZE`、
+  192 以上では GTK の `GDK_SCALE` も設定します。
+- ようこそ画面の DPI は `/etc/win4wine/greeter.json` の `dpi` で決めます（XP でもマシン全体の設定です）。

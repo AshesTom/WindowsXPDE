@@ -3,11 +3,14 @@
 [🇯🇵 日本語](../../INSTALL.md) · 🇬🇧 English
 
 > [!WARNING]
-> Obtain the Windows XP ISO yourself, and use this at your own risk (see [Caution in the README](README.en.md#caution)).
+> - Obtain the Windows XP ISO yourself, and use this at your own risk (see [Caution in the README](README.en.md#caution)).
+> - This is an experimental project. It has only been tested on a **freshly installed Debian 13** set up with `scripts/setup.sh`;
+>   installing it on a system already in use has not been tried. The script installs packages and may change LightDM's
+>   settings (see "2. What the script does"). A virtual machine or a spare machine is recommended.
 
 ## Requirements
 
-- A fresh **Debian 13 (trixie) amd64** machine (real or virtual). No desktop environment is needed.
+- A **Debian 13 (trixie) amd64** machine (real or virtual). No desktop environment is needed.
 - A **Japanese Windows XP Professional SP3 (x86) ISO** (or an XP Windows directory).
 - Network access (packages and the Wine source) and **about 40 GB of free space** (Wine's source and build).
 - A user who can use sudo.
@@ -96,3 +99,4 @@ python3 session/linux_apps.py .local/prefix --wine .local/wine-install/bin/wine 
 ```
 
 The builds, extracted files and prefix go away with `.local/` of this checkout.
+Packages the script installed (LightDM included) and the switch of display manager are not undone.

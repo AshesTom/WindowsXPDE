@@ -8,16 +8,44 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-blue?style=flat" alt="License: LGPL-2.1-or-later"></a>
   <img src="https://img.shields.io/badge/Debian-13-A81D33?style=flat&logo=debian&logoColor=white" alt="Debian 13">
   <img src="https://img.shields.io/badge/Wine-11.0-8B0000?style=flat" alt="Wine 11.0">
+  <img src="https://img.shields.io/badge/status-experimental-orange?style=flat" alt="Status: experimental">
 </p>
 <p align="center">
   <strong title="日本語" aria-label="日本語">🇯🇵</strong> ·
   <a href=".github/readme/README.en.md" title="English" aria-label="English">🇬🇧</a>
 </p>
 
-## 導入
+> [!IMPORTANT]
+> **個人の実験的なプロジェクトです。** 日常の作業環境として使えるほど完成してはいません。
+> 動作を確かめているのは、**新しくインストールした Debian 13** に導入スクリプトで入れた場合だけです。
+> すでに使っている環境（ほかのデスクトップ環境やディスプレイマネージャが入っているものなど）への導入は試していません。
+> 試すときは、仮想マシンや試験用のマシンをおすすめします。
 
-1. 日本語版 Windows XP Professional SP3（x86）の ISO を**自分で**用意する。
-2. 新しく入れた Debian 13 で、ログインする利用者として実行する。
+## これは何？
+
+Windows XP の `explorer.exe` を、パッチを当てた Wine の上で **Linux のデスクトップシェル**として動かすプロジェクトです。
+タスクバー、スタートメニュー、デスクトップ、フォルダウィンドウは XP 本物のものです。Linux のアプリも、XP の枠とタスクバーで扱えます。
+
+Microsoft のファイルは同梱していません。お手元の XP の ISO から、必要なファイルだけを取り出して使います。
+
+## できること
+
+- **XP のシェル**: Luna（またはクラシック）のタスクバー、スタートメニュー、デスクトップ、マイ コンピュータ、フォルダウィンドウ。
+- **Linux アプリとの統合**: Linux のウィンドウに XP の枠が付き、タスクバー、Alt+Tab、最小化・最大化が XP と同じように動きます。
+  Linux のアプリは「すべてのプログラム」に並びます。
+- **通知領域**: Linux のトレイアイコン（StatusNotifierItem と XEmbed）が XP の通知領域に出ます。
+- **日本語入力**: fcitx5 + Mozc です。Ctrl+Space（または全角/半角）で切り替えます。GTK、Qt、Wine のアプリで使えます。
+- **Windows のアプリ**: WoW64 の Wine 11.0 で、32bit と 64bit のアプリが動きます。端末で `wine setup.exe` と打つと、
+  インストーラーが作るショートカットは XP のスタートメニューに入ります。
+- **XP のようこそ画面**: LightDM の greeter として、XP のようこそ画面とログオフの画面を出せます（任意）。
+- **XP のキー操作**: Windows キー、Ctrl+Esc、Win+R、Win+E が使えます。
+- **画面の拡大（DPI）**: XP と同じ「DPI 設定」で、文字や部品を大きくできます（96・120・144 など）。
+- **落ちても戻れる**: XP のシェルが繰り返し落ちると、Wine 標準の explorer と xterm に切り替わります。
+
+## 試してみる
+
+1. 日本語版 Windows XP Professional SP3（x86）の ISO を**ご自身で**用意してください。
+2. 新しくインストールした Debian 13 に、ログインして使う利用者として入り、次を実行します。
 
 ```sh
 git clone https://github.com/mikuta0407/win4wine.git ~/win4wine
@@ -25,62 +53,39 @@ cd ~/win4wine
 scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 ```
 
-3. 再起動すると、XP のようこそ画面からそのまま XP シェルに入る。
+3. 再起動すると、XP のようこそ画面からそのまま XP のシェルに入ります。
 
-詳しくは 🔗 [導入手順（INSTALL.md）](INSTALL.md)。Wine のビルドに 4 コアで1時間半ほどかかる。
-
-## これは何
-
-Windows XP の `explorer.exe` を、パッチを当てた Wine の上で **Linux のデスクトップシェル**として動かす。
-タスクバー、スタートメニュー、デスクトップ、フォルダウィンドウは XP 本物のもの。Linux のアプリも XP の枠とタスクバーで扱える。
-
-Microsoft のファイルは同梱しない。利用者の ISO から、必要なファイルだけを手元で取り出して使う。
-
-## できること
-
-- **XP のシェル**: Luna（またはクラシック）のタスクバー、スタートメニュー、デスクトップ、マイ コンピュータ、フォルダウィンドウ。
-- **Linux アプリの統合**: Linux のウィンドウに XP の枠が付き、タスクバー、Alt+Tab、最小化・最大化が XP と同じに動く。
-  Linux のアプリは「すべてのプログラム」に並ぶ。
-- **通知領域**: Linux のトレイアイコン（StatusNotifierItem と XEmbed）が XP の通知領域に出る。
-- **日本語入力**: fcitx5 + Mozc。Ctrl+Space（または全角/半角）で切り替える。GTK、Qt、Wine のアプリで使える。
-- **Windows アプリ**: WoW64 の Wine 11.0 で、32bit と 64bit のアプリが動く。端末で `wine setup.exe` と打てば、
-  インストーラーが作るショートカットは XP のスタートメニューに入る。
-- **XP のようこそ画面**: LightDM の greeter として、XP のようこそ画面とログオフの画面を出す（任意）。
-- **XP のキー操作**: Windows キー、Ctrl+Esc、Win+R、Win+E。
-- **落ちても戻れる**: XP のシェルが繰り返し落ちると、Wine 標準の explorer と xterm に切り替える。
+詳しい手順とオプションは 🔗 [導入手順（INSTALL.md）](INSTALL.md) にあります。Wine をソースからビルドするので、4 コアで 1 時間半ほどかかります。
 
 ## 注意
 
 > [!WARNING]
-> - **Windows XP の ISO は自分で入手すること。** このリポジトリにも導入スクリプトにも、Microsoft のファイルを取得する処理はない。
->   使う ISO と取り出したファイルの扱いは、Microsoft の使用許諾に従うこと。
-> - **利用は自己責任で。** 個人の実験的なプロジェクトで、日常利用できる完成品ではない。データの損失や不具合について、作者は責任を負わない。
-> - Microsoft とも Wine プロジェクトとも関係のない、非公式のプロジェクト。
-> - 確かめたのは日本語版 XP SP3（x86）だけ。日本語の字体（MS ゴシック）を前提にしている。
+> - **Windows XP の ISO はご自身で入手してください。** このリポジトリにも導入スクリプトにも、Microsoft のファイルを取得する処理はありません。
+>   ISO と取り出したファイルの扱いは、Microsoft の使用許諾に従ってください。
+> - **利用は自己責任でお願いします。** データの損失や不具合について、作者は責任を負いません。
+> - Microsoft とも Wine プロジェクトとも関係のない、非公式のプロジェクトです。
+> - 確かめているのは日本語版の XP SP3（x86）だけです。日本語の字体（MS ゴシック）を前提にしています。
 
 ## 仕組み
 
 ```text
-LightDM ─ XP Welcome greeter (greeter/)
+LightDM ─ XP のようこそ画面 (greeter/)
    └─ XP Shell セッション (session/supervisor.py)
-        ├─ Wine 11.0 + 60 本のパッチ (wine/patches/)
+        ├─ Wine 11.0 + 61 本のパッチ (wine/patches/)
         │    └─ XP の explorer.exe, shell32.dll, …（ISO から取り出したもの）
-        ├─ bridge-wm: X11 の WM + Win32 の代理ウィンドウ (bridge-wm/)
+        ├─ bridge-wm: X11 のウィンドウマネージャー + Win32 の代理ウィンドウ (bridge-wm/)
         └─ fcitx5 + Mozc, トレイの仲介 (bridge-wm/tray.py)
 ```
 
-- [構成（architecture.md）](docs/architecture.md): WM、代理ウィンドウ、IPC、トレイ、ログイン画面
-- [Wine パッチ（patches.md）](docs/patches.md): 60 本の一覧と並び、書式
-- [判断と理由（dll-policy.md）](docs/dll-policy.md): どの DLL を XP のものにし、Wine のどこを直したか
-- [開発（development.md）](docs/development.md): chroot でのビルド、試験、手作業での導入
+仕組みや設計の詳しい説明は [docs/](docs/README.md) にまとめています。
 
 ## 守っていること
 
-- Windows 由来のバイナリには手を加えない。違いは Wine とその周辺で吸収する。
-- Microsoft のバイナリを逆アセンブルしない。挙動は公開 API と、実 XP 上の自作プローブで調べる。
-- Microsoft のファイル、抽出物、prefix は Git 管理外の `localres/` と `.local/` にだけ置く。
+- Windows 由来のバイナリには手を加えません。違いは Wine とその周辺で吸収します。
+- Microsoft のバイナリを逆アセンブルしません。挙動は公開 API と、実際の XP の上で動かす自作のプローブで調べています。
+- Microsoft のファイル、取り出したもの、Wine の prefix は、Git 管理外の `localres/` と `.local/` にだけ置きます。
 
 ## ライセンス
 
-[LGPL-2.1-or-later](LICENSE)（Wine と同じ）。対象はこのリポジトリのコードとパッチだけ。
-Windows XP のファイルと、スクリーンショットに写っている XP の画面の著作権は Microsoft にある。
+[LGPL-2.1-or-later](LICENSE)（Wine と同じ）です。対象はこのリポジトリのコードとパッチだけです。
+Windows XP のファイルと、スクリーンショットに写っている XP の画面の著作権は Microsoft にあります。

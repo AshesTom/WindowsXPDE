@@ -8,16 +8,23 @@
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/license-LGPL--2.1--or--later-blue?style=flat" alt="License: LGPL-2.1-or-later"></a>
   <img src="https://img.shields.io/badge/Debian-13-A81D33?style=flat&logo=debian&logoColor=white" alt="Debian 13">
   <img src="https://img.shields.io/badge/Wine-11.0-8B0000?style=flat" alt="Wine 11.0">
+  <img src="https://img.shields.io/badge/status-experimental-orange?style=flat" alt="Status: experimental">
 </p>
 <p align="center">
   <a href="../../README.md" title="日本語" aria-label="日本語">🇯🇵</a> ·
   <strong title="English" aria-label="English">🇬🇧</strong>
 </p>
 
+> [!IMPORTANT]
+> **This is a personal, experimental project**, not a finished product for daily use.
+> It has only been tested on a **freshly installed Debian 13** set up with the installation script.
+> Installing it on a system already in use (with another desktop environment or display manager, for example) has not been tried.
+> A virtual machine or a spare machine is recommended.
+
 ## Install
 
 1. Get a Japanese Windows XP Professional SP3 (x86) ISO **yourself**.
-2. On a fresh Debian 13, run as the user who will log in:
+2. On a freshly installed Debian 13, run as the user who will log in:
 
 ```sh
 git clone https://github.com/mikuta0407/win4wine.git ~/win4wine
@@ -54,8 +61,7 @@ No Microsoft files are included. Only the files that are needed are extracted lo
 > [!WARNING]
 > - **Obtain the Windows XP ISO yourself.** Neither this repository nor its scripts download any Microsoft files.
 >   Follow Microsoft's license terms for the ISO and the files extracted from it.
-> - **Use at your own risk.** This is a personal, experimental project, not a finished product for daily use.
->   The author is not responsible for data loss or any other problems.
+> - **Use at your own risk.** The author is not responsible for data loss or any other problems.
 > - This is an unofficial project, not affiliated with Microsoft or the Wine project.
 > - Only the Japanese XP SP3 (x86) has been tested; the setup expects the Japanese fonts (MS Gothic).
 
@@ -64,18 +70,13 @@ No Microsoft files are included. Only the files that are needed are extracted lo
 ```text
 LightDM ─ XP Welcome greeter (greeter/)
    └─ XP Shell session (session/supervisor.py)
-        ├─ Wine 11.0 + 60 patches (wine/patches/)
+        ├─ Wine 11.0 + 61 patches (wine/patches/)
         │    └─ XP's explorer.exe, shell32.dll, … (extracted from the ISO)
         ├─ bridge-wm: an X11 WM + Win32 proxy windows (bridge-wm/)
         └─ fcitx5 + Mozc, tray bridge (bridge-wm/tray.py)
 ```
 
-The design documents are in Japanese:
-
-- [Architecture (architecture.md)](../../docs/architecture.md): the WM, proxy windows, IPC, tray and login screen
-- [Wine patches (patches.md)](../../docs/patches.md): the 60 patches, their order and format
-- [Decisions (dll-policy.md)](../../docs/dll-policy.md): which DLLs come from XP and what was changed in Wine, and why
-- [Development (development.md)](../../docs/development.md): building in a chroot, tests, manual installation
+The design documents are in Japanese; [docs/README.md](../../docs/README.md) lists them.
 
 ## Ground rules
 
