@@ -24,14 +24,14 @@ import dpi
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = Path.home() / '.config/win4wine/session.json'
-# The XP shell's Welcome screen uses images extracted from the XP media.
-# The ReactOS prefix comes from .local/reactos/tools (prototype) and has no
-# staging step yet.
+# The shells a session can start. The prefix is made for one of them
+# (prefix/create.py or prefix/reactos.py); its staging step runs before each
+# start. XP's Welcome screen uses images extracted from the XP media.
 SHELLS = {
     'xp': dict(marker='xp-shell.json', module='xp-explorer', command=r'C:\xp\xp-explorer.exe',
-               stage='prefix/stage.py', welcome=True),
+               stage=('prefix/stage.py',), welcome=True),
     'reactos': dict(marker='reactos-shell.json', module='ros-explorer', command=r'C:\ros\ros-explorer.exe',
-                    stage=None, welcome=False),
+                    stage=('prefix/reactos.py', 'stage'), welcome=False),
 }
 IM_VARIABLES = ('XMODIFIERS', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'SDL_IM_MODULE', 'CLUTTER_IM_MODULE')
 
@@ -410,9 +410,8 @@ class Session:
         im = self.start_input_method()
         im_restarts = deque()
         # Install only the shell family in this dedicated prefix. Runtime overrides select them.
-        if self.shell['stage']:
-            subprocess.run(['python3', str(ROOT / self.shell['stage']), str(self.prefix),
-                            '--wine', self.wine], check=True)
+        script, *command = self.shell['stage']
+        subprocess.run(['python3', str(ROOT / script), *command, str(self.prefix), '--wine', self.wine], check=True)
         if self.linux_menu:
             self.start_linux_menu()
         crashes = deque()
