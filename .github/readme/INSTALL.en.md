@@ -96,6 +96,8 @@ crisp on every output; set the DPI to the scale of the output you mostly use (14
 
 - Session logs: `~/.local/state/win4wine/` (the previous run's in `*.log.1`).
 - If the XP shell keeps crashing, the session switches to Wine's own explorer and an xterm.
+- Before 2026-10-13, `setup.sh` could fail while setting a new prefix's look (`Setting the theme failed`).
+  Update, then run `scripts/setup.sh --media ISO --theme luna` (or `classic`) again.
 - If the Welcome screen does not appear: `/var/log/lightdm/seat0-greeter.log`. When something it needs is missing, it falls back to LightDM's usual greeter.
 
 ## Uninstall

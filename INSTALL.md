@@ -95,6 +95,8 @@ Wayland のセッションでは、Linux のアプリは出力ごとの倍率（
 
 - セッションのログは `~/.local/state/win4wine/` にあります（前回の分は `*.log.1`）。
 - XP のシェルが続けて落ちると、Wine 標準の explorer と xterm に切り替わります。
+- 2026-10-13 より前の `setup.sh` は、新しい prefix の見た目の設定（`Setting the theme failed`）で失敗することがありました。
+  更新してから `scripts/setup.sh --media ISO --theme luna`（または `classic`）を実行し直してください。
 - ようこそ画面が出ないときは `/var/log/lightdm/seat0-greeter.log` を見てください。必要なものが足りないと、通常の LightDM の画面に切り替わります。
 
 ## 元に戻す
