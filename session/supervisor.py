@@ -29,9 +29,9 @@ DEFAULT_CONFIG = Path.home() / '.config/win4wine/session.json'
 # start. XP's Welcome screen uses images extracted from the XP media.
 SHELLS = {
     'xp': dict(marker='xp-shell.json', module='xp-explorer', command=r'C:\xp\xp-explorer.exe',
-               stage=('prefix/stage.py',), welcome=True),
+               stage=('prefix/stage.py',), welcome=True, folders=False),
     'reactos': dict(marker='reactos-shell.json', module='ros-explorer', command=r'C:\ros\ros-explorer.exe',
-                    stage=('prefix/reactos.py', 'stage'), welcome=False),
+                    stage=('prefix/reactos.py', 'stage'), welcome=False, folders=True),
 }
 IM_VARIABLES = ('XMODIFIERS', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'SDL_IM_MODULE', 'CLUTTER_IM_MODULE')
 
@@ -67,6 +67,9 @@ class Session:
         self.env = dict(os.environ, WINEPREFIX=str(self.prefix),
                         WIN4WINE_EXTERNAL_SHELL='1', WINEDEBUG=config.get('debug', '+timestamp,+seh,+loaddll'),
                         WINEDLLOVERRIDES=f'explorer=b;{self.shell["module"]}=n;mscoree,mshtml=;uxtheme=b')
+        if self.shell['folders']:
+            # Wine's explorer.exe hands folder windows to the shell's own explorer.
+            self.env['WIN4WINE_FOLDER_SHELL'] = self.shell['command']
         # The prefix decides its architecture; the recovery prefix takes Wine's default.
         self.env.pop('WINEARCH', None)
         # A terminal in the session runs Windows programs with "wine" in the

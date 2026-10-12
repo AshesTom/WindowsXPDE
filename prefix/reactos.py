@@ -28,7 +28,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'reactos-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 1
+VERSION = 2
 # Loaded natively by ros-explorer.exe only; Wine has builtin modules of these names.
 SHELL_DLLS = ('shell32', 'browseui', 'shdocvw', 'shlwapi', 'comctl32', 'zipfldr')
 # ReactOS-only modules (no Wine builtin of the name): ros-explorer.exe loads them by name.
@@ -145,6 +145,8 @@ class Prefix:
         # process hands the window to the running shell.
         self.reg(r'HKCR\Folder\shell\open\command', None, r'C:\ros\ros-explorer.exe "%1"')
         self.reg(r'HKCR\Folder\shell\explore\command', None, r'C:\ros\ros-explorer.exe /e,"%1"')
+        # Wine has no help viewer for Help and Support.
+        self.reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoSMHelp', 1, 'REG_DWORD')
         # Wine rewrites the system links for the prefix's locale.
         if self.lang == 'ja':
             for face in LINKED_FONTS:
@@ -153,7 +155,9 @@ class Prefix:
                              'DroidSansFallback.ttf,Droid Sans Fallback', 'REG_MULTI_SZ', view=view)
 
     def appearance(self):
-        """ReactOS's classic look, as a new ReactOS user gets it with the Classic theme."""
+        """ReactOS's classic look, as a new ReactOS user gets it with the Classic theme.
+
+        Only a new prefix gets it; the user may change these settings later."""
         helper = ROOT / '.local/bridge/theme-settings.exe'
         if not helper.is_file():
             raise SystemExit('Run bridge-wm/build.sh first: missing self-built theme settings helper')
@@ -247,8 +251,6 @@ def stage(dest, wine=None):
             prefix.wait()
         prefix.place_files()
         prefix.registrations()
-        if applied and applied[0] != str(VERSION):
-            prefix.appearance()
         current = timestamp.read_text().strip() if timestamp.is_file() else ''
         temp = version.with_suffix('.tmp')
         temp.write_text(f'{VERSION} {current}\n')
