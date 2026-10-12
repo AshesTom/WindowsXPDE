@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 64 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 65 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -133,12 +133,13 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 
 labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.md](wayland.md)）。書式は Wine のパッチと同じです。
 
-### ReactOS のシェル（0063〜0064）
+### ReactOS のシェル（0063〜0065）
 
 | 番号 | 内容 | opt-in |
 |---|---|---|
 | 0063 | explorer: `explorer.exe` で開くフォルダの窓を、外部のシェルの explorer に渡す（`WIN4WINE_FOLDER_SHELL` があるときだけ） | あり |
 | 0064 | uxtheme: テーマの余白（MARGINS）の負の値を正しく読む（ReactOS のテーマのスタートボタン。XP の Luna に負の余白は無い） | なし |
+| 0065 | user32: SwitchToThisWindow で窓を前面にもする（ReactOS のタスクバー。Wayland のセッションで戻した窓が有効にならなかった） | あり |
 
 ## 並び順の考え方
 
