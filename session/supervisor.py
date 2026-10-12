@@ -24,6 +24,15 @@ import dpi
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = Path.home() / '.config/win4wine/session.json'
+# The XP shell's Welcome screen uses images extracted from the XP media.
+# The ReactOS prefix comes from .local/reactos/tools (prototype) and has no
+# staging step yet.
+SHELLS = {
+    'xp': dict(marker='xp-shell.json', module='xp-explorer', command=r'C:\xp\xp-explorer.exe',
+               stage='prefix/stage.py', welcome=True),
+    'reactos': dict(marker='reactos-shell.json', module='ros-explorer', command=r'C:\ros\ros-explorer.exe',
+                    stage=None, welcome=False),
+}
 IM_VARIABLES = ('XMODIFIERS', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'SDL_IM_MODULE', 'CLUTTER_IM_MODULE')
 
 
@@ -31,8 +40,13 @@ class Session:
     def __init__(self, config):
         self.wine = str(Path(config['wine']).resolve(strict=True))
         self.prefix = Path(config['prefix']).resolve(strict=True)
-        if not (self.prefix / 'xp-shell.json').is_file():
-            raise SystemExit('Expected a dedicated XP prefix')
+        # The shell: XP's explorer from the user's media, or (opt-in, experimental)
+        # ReactOS's explorer in a prefix made for it.
+        self.shell = SHELLS.get(config.get('shell', 'xp'))
+        if not self.shell:
+            raise SystemExit('Unsupported shell')
+        if not (self.prefix / self.shell['marker']).is_file():
+            raise SystemExit(f'Expected a dedicated prefix with {self.shell["marker"]}')
         self.proxy = ROOT / '.local/bridge/proxy.exe'
         if not self.proxy.is_file():
             raise SystemExit('Build bridge-wm first')
@@ -52,7 +66,7 @@ class Session:
             self.ipc = Path(tempfile.mkdtemp(prefix=f'win4wine-{os.getuid()}-', dir=runtime))
         self.env = dict(os.environ, WINEPREFIX=str(self.prefix),
                         WIN4WINE_EXTERNAL_SHELL='1', WINEDEBUG=config.get('debug', '+timestamp,+seh,+loaddll'),
-                        WINEDLLOVERRIDES='explorer=b;xp-explorer=n;mscoree,mshtml=;uxtheme=b')
+                        WINEDLLOVERRIDES=f'explorer=b;{self.shell["module"]}=n;mscoree,mshtml=;uxtheme=b')
         # The prefix decides its architecture; the recovery prefix takes Wine's default.
         self.env.pop('WINEARCH', None)
         # A terminal in the session runs Windows programs with "wine" in the
@@ -98,7 +112,7 @@ class Session:
                                'reboot': config.get('reboot_command', ['systemctl', 'reboot'])}
         self.processes = []
         # XP's Welcome screen covers the shell's start and the session's end (greeter/xp-splash.py).
-        self.welcome_screen = config.get('welcome_screen', True)
+        self.welcome_screen = config.get('welcome_screen', self.shell['welcome'])
         self.welcome = None
         self.wine_envs = [self.env]
         self.logs = []
@@ -396,8 +410,9 @@ class Session:
         im = self.start_input_method()
         im_restarts = deque()
         # Install only the shell family in this dedicated prefix. Runtime overrides select them.
-        subprocess.run(['python3', str(ROOT / 'prefix/stage.py'), str(self.prefix),
-                        '--wine', self.wine], check=True)
+        if self.shell['stage']:
+            subprocess.run(['python3', str(ROOT / self.shell['stage']), str(self.prefix),
+                            '--wine', self.wine], check=True)
         if self.linux_menu:
             self.start_linux_menu()
         crashes = deque()
@@ -409,7 +424,7 @@ class Session:
             self.request.unlink(missing_ok=True)
             ipc_win = 'Z:' + str(self.ipc).replace('/', '\\')
             proxy = self.spawn([self.wine, str(self.proxy), ipc_win], 'proxy')
-            shell = self.spawn([self.wine, r'C:\xp\xp-explorer.exe'], 'xp-shell')
+            shell = self.spawn([self.wine, self.shell['command']], 'xp-shell')
             started = time.monotonic()
             ready = False
             while not self.stopping:
