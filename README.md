@@ -82,6 +82,11 @@ LightDM ─ XP のようこそ画面 (greeter/)
 
 仕組みや設計の詳しい説明は [docs/](docs/README.md) にまとめています。
 
+## 似たプロジェクト
+
+- [loss32](https://loss32.org/): Wine の上の Win32 のソフトウェアだけでデスクトップを作る Linux ディストリビューションの計画です。
+  ReactOS の部品も使います。win4wine が XP 本物のシェルを Debian の上で動かすのに対し、loss32 は自由なソフトウェアだけで作ります。
+
 ## 守っていること
 
 - Windows 由来のバイナリには手を加えません。違いは Wine とその周辺で吸収します。

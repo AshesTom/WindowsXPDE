@@ -81,6 +81,11 @@ LightDM ─ XP Welcome greeter (greeter/)
 
 The design documents are in Japanese; [docs/README.md](../../docs/README.md) lists them.
 
+## Similar projects
+
+- [loss32](https://loss32.org/): a planned Linux distribution whose desktop is made only of Win32 software on Wine,
+  with parts of ReactOS. While win4wine runs XP's own shell on Debian, loss32 is built from free software only.
+
 ## Ground rules
 
 - Binaries from Windows are never modified; differences are handled in Wine and around it.
