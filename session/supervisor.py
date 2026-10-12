@@ -70,8 +70,10 @@ class Session:
         if self.shell['folders']:
             # Wine's explorer.exe hands folder windows to the shell's own explorer.
             self.env['WIN4WINE_FOLDER_SHELL'] = self.shell['command']
-            # The proxy draws ReactOS's Alt+Tab window instead of XP's.
+            # The proxy draws ReactOS's Alt+Tab window instead of XP's, and
+            # Wine leaves ReactOS's own controls to it (Start button, dialogs).
             self.env['WIN4WINE_SWITCHER'] = 'reactos'
+            self.env['WIN4WINE_SHELL'] = 'reactos'
         # The prefix decides its architecture; the recovery prefix takes Wine's default.
         self.env.pop('WINEARCH', None)
         # A terminal in the session runs Windows programs with "wine" in the
