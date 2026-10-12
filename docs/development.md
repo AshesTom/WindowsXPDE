@@ -111,7 +111,7 @@ wlroots は `SOURCE/subprojects/wlroots` に `wayland/patches/wlroots` を当て
    registry profile の適用、XP の DLL の配置を行います。セッションの起動時にも自動で動きます。
 4. `bridge-wm/build.sh` で bridge を作り直し、セッションを起動し直します。
 
-見た目と DPI は、セッションを止めてから `prefix/display.py --theme luna|classic --menu xp|classic --dpi N` で変えます。N は XP と
+見た目と DPI は、セッションを止めてから `prefix/display.py --theme luna|classic --menu xp|classic --dpi N` で変えます（`--theme` は XP のテーマと同じく壁紙も変えます。classic はなし、luna は Bliss）。N は XP と
 同じく 96（通常）、120（大きいサイズ）、またはカスタムの 19〜480 です。セッションは同じ DPI を Linux のアプリにも渡します
 （`Xft.dpi`、fontconfig、カーソルの大きさ、192 以上では GTK の `GDK_SCALE`。`session/dpi.py`）。ようこそ画面の DPI は
 `/etc/win4wine/greeter.json` の `"dpi"` で決めます（XP でもマシン全体の設定です）。

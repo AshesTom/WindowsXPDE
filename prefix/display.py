@@ -4,6 +4,7 @@
 Restart the session afterwards."""
 import argparse
 import os
+import pwd
 from pathlib import Path
 import subprocess
 
@@ -53,4 +54,12 @@ if args.dpi:
 if args.theme:
     subprocess.run([wine, str(theme_helper), args.theme],
                    env=dict(env, WIN4WINE_EXTERNAL_SHELL='1'), check=True)
+    # The wallpaper of XP's themes: none over the classic theme's blue-grey
+    # (Windows Classic.theme), Bliss with Windows XP's (luna.theme), here the
+    # bitmap stage.py makes of it as XP does for the default user.
+    user = pwd.getpwuid(os.getuid()).pw_name
+    reg(r'HKCU\Control Panel\Desktop', 'Wallpaper',
+        '' if args.theme == 'classic' else rf'C:\users\{user}\AppData\Local\Microsoft\Wallpaper1.bmp')
+    reg(r'HKCU\Control Panel\Desktop', 'WallpaperStyle', '2')
+    reg(r'HKCU\Control Panel\Desktop', 'TileWallpaper', '0')
 print('Display settings saved. Restart the dedicated Wine session to apply.')

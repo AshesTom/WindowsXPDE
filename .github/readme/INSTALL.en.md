@@ -30,7 +30,7 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `--media PATH` | the XP ISO or Windows directory (required) |
 | `--greeter` | make the login screen XP's Welcome screen (LightDM becomes the display manager) |
 | `--no-greeter` | keep the current login screen (default); only XP's cursors are installed |
-| `--theme luna\|classic` | `luna` (default, XP-style Start menu) or `classic` (classic Start menu) |
+| `--theme luna\|classic` | `luna` (default: XP's "Windows XP" theme, the XP-style Start menu, the Bliss wallpaper) or `classic` (XP's "Windows Classic" theme, the classic Start menu, no wallpaper) |
 | `--dpi N` | the screen's DPI (XP's "DPI setting"): 96 (normal), 120 (large) or any value from 19 to 480; for the XP shell, the Linux applications in its session and the Welcome screen |
 | `--wayland` | also install the Wayland session "XP Shell (Wine, Wayland)" (builds labwc and wlroots): a scale per monitor, scales such as 125% or 150%, XP frames for Wayland applications; with `--greeter` it becomes the Welcome screen's default session. **Even more experimental than the X11 session** (tested less, with known limits; [docs/wayland.md](../../docs/wayland.md)) |
 | `--wine-install DIR` | use a Wine built on another Debian 13 machine (a copy of its `.local/wine-install`) instead of building it here |
