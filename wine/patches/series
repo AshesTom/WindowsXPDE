@@ -65,3 +65,4 @@
 0065-user32-external-switch-to-this-window.patch
 0066-user32-external-reactos-dialog-resource-names.patch
 0067-win32u-external-expose-flush.patch
+0068-win32u-external-no-selection-fade.patch
