@@ -11,6 +11,10 @@
     <!-- Wine's processes come and go; Xwayland stays for the session. -->
     <xwaylandPersistence>yes</xwaylandPersistence>
   </core>
+  <theme>
+    <font place="ActiveWindow"><size>9</size><weight>bold</weight></font>
+    <font place="InactiveWindow"><size>9</size><weight>bold</weight></font>
+  </theme>
   <!-- XP neither snaps nor tiles windows at screen edges -->
   <snapping>
     <range>0</range>

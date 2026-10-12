@@ -51,11 +51,11 @@ Linux window's frame shown active through _NET_ACTIVE_WINDOW only.
  src/ssd/ssd.c              |   15 +-
  src/view-impl-common.c     |   14 +-
  src/view.c                 |   25 +-
- src/win4wine.c             | 1805 ++++++++++++++++++++++++++++++++++++++++++++
- src/xwayland-scale.c       |  444 +++++++++++
+ src/win4wine.c             | 1842 ++++++++++++++++++++++++++++++++++++++++++++
+ src/xwayland-scale.c       |  445 +++++++++++
  src/xwayland-unmanaged.c   |   40 +-
  src/xwayland.c             |  269 +++++--
- 25 files changed, 2815 insertions(+), 96 deletions(-)
+ 25 files changed, 2853 insertions(+), 96 deletions(-)
 
 diff --git a/include/ssd.h b/include/ssd.h
 index 5cbac60..2500f57 100644
@@ -924,10 +924,10 @@ index cc5af20..92c2358 100644
  		mappable_disconnect(&view->mappable);
 diff --git a/src/win4wine.c b/src/win4wine.c
 new file mode 100644
-index 0000000..bd92a8e
+index 0000000..3f74f8e
 --- /dev/null
 +++ b/src/win4wine.c
-@@ -0,0 +1,1805 @@
+@@ -0,0 +1,1842 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#define _POSIX_C_SOURCE 200809L
 +/*
@@ -1037,7 +1037,8 @@ index 0000000..bd92a8e
 +	uint8_t randr_event;
 +	xcb_randr_output_t randr_primary;
 +	struct timespec focus_time; /* when the keyboard last went to another surface */
-+	struct view *active_frame;  /* the frame given X's focus for its window */
++	struct view *active_frame;  /* the frame named active for its window */
++	xcb_window_t x_focus;       /* the Wine window given X's focus */
 +	struct wlr_surface *focused;
 +	struct wlr_box *workareas;  /* _GTK_WORKAREAS_D0, in X space */
 +	size_t workarea_count;
@@ -1806,6 +1807,7 @@ index 0000000..bd92a8e
 +	if (!w.ipc || !data) {
 +		return;
 +	}
++	/* The frame follows at once (the proxy follows geometry.tsv later) */
 +	if (data->kind == WIN4WINE_NATIVE) {
 +		place_frame(view);
 +	}
@@ -1821,7 +1823,7 @@ index 0000000..bd92a8e
 +	return native_of_frame(view);
 +}
 +
-+/* Keep a frame around its window: the frame's X geometry from the window's */
++/* Put a frame around its window: the frame's X geometry from the window's */
 +static void
 +place_frame(struct view *view)
 +{
@@ -2002,6 +2004,8 @@ index 0000000..bd92a8e
 +	}
 +}
 +
++static void focus_wine_window(struct wlr_surface *focused);
++
 +void
 +win4wine_focus_changed(struct wlr_surface *surface)
 +{
@@ -2012,6 +2016,8 @@ index 0000000..bd92a8e
 +		w.focused = surface;
 +		clock_gettime(CLOCK_REALTIME, &w.focus_time);
 +	}
++	/* In order with the focus changes: a later idle could undo a newer one */
++	focus_wine_window(surface);
 +	win4wine_changed();
 +}
 +
@@ -2145,6 +2151,37 @@ index 0000000..bd92a8e
 +	xcb_change_property(w.x, XCB_PROP_MODE_REPLACE, w.root, w.atom_net_active_window,
 +		XCB_ATOM_WINDOW, 32, 1, &window);
 +	xcb_flush(w.x);
++}
++
++/*
++ * Wine's windows take the focus themselves (ICCCM's globally active
++ * input: WM_TAKE_FOCUS, no input hint), and Wine ignores WM_TAKE_FOCUS
++ * from the window manager for a window other than its foreground one (the
++ * time is older than the foreground's). Clicking XP's desktop then left X's
++ * focus nowhere and Wine had no keys (Win+R). Give X's focus to the Wine
++ * window with the keyboard, as bridge-wm does.
++ */
++static void
++focus_wine_window(struct wlr_surface *focused)
++{
++	xcb_window_t window = XCB_WINDOW_NONE;
++	struct view *view;
++	wl_list_for_each(view, &w.server->views, link) {
++		struct win4wine_view *data = data_of(view);
++		if (focused && view->surface == focused && view->type == LAB_XWAYLAND_VIEW
++				&& data && data->kind != WIN4WINE_NATIVE && data->kind != WIN4WINE_FRAME) {
++			window = data->id;
++			break;
++		}
++	}
++	if (window == w.x_focus) {
++		return;
++	}
++	w.x_focus = window;
++	if (window && w.x) {
++		xcb_set_input_focus(w.x, XCB_INPUT_FOCUS_POINTER_ROOT, window, XCB_CURRENT_TIME);
++		xcb_flush(w.x);
++	}
 +}
 +
 +static void
@@ -2735,10 +2772,10 @@ index 0000000..bd92a8e
 +}
 diff --git a/src/xwayland-scale.c b/src/xwayland-scale.c
 new file mode 100644
-index 0000000..bd89b2b
+index 0000000..392fd81
 --- /dev/null
 +++ b/src/xwayland-scale.c
-@@ -0,0 +1,444 @@
+@@ -0,0 +1,445 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/* win4wine: Xwayland clients at the outputs' own resolution (see xwayland-scale.h). */
 +#include <math.h>
@@ -2750,6 +2787,7 @@ index 0000000..bd89b2b
 +#include <wlr/types/wlr_scene.h>
 +#include "common/macros.h"
 +#include "common/mem.h"
++#include <wlr/util/log.h>
 +#include "labwc.h"
 +#include "xwayland-scale.h"
 +#include "xdg-output-unstable-v1-protocol.h"
