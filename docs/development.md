@@ -75,6 +75,7 @@ wlroots は `SOURCE/subprojects/wlroots` に `wayland/patches/wlroots` を当て
 | 試験 | 内容 |
 |---|---|
 | `tests/wm_integration.py` | WM 単体（Alt+Tab、フォーカス、最小化、Windows キーの受け渡し） |
+| `tests/wine_restore.py` | Win32 から最小化して元に戻した Wine の窓が、もう一度表示される（`WINE` と `WINEPREFIX` を渡します） |
 | `tests/bridge_integration.py` | WM と proxy と XP のシェル |
 | `tests/native_frames.py` | Linux のウィンドウの XP の枠（Luna とクラシック） |
 | `tests/xterm_redraw.py`, `tests/wm_latency.py` | 再描画と遅れ |
