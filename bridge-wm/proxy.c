@@ -635,7 +635,65 @@ static struct
     char state;
     HWND window, items[SWITCH_COLUMNS * SWITCH_ROWS];
     HFONT font;
+    BOOL reactos;
 } switcher;
+
+/* ReactOS's Alt+Tab window (win32ss/user/user32/controls/appswitch.c), for the
+ * ReactOS shell (WIN4WINE_SWITCHER=reactos): 48 px cells in a bordered dialog
+ * frame with an 8 px margin, the selected icon in a 2 px highlight frame, and
+ * the title centred in DEFAULT_GUI_FONT on a pushed button face. */
+#define ROS_MARGIN 8
+#define ROS_ITEM 40
+#define ROS_SPACE 48
+#define ROS_STYLE (WS_POPUP | WS_BORDER)
+#define ROS_EXSTYLE (WS_EX_TOPMOST | WS_EX_DLGMODALFRAME | WS_EX_TOOLWINDOW)
+
+static HICON switch_icon(HWND hwnd);
+
+static int ros_text_height(void)
+{
+    TEXTMETRICW tm;
+    HDC dc = GetDC(NULL);
+    GetTextMetricsW(dc, &tm);
+    ReleaseDC(NULL, dc);
+    return tm.tmHeight + 8;
+}
+
+static void ros_switch_paint(HDC dc, const RECT *rect)
+{
+    int shown = switcher.count < SWITCH_COLUMNS ? switcher.count : SWITCH_COLUMNS, i;
+    int rows = switcher.count > SWITCH_COLUMNS ? (switcher.count + SWITCH_COLUMNS - 1) / SWITCH_COLUMNS : 1;
+    RECT text;
+    WCHAR title[512] = L"";
+    HGDIOBJ old_font;
+
+    FillRect(dc, rect, GetSysColorBrush(COLOR_3DFACE));
+    for (i = 0; i < switcher.count; ++i)
+    {
+        int x = ROS_MARGIN + ROS_SPACE * (i % SWITCH_COLUMNS) + 4, y = ROS_MARGIN + ROS_SPACE * (i / SWITCH_COLUMNS) + 4;
+        if (switcher.count < SWITCH_COLUMNS) x += (SWITCH_COLUMNS - shown) * ROS_SPACE / 2;
+        if (i == switcher.selected)
+        {
+            HPEN pen = CreatePen(PS_SOLID, 1, GetSysColor(COLOR_HIGHLIGHT));
+            HGDIOBJ old_pen = SelectObject(dc, pen), old_brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            Rectangle(dc, x, y, x + ROS_ITEM, y + ROS_ITEM);
+            Rectangle(dc, x + 1, y + 1, x + ROS_ITEM - 1, y + ROS_ITEM - 1);
+            SelectObject(dc, old_pen);
+            SelectObject(dc, old_brush);
+            DeleteObject(pen);
+        }
+        DrawIconEx(dc, x + 4, y + 4, switch_icon(switcher.items[i]), 32, 32, 0, NULL, DI_NORMAL);
+    }
+    SetRect(&text, ROS_MARGIN, ROS_MARGIN + rows * ROS_SPACE, rect->right - ROS_MARGIN, rect->bottom - ROS_MARGIN);
+    DrawFrameControl(dc, &text, DFC_BUTTON, DFCS_BUTTONPUSH | DFCS_PUSHED);
+    if (switcher.selected < switcher.count)
+        GetWindowTextW(switcher.items[switcher.selected], title, ARRAYSIZE(title));
+    old_font = SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
+    SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
+    SetBkMode(dc, TRANSPARENT);
+    DrawTextW(dc, title, -1, &text, DT_CENTER | DT_VCENTER | DT_END_ELLIPSIS | DT_SINGLELINE | DT_NOPREFIX);
+    SelectObject(dc, old_font);
+}
 
 static BOOL CALLBACK switch_candidate(HWND hwnd, LPARAM param)
 {
@@ -694,6 +752,12 @@ static void switch_paint(HWND hwnd)
     HGDIOBJ old_font;
 
     GetClientRect(hwnd, &rect);
+    if (switcher.reactos)
+    {
+        ros_switch_paint(dc, &rect);
+        EndPaint(hwnd, &ps);
+        return;
+    }
     FillRect(dc, &rect, GetSysColorBrush(COLOR_3DFACE));
     DrawEdge(dc, &rect, EDGE_RAISED, BF_RECT);
     for (i = 0; i < switcher.count; ++i)
@@ -740,6 +804,26 @@ static void switch_show(void)
         SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0);
         metrics.lfCaptionFont.lfWeight = FW_BOLD;
         switcher.font = CreateFontIndirectW(&metrics.lfCaptionFont);
+    }
+    if (switcher.reactos)
+    {
+        /* Centred on the screen, as ReactOS does. */
+        int rows = switch_rows();
+        RECT frame;
+        SetRect(&frame, 0, 0, SWITCH_COLUMNS * ROS_SPACE + 2 * ROS_MARGIN,
+                rows * ROS_SPACE + 2 * ROS_MARGIN + ros_text_height());
+        OffsetRect(&frame, (GetSystemMetrics(SM_CXSCREEN) - frame.right) / 2,
+                   (GetSystemMetrics(SM_CYSCREEN) - frame.bottom) / 2);
+        AdjustWindowRectEx(&frame, ROS_STYLE, FALSE, ROS_EXSTYLE);
+        if (!switcher.window)
+            switcher.window = CreateWindowExW(ROS_EXSTYLE, L"Win4WineSwitch", L"", ROS_STYLE,
+                                              0, 0, 0, 0, NULL, NULL, GetModuleHandleW(NULL), NULL);
+        if (!switcher.window) return;
+        SetWindowPos(switcher.window, HWND_TOPMOST, frame.left, frame.top, frame.right - frame.left,
+                     frame.bottom - frame.top, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        InvalidateRect(switcher.window, NULL, FALSE);
+        UpdateWindow(switcher.window);
+        return;
     }
     if (!switcher.window)
         switcher.window = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, L"Win4WineSwitch", L"", WS_POPUP,
@@ -1077,6 +1161,11 @@ int wmain(int argc, WCHAR **argv)
     UINT_PTR layout_timer = 0;
     if (argc != 2 || wcslen(argv[1]) >= MAX_PATH) return 2;
     wcscpy(directory, argv[1]);
+    {
+        WCHAR style[16];
+        DWORD len = GetEnvironmentVariableW(L"WIN4WINE_SWITCHER", style, ARRAYSIZE(style));
+        switcher.reactos = len && len < ARRAYSIZE(style) && !wcscmp(style, L"reactos");
+    }
     shell_message = RegisterWindowMessageW(L"SHELLHOOK");
     default_icon = LoadIconW(NULL, IDI_APPLICATION);
     cls.hIcon = default_icon;
