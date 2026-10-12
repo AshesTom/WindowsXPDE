@@ -69,8 +69,16 @@ Wine 自身の管理のプロセスや復旧の経路まで XP の DLL に頼る
 
 ## Wayland
 
-X11 ではモニターごとの倍率が使えないため、Wayland の compositor（labwc の改変）を検討し、試作しました。
-結果は [wayland.md](wayland.md) にあります。
+- X11 ではモニターごとの倍率が使えないため、2 つ目のセッションとして、labwc を改変した Wayland の compositor を用意しました
+  （試験中）。比べた方式と試作の結果は [history/wayland-study.md](history/wayland-study.md) にあります。
+- 自作せず labwc を改変したのは、Xwayland の扱い（XWM）、出力、入力、Wayland のプロトコルを wlroots と labwc に任せ、
+  bridge-wm の役（XP の枠、重なり順、IPC）だけを足せば済むからです。
+- XP のシェルと Wine は Xwayland の X11 のクライアントのままにします。XP の Explorer は自分で決めた画面座標に窓を置くので、
+  位置を決められない Wayland のクライアント（winewayland.drv）では再現できません。
+- XP のシェルは出力の 1 画素ずつに表示し、compositor に拡大させません（拡大するとぼけます）。DPI は X11 のセッションと同じく
+  `LogPixels` 1 つで決めます。
+- X11 のセッションは変えません。Wine のパッチで Wayland のために足したものは、X の root の窓を読めないときだけ別の道を通ります。
+- 仕組みと残っていることは [wayland.md](wayland.md) にあります。
 
 ## 実際の XP との比べ方
 

@@ -32,6 +32,7 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `--no-greeter` | keep the current login screen (default); only XP's cursors are installed |
 | `--theme luna\|classic` | `luna` (default, XP-style Start menu) or `classic` (classic Start menu) |
 | `--dpi N` | the screen's DPI (XP's "DPI setting"): 96 (normal), 120 (large) or any value from 19 to 480; for the XP shell, the Linux applications in its session and the Welcome screen |
+| `--wayland` | also install the Wayland session "XP Shell (Wine, Wayland)" (builds labwc and wlroots): a scale per monitor, scales such as 125% or 150%, XP frames for Wayland applications; with `--greeter` it becomes the Welcome screen's default session. Experimental |
 | `--wine-install DIR` | use a Wine built on another Debian 13 machine (a copy of its `.local/wine-install`) instead of building it here |
 | `--jobs N` | parallel jobs for the Wine build (default: the number of CPUs) |
 
@@ -47,13 +48,15 @@ If it fails, just run it again: finished steps are skipped. Everything it builds
 6. Creates the XP prefix (`.local/prefix`).
 7. Writes `~/.config/win4wine/session.json` and registers the session "XP Shell (Wine, X11)".
 8. With `--greeter`, installs XP's Welcome screen.
+9. With `--wayland`, builds labwc and wlroots with their patches (`.local/labwc-install`; log in `.local/labwc-build.log`)
+   and registers the session "XP Shell (Wine, Wayland)" too.
 
 ## 3. Log in
 
 Restart the display manager (or reboot).
 
 - With `--greeter`: choose your user on XP's Welcome screen and type the password.
-- Otherwise: choose the session "**XP Shell (Wine, X11)**" on the login screen.
+- Otherwise: choose the session "**XP Shell (Wine, X11)**" (with `--wayland`, also "**XP Shell (Wine, Wayland)**") on the login screen.
 
 ## Usage
 
@@ -78,11 +81,16 @@ Restart the display manager (or reboot).
 | `welcome_screen` | `true` | show XP's screens after login and while logging off |
 | `cursor_theme` | `win4wine-xp` | cursor theme; `null` for none |
 | `shutdown_command`, `reboot_command` | `systemctl poweroff` / `reboot` | commands run by Turn Off Computer |
+| `outputs` | (none) | the Wayland session's settings per output, e.g. `{"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}` (`mode` too; `wlr-randr` lists the names) |
+| `primary` | the leftmost output | the output the Wayland session makes Win32's primary monitor; XP's desktop and taskbar are on it |
 
 To change the look later, stop the session and run `scripts/setup.sh --media ISO --theme classic` (or `luna`).
 To change the DPI (the size of text and screen elements), run `scripts/setup.sh --media ISO --dpi 120` and log in again.
 As on XP, text and metrics grow while icons stay 32×32. Linux applications get the same DPI for their text (GTK also doubles
 its widgets from 192).
+
+In the Wayland session Linux applications draw at each output's scale (`scale` in `outputs`) and the XP shell at its DPI,
+crisp on every output; set the DPI to the scale of the output you mostly use (144 for 1.5). See [docs/wayland.md](../../docs/wayland.md) (Japanese).
 
 ## Troubleshooting
 
@@ -95,6 +103,7 @@ its widgets from 192).
 ```sh
 greeter/install.sh --remove                     # stop using the Welcome screen (back to LightDM's previous greeter)
 sudo rm /usr/share/xsessions/xp-shell.desktop /usr/local/bin/xp-shell-session   # unregister the session
+sudo rm /usr/share/wayland-sessions/xp-shell-wayland.desktop /usr/local/bin/xp-shell-wayland-session   # and the Wayland one
 python3 session/linux_apps.py .local/prefix --wine .local/wine-install/bin/wine --remove   # remove the Start menu entries it made
 ```
 

@@ -41,6 +41,8 @@ Microsoft のファイルは同梱していません。お手元の XP の ISO �
 - **XP のキー操作**: Windows キー、Ctrl+Esc、Win+R、Win+E が使えます。
 - **画面の拡大（DPI）**: XP と同じ「DPI 設定」で、文字や部品を大きくできます（96・120・144 など）。
 - **落ちても戻れる**: XP のシェルが繰り返し落ちると、Wine 標準の explorer と xterm に切り替わります。
+- **Wayland のセッション（任意・試験中）**: X11 のウィンドウマネージャーの代わりに、パッチを当てた labwc で動かすセッションです。
+  モニターごとの倍率や 125%・150% などの倍率が使え、XP のシェルはぼけずに描かれます。Wayland のアプリにも XP の枠が付きます。
 
 ## 試してみる
 
@@ -71,9 +73,10 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 ```text
 LightDM ─ XP のようこそ画面 (greeter/)
    └─ XP Shell セッション (session/supervisor.py)
-        ├─ Wine 11.0 + 61 本のパッチ (wine/patches/)
+        ├─ Wine 11.0 + 62 本のパッチ (wine/patches/)
         │    └─ XP の explorer.exe, shell32.dll, …（ISO から取り出したもの）
         ├─ bridge-wm: X11 のウィンドウマネージャー + Win32 の代理ウィンドウ (bridge-wm/)
+        │    （Wayland のセッションでは、ウィンドウマネージャーの代わりにパッチを当てた labwc。wayland/）
         └─ fcitx5 + Mozc, トレイの仲介 (bridge-wm/tray.py)
 ```
 
@@ -88,4 +91,5 @@ LightDM ─ XP のようこそ画面 (greeter/)
 ## ライセンス
 
 [LGPL-2.1-or-later](LICENSE)（Wine と同じ）です。対象はこのリポジトリのコードとパッチだけです。
+ただし `wayland/patches/labwc/` は labwc と同じ GPL-2.0-only、`wayland/patches/wlroots/` は wlroots と同じ MIT です。
 Windows XP のファイルと、スクリーンショットに写っている XP の画面の著作権は Microsoft にあります。

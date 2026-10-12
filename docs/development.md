@@ -8,6 +8,7 @@
 |---|---|
 | `wine/` | 基にする Wine（`upstream.env`）、パッチ（`patches/` と `series`）、ビルド（`build.sh`）、パッチの適用（`patch-state.py`） |
 | `bridge-wm/` | X11 の WM（`wm.py`）、Win32 の代理（`proxy.c`）、トレイの仲介（`tray.py`）、調査用の道具（`inspect.c`） |
+| `wayland/` | Wayland のセッション: labwc と wlroots の版（`upstream.env`）、パッチ（`patches/`）、ビルド（`build.sh`）、labwc の設定（`labwc/`）、起動（`session.sh`） |
 | `session/` | セッションの起動と見張り（`supervisor.py`）、Linux のアプリのスタートメニュー（`linux_apps.py`）、セッションの登録 |
 | `prefix/` | prefix の作成（`create.py`）、更新（`stage.py`）、見た目と DPI（`display.py`）、レジストリの設定（registry profile） |
 | `extract/` | ISO から必要なファイルだけを取り出す（`extract.py`） |
@@ -52,12 +53,19 @@ export DISPLAY=:95 WINE=/work/.local/wine-install/bin/wine
 - パッチを変えたら、**新しいソースとビルドディレクトリで configure から**ビルドして確かめてください。使い回したビルド
   ディレクトリでは古いオブジェクトが残り、漏れ（ヘッダーの登録など）に気づけません。
 - `extract.py` と `create.py` は、出力先がすでにあると止まります。やり直すときは別の名前で作ってください。
+- `wayland/build.sh` は labwc を取得し、wlroots と libsfdo を subproject として取得してパッチを当て、静的に組み込みます
+  （`LABWC_SOURCE`、`LABWC_BUILD`、`LABWC_INSTALL`、`JOBS`）。chroot には `scripts/setup.sh` の `--wayland` のパッケージが
+  要ります。入れ子で試すときは、chroot の Xvfb の上で `WLR_BACKENDS=x11 WLR_X11_OUTPUTS=2 WLR_RENDERER=pixman` として
+  `wayland/session.sh LABWC --config CONFIG` を動かします（出力の名前は `X11-1`、`X11-2`）。
 
 ## パッチ
 
 ```sh
 python3 wine/patch-state.py SOURCE wine/patches --apply   # 未改変の Wine 11.0 に全部当たるか
 ```
+
+labwc と wlroots のパッチも同じ道具で確かめられます（`wine/patch-state.py SOURCE wayland/patches/labwc --apply`。
+wlroots は `SOURCE/subprojects/wlroots` に `wayland/patches/wlroots` を当てます）。
 
 一覧、並び、書式、opt-in の判定は [patches.md](patches.md) にあります。`.local/wine-upstream` を直接変えたものを成果物にせず、
 必ずパッチにしてください。
@@ -70,6 +78,7 @@ python3 wine/patch-state.py SOURCE wine/patches --apply   # 未改変の Wine 11
 | `tests/bridge_integration.py` | WM と proxy と XP のシェル |
 | `tests/native_frames.py` | Linux のウィンドウの XP の枠（Luna とクラシック） |
 | `tests/xterm_redraw.py`, `tests/wm_latency.py` | 再描画と遅れ |
+| `tests/wayland_compositor.py` | Wayland のセッションの labwc を Wine なしで（入れ子、倍率 1.5）: X の空間、作業領域、IPC、枠の対応、重なり順、最大化、最前面。`DISPLAY`（Xvfb）と `LABWC` を渡します |
 | `tests/tray_host.py` | トレイの仲介（StatusNotifierItem と XEmbed） |
 | `tests/linux_apps.py` | Linux のアプリのスタートメニュー |
 | `tests/recovery_integration.py CONFIG.json` | シェルが落ちたときの切り替え |
@@ -84,6 +93,7 @@ python3 wine/patch-state.py SOURCE wine/patches --apply   # 未改変の Wine 11
 
 ```sh
 ./session/install.sh                         # /usr/local/bin/xp-shell-session と xsessions の登録
+./session/install.sh --wayland .local/labwc-install/bin/labwc   # 任意: Wayland のセッションも（labwc は wayland/build.sh で）
 ./greeter/install.sh /absolute/path/assets   # 任意: ようこそ画面
 ```
 

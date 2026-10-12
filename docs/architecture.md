@@ -159,3 +159,13 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 - supervisor は同じ値を Linux のアプリに渡します（`session/dpi.py`）。`Xft.dpi`、fontconfig の dpi、`XCURSOR_SIZE`、
   192 以上では GTK の `GDK_SCALE` も設定します。
 - ようこそ画面の DPI は `/etc/win4wine/greeter.json` の `dpi` で決めます（XP でもマシン全体の設定です）。
+
+## Wayland のセッション（`wayland/`）
+
+- `wayland/session.sh` が IPC のディレクトリを作り（`WIN4WINE_IPC`）、パッチを当てた labwc を起動して、その中で supervisor を
+  動かします（labwc の `-S`。supervisor が終わると labwc も終わります）。
+- labwc が WM の役を持ち、IPC のファイルと proxy.exe は X11 のセッションと同じです。supervisor は WM を起動せず、`wlr-randr` で
+  出力の倍率と位置を設定し、主モニターの名前を IPC の `primary` に書きます。
+- Wine と XP のシェルは Xwayland の X11 のクライアントのままです。labwc は Xwayland に出力を実際の画素で見せるので、
+  DPI で描いた XP のシェルは倍率 1.5 の出力でも 1 画素ずつ表示されます。Wayland のアプリは出力ごとの倍率で描きます。
+- 詳しくは [wayland.md](wayland.md) にあります。

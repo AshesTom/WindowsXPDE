@@ -55,6 +55,8 @@ No Microsoft files are included. Only the files that are needed are extracted lo
 - **XP Welcome screen**: an optional LightDM greeter that shows XP's Welcome and log-off screens.
 - **XP's keys**: the Windows key, Ctrl+Esc, Win+R and Win+E.
 - **Recovery**: if the XP shell keeps crashing, the session falls back to Wine's own explorer and an xterm.
+- **Wayland session (optional, experimental)**: a patched labwc instead of the X11 WM, with a scale per monitor and
+  scales such as 125% or 150%; the XP shell stays crisp, and Wayland applications get XP's frames too.
 
 ## Caution
 
@@ -70,9 +72,10 @@ No Microsoft files are included. Only the files that are needed are extracted lo
 ```text
 LightDM ─ XP Welcome greeter (greeter/)
    └─ XP Shell session (session/supervisor.py)
-        ├─ Wine 11.0 + 61 patches (wine/patches/)
+        ├─ Wine 11.0 + 62 patches (wine/patches/)
         │    └─ XP's explorer.exe, shell32.dll, … (extracted from the ISO)
         ├─ bridge-wm: an X11 WM + Win32 proxy windows (bridge-wm/)
+        │    (Wayland session: a patched labwc instead of the WM, wayland/)
         └─ fcitx5 + Mozc, tray bridge (bridge-wm/tray.py)
 ```
 
@@ -86,5 +89,6 @@ The design documents are in Japanese; [docs/README.md](../../docs/README.md) lis
 
 ## License
 
-[LGPL-2.1-or-later](../../LICENSE), the same as Wine. It covers only the code and patches in this repository.
+[LGPL-2.1-or-later](../../LICENSE), the same as Wine. It covers only the code and patches in this repository,
+except `wayland/patches/labwc/` (GPL-2.0-only, as labwc) and `wayland/patches/wlroots/` (MIT, as wlroots).
 The Windows XP files, and the XP screens in the screenshot, are copyrighted by Microsoft.
