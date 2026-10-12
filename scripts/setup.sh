@@ -240,14 +240,14 @@ if [[ $shell == xp ]]; then
             python3 "$root/prefix/display.py" --theme "$theme" --menu "$([[ $theme == luna ]] && echo xp || echo classic)" \
             >> "$local/prefix.log" 2>&1 ||
             { tail -20 "$local/prefix.log" >&2; printf 'Setting the theme failed; see .local/prefix.log\n' >&2; exit 1; }
-        "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
+        WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
         rm -f "$prefix/.theme-pending"
         printf 'Theme: %s\n' "$theme"
     fi
     if [[ -n $dpi ]]; then
         WINEPREFIX=$prefix WINE=$wine python3 "$root/prefix/display.py" --dpi "$dpi" >> "$local/prefix.log" 2>&1 ||
             { tail -20 "$local/prefix.log" >&2; printf 'Setting the DPI failed; see .local/prefix.log\n' >&2; exit 1; }
-        "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
+        WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
         printf 'DPI: %s\n' "$dpi"
     fi
 else
@@ -280,7 +280,7 @@ else
     if [[ -n $dpi ]]; then
         WINEPREFIX=$prefix WINE=$wine python3 "$root/prefix/display.py" --dpi "$dpi" >> "$local/prefix-reactos.log" 2>&1 ||
             { tail -20 "$local/prefix-reactos.log" >&2; printf 'Setting the DPI failed; see .local/prefix-reactos.log\n' >&2; exit 1; }
-        "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
+        WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
         printf 'DPI: %s\n' "$dpi"
     fi
 fi
