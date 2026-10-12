@@ -36,7 +36,7 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `--wine-install DIR` | 別の Debian 13 マシンでビルドした Wine（その `.local/wine-install` を写したもの）を使い、ここではビルドしません |
 | `--jobs N` | Wine のビルドの並列数です（既定は CPU の数） |
 | `--shell reactos` | XP のシェルの代わりに ReactOS のシェルを入れます（`--media` は要りません。下の「ReactOS のシェル」） |
-| `--lang ja\|en` | ReactOS のシェルの言語です（既定は今のロケールが日本語なら `ja`、ほかは `en`） |
+| `--lang ja\|en` | ReactOS のシェルの言語です（既定は今のロケールが日本語なら `ja`、ほかは `en`）。作った prefix はその言語のままなので、変えるときは `.local/prefix-reactos` を移してから実行します |
 
 途中で失敗しても、そのまま実行し直せば、済んだ段階は飛ばします。ビルドしたものはすべて、このチェックアウトの `.local/` に入ります。
 

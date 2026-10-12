@@ -39,6 +39,8 @@ SHELL_DLLS = ('shell32', 'browseui', 'shdocvw', 'shlwapi', 'comctl32', 'zipfldr'
 EXTRA_DLLS = ('msgina',)
 SXS = 'x86_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
+# The code pages Wine records for each language (locale_current)
+CODEPAGES = {'ja': '932,932', 'en': '1252,437'}
 # ReactOS's visual styles: directory and file, color and size names (their COLORNAMES and SIZENAMES).
 THEMES = {'lautus': ('Lautus', 'Normal Color', 'Normal Size'), 'lunar': ('Lunar', 'ReactOS', 'Normal Size'),
           'mizu': ('Mizu', 'Normal Color', 'Normal Size')}
@@ -269,6 +271,39 @@ def create(assets, dest, home, wine, lang, theme='classic'):
     print(f'Prefix ready: {dest}')
 
 
+def registry_values(path, key):
+    """The values of KEY (as a .reg section names it) in a prefix's registry file."""
+    values, section = {}, False
+    try:
+        lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        if line.startswith('['):
+            section = line.startswith(f'[{key}]')
+        elif section and line.startswith('"') and '"=' in line:
+            name, value = line[1:].split('"=', 1)
+            values[name] = value
+    return values
+
+
+def locale_current(dest, lang):
+    """Whether Wine's fonts are still set up for the prefix's language.
+
+    Wine rewrites the font links (Tahoma's among them) when the prefix starts
+    under other code pages, its record of which is HKCU\\Software\\Wine\\Fonts
+    "Codepages". The next start in the prefix's own locale rewrites them again
+    to Wine's, so the links themselves are checked too."""
+    fonts = registry_values(dest / 'user.reg', r'Software\\Wine\\Fonts')
+    if fonts.get('Codepages') != f'"{CODEPAGES[lang]}"':
+        return False
+    if lang == 'ja':
+        links = registry_values(dest / 'system.reg',
+                                r'Software\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink')
+        return all('DroidSansFallback' in links.get(face, '') for face in LINKED_FONTS)
+    return True
+
+
 def stage(dest, wine=None):
     config = json.loads((dest / MARKER).read_text())
     prefix = Prefix(dest, wine or config['wine'], config.get('lang', 'en'))
@@ -278,7 +313,8 @@ def stage(dest, wine=None):
     current = timestamp.read_text().strip() if timestamp.is_file() else ''
     wine_current = inf.is_file() and current == str(int(inf.stat().st_mtime))
     applied = version.read_text().split() if version.is_file() else []
-    if wine_current and applied == [str(VERSION), current]:
+    lang = config.get('lang', 'en')
+    if wine_current and applied == [str(VERSION), current] and locale_current(dest, lang):
         # Nothing changed, but a first wineboot or an update may have replaced files.
         prefix.place_files()
         return

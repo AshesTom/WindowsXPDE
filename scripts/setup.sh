@@ -12,8 +12,9 @@
 #                  It is registered as its own session, "ReactOS Shell (Wine, X11)",
 #                  beside the XP shell's if that is set up too
 #   --lang L       ja or en: the language of the ReactOS shell and its session
-#                  (default: ja when the current locale is Japanese, else en);
-#                  with --greeter, LightDM shows ReactOS's logon screen instead
+#                  (default: ja when the current locale is Japanese, else en;
+#                  an existing prefix keeps its language: move it away to change
+#                  it); with --greeter, LightDM shows ReactOS's logon screen instead
 #                  of XP's Welcome screen
 #   --greeter      also make LightDM show XP's Welcome screen (greeter/), with XP's
 #                  cursors; LightDM becomes the display manager
@@ -76,8 +77,22 @@ if [[ $shell == reactos ]]; then
     [[ $theme_given == yes ]] || theme=classic
     [[ $theme =~ ^(classic|lautus|lunar|mizu)$ ]] ||
         { printf -- '--theme for the ReactOS shell is classic, lautus, lunar or mizu\n' >&2; exit 2; }
+    # An existing prefix keeps the language it was made in.
+    made=
+    if [[ -f $local/prefix-reactos/reactos-shell.json ]]; then
+        made=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("lang", "en"))' \
+            "$local/prefix-reactos/reactos-shell.json")
+    fi
+    if [[ -n $made && -n $lang && $lang != "$made" ]]; then
+        printf '%s is in %s; move it away to make one in %s\n' "$local/prefix-reactos" "$made" "$lang" >&2
+        exit 2
+    fi
     if [[ -z $lang ]]; then
-        [[ ${LANG:-} == ja* ]] && lang=ja || lang=en
+        if [[ -n $made ]]; then
+            lang=$made
+        else
+            [[ ${LANG:-} == ja* ]] && lang=ja || lang=en
+        fi
     fi
     [[ $lang == ja || $lang == en ]] || { printf -- '--lang is ja or en\n' >&2; exit 2; }
 else
@@ -264,7 +279,24 @@ fi
 
 step 'Session'
 config=${XDG_CONFIG_HOME:-$HOME/.config}/win4wine/$([[ $shell == xp ]] && echo session.json || echo reactos-session.json)
-if [[ -f $config ]]; then
+if [[ -f $config && $shell == reactos ]]; then
+    # Kept, with the language of the prefix (a new prefix may be in another one)
+    python3 - "$config" "$locale" <<'EOF'
+import json, sys
+config, locale = sys.argv[1:]
+settings = json.load(open(config))
+if settings.get('locale') != locale:
+    settings['locale'] = locale
+    if locale.startswith('ja'):
+        settings['input_method'] = 'fcitx5'
+    else:
+        settings.pop('input_method', None)
+    open(config, 'w').write(json.dumps(settings, indent=2) + '\n')
+    print(f'Updated {config}: locale {locale}')
+else:
+    print(f'Keeping {config}')
+EOF
+elif [[ -f $config ]]; then
     printf 'Keeping %s\n' "$config"
 else
     mkdir -p "$(dirname "$config")"
