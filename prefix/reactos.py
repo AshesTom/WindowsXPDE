@@ -32,7 +32,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'reactos-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 3
+VERSION = 4
 # Loaded natively by ros-explorer.exe only; Wine has builtin modules of these names.
 SHELL_DLLS = ('shell32', 'browseui', 'shdocvw', 'shlwapi', 'comctl32', 'zipfldr')
 # ReactOS-only modules (no Wine builtin of the name): ros-explorer.exe loads them by name.
@@ -71,6 +71,11 @@ FONTS = (('CaptionFont', 700), ('SmCaptionFont', 400), ('MenuFont', 400), ('Stat
 LINKED_FONTS = ('Tahoma', 'MS Shell Dlg', 'MS Shell Dlg 2', 'Microsoft Sans Serif', 'Segoe UI', 'MS UI Gothic')
 # Wine's own desktop items that ReactOS's desktop does not have: Internet
 # Explorer (Wine's is not set up in this prefix) and the Unix root folder.
+# The Start menu folders that ReactOS names in the user's language (userenv's
+# IDS_STARTUP, shell32's IDS_ADMINTOOLS) and Wine in English: Wine's name, which
+# is also the user's value in Shell Folders, and the common folder's value.
+MENU_FOLDERS = (('StartUp', 'Common StartUp'), ('Administrative Tools', 'Common Administrative Tools'))
+MENU_FOLDER_NAMES = {'ja': ('スタートアップ', '管理ツール')}
 HIDDEN_DESKTOP_ITEMS = ('{871C5380-42A0-1069-A2EA-08002B30309D}', '{9D20AAE8-0625-44B0-9CA7-71889C2254D9}')
 
 
@@ -160,12 +165,35 @@ class Prefix:
             self.reg('HKCR\\' + extension, None, 'exefile')
         # Wine has no help viewer for Help and Support.
         self.reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoSMHelp', 1, 'REG_DWORD')
+        self.menu_folders()
         # Wine rewrites the system links for the prefix's locale.
         if self.lang == 'ja':
             for face in LINKED_FONTS:
                 for view in (32, 64):
                     self.reg(r'HKLM\Software\Microsoft\Windows NT\CurrentVersion\FontLink\SystemLink', face,
                              'DroidSansFallback.ttf,Droid Sans Fallback', 'REG_MULTI_SZ', view=view)
+
+    def menu_folders(self):
+        """Give the Start menu folders ReactOS's names in the prefix's language.
+
+        Wine reads their paths from User Shell Folders, so it keeps using them."""
+        names = MENU_FOLDER_NAMES.get(self.lang)
+        if not names:
+            return
+        user = pwd.getpwuid(os.getuid()).pw_name
+        roots = ((f'users/{user}/AppData/Roaming', r'%USERPROFILE%\AppData\Roaming', 'HKCU', False),
+                 ('ProgramData', '%ProgramData%', 'HKLM', True))
+        for (english, common), name in zip(MENU_FOLDERS, names):
+            for root, variable, hive, is_common in roots:
+                programs = self.path / 'drive_c' / root / 'Microsoft/Windows/Start Menu/Programs'
+                if (programs / english).is_dir() and not (programs / name).exists():
+                    (programs / english).rename(programs / name)
+                relative = '\\Microsoft\\Windows\\Start Menu\\Programs\\' + name
+                key = hive + r'\Software\Microsoft\Windows\CurrentVersion\Explorer'
+                value_name = common if is_common else english
+                self.reg(key + r'\User Shell Folders', value_name, variable + relative, 'REG_EXPAND_SZ')
+                self.reg(key + r'\Shell Folders', value_name,
+                         'C:\\' + root.replace('/', '\\') + relative)
 
     def theme(self, name):
         """Turn visual styles off (classic) or apply one of ReactOS's."""
