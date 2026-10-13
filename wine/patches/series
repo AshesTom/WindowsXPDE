@@ -68,3 +68,4 @@
 0068-win32u-external-no-selection-fade.patch
 0069-winex11-external-on-the-spot-spot.patch
 0070-imm32-external-stale-ime-ui-window.patch
+0071-win32u-external-task-list-key-toggles.patch
