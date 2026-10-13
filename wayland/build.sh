@@ -19,12 +19,20 @@ fetch "$src" "$LABWC_URL" "$LABWC_TAG" "$LABWC_COMMIT"
 fetch "$src/subprojects/wlroots" "$WLROOTS_URL" "$WLROOTS_TAG" "$WLROOTS_COMMIT"
 fetch "$src/subprojects/libsfdo" "$LIBSFDO_URL" "$LIBSFDO_TAG" "$LIBSFDO_COMMIT"
 echo '>>> Patching'
-# This checkout's own sources may be returned to upstream for a changed
-# series; a source given with LABWC_SOURCE keeps its edits.
-reset=(--reset)
-[[ -z ${LABWC_SOURCE:-} ]] || reset=()
-python3 "$root/wine/patch-state.py" "$src" "$root/wayland/patches/labwc" --apply "${reset[@]}"
-python3 "$root/wine/patch-state.py" "$src/subprojects/wlroots" "$root/wayland/patches/wlroots" --apply "${reset[@]}"
+# Like wine/build.sh: this checkout's own sources go back to upstream when
+# they were patched with another series; LABWC_SOURCE keeps its edits.
+patch() {  # patch SOURCE PATCHES
+    local patches
+    patches=$(python3 "$root/wine/patch-state.py" --digest "$2")
+    if [[ -z ${LABWC_SOURCE:-} && $(cat "$1/.git/win4wine-patches" 2>/dev/null) != "$patches" ]]; then
+        git -C "$1" reset -q --hard
+        git -C "$1" clean -q -f -d  # not the subprojects' own repositories
+    fi
+    python3 "$root/wine/patch-state.py" "$1" "$2" --apply
+    [[ -n ${LABWC_SOURCE:-} ]] || echo "$patches" > "$1/.git/win4wine-patches"
+}
+patch "$src" "$root/wayland/patches/labwc"
+patch "$src/subprojects/wlroots" "$root/wayland/patches/wlroots"
 if [[ ! -f $build/build.ninja ]]; then
     echo '>>> Configuring'
     meson setup "$build" "$src" --prefix="$install" --buildtype=release \

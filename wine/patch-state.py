@@ -75,20 +75,11 @@ def digest(directories):
     return hasher.hexdigest()
 
 
-def reset(source):
-    """Return a source tree to its checked-out upstream commit."""
-    for command in (["reset", "-q", "--hard"], ["clean", "-q", "-f", "-d"]):
-        subprocess.run(["git", "-C", str(source), *command], check=True)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, nargs="?")
     parser.add_argument("patches", type=Path, nargs="?")
     parser.add_argument("--apply", action="store_true")
-    parser.add_argument("--reset", action="store_true",
-                        help="if the series does not apply (an earlier series with other patches), "
-                             "return the source to its upstream commit and apply the whole series")
     parser.add_argument("--digest", type=Path, nargs="+", metavar="PATCHES",
                         help="print a digest of these patch directories and exit")
     args = parser.parse_args()
@@ -98,15 +89,8 @@ def main():
     if not args.source or not args.patches:
         parser.error("give the source and the patch directory")
     try:
-        try:
-            missing = ensure_series(args.source, args.patches, args.apply)
-        except RuntimeError as error:
-            if not (args.apply and args.reset):
-                raise
-            print(f"The source has other patches ({error}); applying the series to its upstream commit")
-            reset(args.source)
-            missing = ensure_series(args.source, args.patches, args.apply)
-    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        missing = ensure_series(args.source, args.patches, args.apply)
+    except (OSError, RuntimeError) as error:
         parser.exit(1, f"Patch series validation failed: {error}\n")
     for name in missing:
         print(f"{'Applied' if args.apply else 'Missing'} {name}")
