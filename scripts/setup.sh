@@ -166,16 +166,21 @@ if [[ $greeter == yes && $(cat /etc/X11/default-display-manager 2>/dev/null) != 
     sudo systemctl enable --force lightdm.service
 fi
 
-locale=ja_JP.UTF-8
-[[ $shell == xp || $lang == ja ]] || locale=en_US.UTF-8
-step "Locale $locale"
-if ! locale -a | grep -qix "${locale%.UTF-8}.utf8"; then
-    sudo sed -i "s/^# *\\($locale UTF-8\\)/\\1/" /etc/locale.gen
-    grep -q "^$locale UTF-8" /etc/locale.gen || echo "$locale UTF-8" | sudo tee -a /etc/locale.gen >/dev/null
-    sudo locale-gen
-else
-    printf '%s exists\n' "$locale"
-fi
+# The Unix locale of the session and its Wine prefix, in the shell's language:
+# for the XP shell that of its media (Japanese or English XP), for the
+# ReactOS shell --lang.
+make_locale() {
+    locale=ja_JP.UTF-8
+    [[ $lang == ja ]] || locale=en_US.UTF-8
+    step "Locale $locale"
+    if ! locale -a | grep -qix "${locale%.UTF-8}.utf8"; then
+        sudo sed -i "s/^# *\\($locale UTF-8\\)/\\1/" /etc/locale.gen
+        grep -q "^$locale UTF-8" /etc/locale.gen || echo "$locale UTF-8" | sudo tee -a /etc/locale.gen >/dev/null
+        sudo locale-gen
+    else
+        printf '%s exists\n' "$locale"
+    fi
+}
 
 step 'Wine'
 wine=$local/wine-install/bin/wine
@@ -230,6 +235,9 @@ if [[ $shell == xp ]]; then
         mkdir -p "$local/tmp"
         TMPDIR=$local/tmp python3 "$root/extract/extract.py" "$media" "$assets"
     fi
+    lang=$(python3 "$root/extract/media.py" "$assets")
+    printf 'Windows XP in %s\n' "$([[ $lang == ja ]] && echo Japanese || echo English)"
+    make_locale
 
     step 'XP prefix'
     prefix=$local/prefix
@@ -270,6 +278,7 @@ else
         mkdir -p "$local/tmp"
         TMPDIR=$local/tmp python3 "$root/extract/reactos.py" "$assets" --cache "$local/dl"
     fi
+    make_locale
 
     step 'ReactOS shell prefix'
     prefix=$local/prefix-reactos
@@ -297,7 +306,7 @@ fi
 
 step 'Session'
 config=${XDG_CONFIG_HOME:-$HOME/.config}/win4wine/$([[ $shell == xp ]] && echo session.json || echo reactos-session.json)
-if [[ -f $config && $shell == reactos ]]; then
+if [[ -f $config ]]; then
     # Kept, with the language of the prefix (a new prefix may be in another one)
     python3 - "$config" "$locale" <<'EOF'
 import json, sys
@@ -314,8 +323,6 @@ if settings.get('locale') != locale:
 else:
     print(f'Keeping {config}')
 EOF
-elif [[ -f $config ]]; then
-    printf 'Keeping %s\n' "$config"
 else
     mkdir -p "$(dirname "$config")"
     python3 - "$config" "$wine" "$prefix" "$shell" "$locale" <<'EOF'
