@@ -536,9 +536,16 @@ static void snapshot(void)
         c->hidden = hidden;
         if (hidden && !IsIconic(c->hwnd)) ShowWindow(c->hwnd, SW_SHOWMINNOACTIVE);
         else if (!hidden && IsIconic(c->hwnd)) ShowWindow(c->hwnd, SW_SHOWNOACTIVATE);
-        if (active && !c->active)
+        if (active != c->active)
         {
-            SetForegroundWindow(c->hwnd);
+            /* The frame looks active while its client has the X focus. Win32
+             * activation cannot always follow: like Windows, Wine refuses
+             * SetForegroundWindow to a process that did not get the last
+             * input, and the input goes to the native client, not to this
+             * process. So the frame's caption is set directly, both ways;
+             * it would otherwise keep the look of its last real activation. */
+            if (active) SetForegroundWindow(c->hwnd);
+            SendMessageW(c->hwnd, WM_NCACTIVATE, active, 0);
         }
         c->active = active;
     }

@@ -20,7 +20,10 @@ synthetic-icon probes on the user's XP:
   DPI; the theme's 10 points would be 17), has the theme's single text
   shadow, one pixel right and down at every DPI;
 - the caption image covers the whole SM_CYCAPTION height, without a row of
-  window colour above the client.
+  window colour above the client;
+- the caption is drawn active or inactive as WM_NCACTIVATE last set it, as
+  the classic caption is, also for a window that is not the foreground
+  window (bridge-wm's frames of Linux windows set it from the X focus).
 Wine before: the opted-in shell's windows had classic frames.
 Change: uxtheme exports Win4WineDrawNonClient and Win4WineNcHitTest. user32
 keeps Wine's geometry and calls them after its own painting (WM_NCPAINT,
@@ -39,10 +42,10 @@ Old patches: 0014 (except metric.c), 0022, 0027, 0028, 0032, 0034, 0062, 0065.
  dlls/user32/nonclient.c   |   8 ++
  dlls/uxtheme/draw.c       |  22 ++++
  dlls/uxtheme/uxtheme.spec |   3 +
- dlls/uxtheme/window.c     | 275 ++++++++++++++++++++++++++++++++++++++++++++++
- dlls/win32u/defwnd.c      |  25 ++++-
+ dlls/uxtheme/window.c     | 284 ++++++++++++++++++++++++++++++++++++++++++++++
+ dlls/win32u/defwnd.c      |  25 +++-
  include/winuser.h         |   4 +
- 7 files changed, 401 insertions(+), 3 deletions(-)
+ 7 files changed, 410 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/user32/defwnd.c b/dlls/user32/defwnd.c
 index 79192d4..2b30c16 100644
@@ -231,10 +234,10 @@ index 60a258d..deb1bff 100644
 +@ stdcall Win4WineDrawNonClient(ptr ptr)
 +@ stdcall Win4WineNcHitTest(ptr long long)
 diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
-index d059a85..0c38c87 100644
+index d059a85..15af1cd 100644
 --- a/dlls/uxtheme/window.c
 +++ b/dlls/uxtheme/window.c
-@@ -26,6 +26,20 @@
+@@ -26,6 +26,29 @@
  #include "winuser.h"
  #include "uxthemedll.h"
  #include "vssym32.h"
@@ -242,12 +245,21 @@ index d059a85..0c38c87 100644
 +
 +static void themed_caption_geometry(HWND hwnd, HTHEME theme, RECT *caption, RECT buttons[3]);
 +
++/* Whether the caption is drawn active: as WM_NCACTIVATE last set it, as for
++ * the classic caption (DefWindowProc's WM_ISACTIVEICON reports that state).
++ * A window may look active without being the foreground window, such as a
++ * native client's frame, whose client has the keyboard instead. */
++static BOOL caption_active(HWND hwnd)
++{
++    return DefWindowProcW(hwnd, WM_ISACTIVEICON, 0, 0) != 0;
++}
++
 +static int caption_button_state(HWND hwnd, HTHEME theme, int part, int state)
 +{
 +    int count;
 +    /* Luna supplies an inactive group after its four standard button images.
 +     * Leave themes with only the documented normal/hot/pressed/disabled group alone. */
-+    if (GetAncestor(GetForegroundWindow(), GA_ROOT) != hwnd &&
++    if (!caption_active(hwnd) &&
 +        SUCCEEDED(GetThemeInt(theme, part, state, TMT_IMAGECOUNT, &count)) && count >= 8)
 +        state += 4;
 +    return state;
@@ -255,7 +267,7 @@ index d059a85..0c38c87 100644
  
  static void uxtheme_draw_menu_button(HTHEME theme, HWND hwnd, HDC hdc, enum NONCLIENT_BUTTON_TYPE type,
                                       RECT rect, BOOL down, BOOL grayed)
-@@ -78,6 +92,35 @@ void WINAPI UXTHEME_NonClientButtonDraw(HWND hwnd, HDC hdc, enum NONCLIENT_BUTTO
+@@ -78,6 +101,35 @@ void WINAPI UXTHEME_NonClientButtonDraw(HWND hwnd, HDC hdc, enum NONCLIENT_BUTTO
  
      switch (type)
      {
@@ -291,7 +303,7 @@ index d059a85..0c38c87 100644
      case MENU_CLOSE_BUTTON:
      case MENU_MIN_BUTTON:
      case MENU_MAX_BUTTON:
-@@ -89,3 +132,235 @@ void WINAPI UXTHEME_NonClientButtonDraw(HWND hwnd, HDC hdc, enum NONCLIENT_BUTTO
+@@ -89,3 +141,235 @@ void WINAPI UXTHEME_NonClientButtonDraw(HWND hwnd, HDC hdc, enum NONCLIENT_BUTTO
  
      CloseThemeData(theme);
  }
@@ -435,7 +447,7 @@ index d059a85..0c38c87 100644
 +    OffsetRect(&client, origin.x - window.left, origin.y - window.top);
 +    OffsetRect(&window, -window.left, -window.top);
 +    ExcludeClipRect(dc, client.left, client.top, client.right, client.bottom);
-+    active = GetAncestor(GetForegroundWindow(), GA_ROOT) == hwnd;
++    active = caption_active(hwnd);
 +    maximized = IsZoomed(hwnd) || !!GetPropW(hwnd, L"Win4WineMaximized");
 +    state = active ? CS_ACTIVE : CS_INACTIVE;
 +    border_x = GetSystemMetrics(style & WS_THICKFRAME ? SM_CXFRAME : SM_CXDLGFRAME);

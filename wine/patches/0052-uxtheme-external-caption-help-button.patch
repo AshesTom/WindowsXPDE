@@ -161,10 +161,10 @@ index ad530d7..4e4a682 100644
      pos.x = rect.left;
      pos.y = rect.top;
 diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
-index 15b311e..3e64cba 100644
+index 2385d9a..068b050 100644
 --- a/dlls/uxtheme/window.c
 +++ b/dlls/uxtheme/window.c
-@@ -344,10 +344,13 @@ LRESULT WINAPI Win4WineNcHitTest(HWND hwnd, LPARAM coordinates, LRESULT original
+@@ -353,10 +353,13 @@ LRESULT WINAPI Win4WineNcHitTest(HWND hwnd, LPARAM coordinates, LRESULT original
      buttons[2].left -= margin;
      buttons[0].top = buttons[1].top = buttons[2].top = border_y;
      buttons[0].bottom = buttons[1].bottom = buttons[2].bottom = caption.bottom;
@@ -179,7 +179,7 @@ index 15b311e..3e64cba 100644
      if (style & (WS_MINIMIZEBOX | WS_MAXIMIZEBOX))
      {
          if ((style & WS_MAXIMIZEBOX) && PtInRect(&buttons[1], point)) return HTMAXBUTTON;
-@@ -497,6 +500,15 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
+@@ -506,6 +509,15 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
              DrawThemeBackground(theme, dc, WP_MINBUTTON, button_state, &part, NULL);
              text.right = part.left - 2;
          }

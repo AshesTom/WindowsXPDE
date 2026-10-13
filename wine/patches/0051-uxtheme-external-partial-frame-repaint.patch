@@ -88,7 +88,7 @@ index 2b30c16..b9aa343 100644
      else if (msg == WM_PRINT && (lParam & PRF_NONCLIENT) && !(lParam & (PRF_CHILDREN | PRF_OWNED)))
          external_shell_draw_nonclient( hwnd, (HDC)wParam );
 diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
-index a3ad02a..15b311e 100644
+index a8fe3b4..2385d9a 100644
 --- a/dlls/uxtheme/window.c
 +++ b/dlls/uxtheme/window.c
 @@ -40,6 +40,14 @@ struct caption_region
@@ -116,7 +116,7 @@ index a3ad02a..15b311e 100644
          Win4WineDrawNonClient(hwnd, NULL);
      return result;
  }
-@@ -356,7 +365,7 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
+@@ -365,7 +374,7 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
      DWORD style = GetWindowLongW(hwnd, GWL_STYLE), exstyle = GetWindowLongW(hwnd, GWL_EXSTYLE);
      RECT window, client, caption, part, text, buttons[3];
      POINT origin;
@@ -125,7 +125,7 @@ index a3ad02a..15b311e 100644
      int saved, border_x, border_y, caption_height, state;
      LOGFONTW lf;
      HFONT font = NULL;
-@@ -427,13 +436,17 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
+@@ -436,13 +445,17 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
       * row that would otherwise stay in the window colour above the client. */
      caption.bottom = max(caption.bottom, min(border_y + GetSystemMetrics(SM_CYCAPTION), client.top));
      if (!target) caption_region_update(hwnd, theme, &caption, maximized);
@@ -144,7 +144,7 @@ index a3ad02a..15b311e 100644
  
      text = caption;
      text.top = border_y;
-@@ -502,6 +515,7 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
+@@ -511,6 +524,7 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
      text.bottom = text.top + GetSystemMetrics(SM_CYCAPTION);
      DrawThemeText(theme, dc, maximized ? WP_MAXCAPTION : WP_CAPTION, state, title, -1,
                    DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS, 0, &text);

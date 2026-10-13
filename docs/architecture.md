@@ -96,6 +96,10 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 - 最大化では、proxy が `ShowWindow(SW_MAXIMIZE)` で代理を本当に最大化し、WM が Linux の窓を「作業領域から枠の余白を
   除いた大きさ」にします（XP と同じく、外側の枠は画面の外に出ます）。
 - 最小化では枠と窓を一緒に隠します。
+- 枠は、Linux の窓が X のキーボードを持っている間（`windows.tsv` の「有効」）だけ、アクティブの見た目にします。proxy は
+  `WM_NCACTIVATE` で枠の見た目を直接切り替えます。Windows と同じく Wine は、最後の入力を受けていないプロセスの
+  SetForegroundWindow を断り、入力は Linux の窓に届くので、代理は Win32 の前面にはなれないことが多いためです。
+  Luna の枠も、XP と同じく前面の窓ではなく `WM_NCACTIVATE` の状態で描きます（パッチ 0049）。
 - transient（ダイアログ）の Linux の窓には枠を付けず、タスクバーにも出しません。
 
 ## アイコン

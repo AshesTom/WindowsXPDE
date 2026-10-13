@@ -18,7 +18,7 @@ Old patches: 0023, 0051.
  1 file changed, 145 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
-index 0c38c87..a3ad02a 100644
+index 15af1cd..a8fe3b4 100644
 --- a/dlls/uxtheme/window.c
 +++ b/dlls/uxtheme/window.c
 @@ -29,6 +29,144 @@
@@ -164,9 +164,9 @@ index 0c38c87..a3ad02a 100644
 +    DeleteObject(current);
 +}
  
- static int caption_button_state(HWND hwnd, HTHEME theme, int part, int state)
- {
-@@ -227,12 +365,17 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
+ /* Whether the caption is drawn active: as WM_NCACTIVATE last set it, as for
+  * the classic caption (DefWindowProc's WM_ISACTIVEICON reports that state).
+@@ -236,12 +374,17 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
  
      if (!win4wine_external_shell()
          || (style & WS_CAPTION) != WS_CAPTION || (style & WS_CHILD)
@@ -185,7 +185,7 @@ index 0c38c87..a3ad02a 100644
          if (!GetPropW(hwnd, L"Win4WineMaximized") || !(style & WS_MAXIMIZEBOX)) return FALSE;
          dc = target ? target : GetWindowDC(hwnd);
          if (!dc) return FALSE;
-@@ -283,6 +426,7 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
+@@ -292,6 +435,7 @@ BOOL WINAPI Win4WineDrawNonClient(HWND hwnd, HDC target)
       * stretches the caption image over the whole SM_CYCAPTION, including the
       * row that would otherwise stay in the window colour above the client. */
      caption.bottom = max(caption.bottom, min(border_y + GetSystemMetrics(SM_CYCAPTION), client.top));
