@@ -86,6 +86,7 @@ scripts/setup.sh --shell reactos --lang ja   # 英語なら --lang en
 ログイン画面でセッション「ReactOS Shell (Wine, X11)」を選びます。
 
 詳しい手順とオプションは 🔗 [導入手順（INSTALL.md）](INSTALL.md) にあります。Wine をソースからビルドするので、4 コアで 1 時間半ほどかかります。
+テーマ（XP のクラシックなど）と文字の大きさは、後から変えられます（[見た目と文字の大きさを変える](INSTALL.md#見た目と文字の大きさを変える)）。
 
 ## 注意
 

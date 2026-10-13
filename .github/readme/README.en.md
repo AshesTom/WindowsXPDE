@@ -43,6 +43,7 @@ scripts/setup.sh --shell reactos --lang en   # or --lang ja
 and choose the session "ReactOS Shell (Wine, X11)" at the login screen.
 
 Details: 🔗 [installation guide (INSTALL.en.md)](INSTALL.en.md). Building Wine takes about 90 minutes on 4 cores.
+The theme (XP's classic one, for example) and the text size can be changed later ([Changing the look and the text size](INSTALL.en.md#changing-the-look-and-the-text-size)).
 
 ## What it is
 

@@ -106,9 +106,29 @@ scripts/setup.sh --shell reactos --lang ja
 | `shell` | `xp` | `reactos` で ReactOS のシェル（`reactos-session.json` に setup.sh が書きます） |
 | `primary` | 一番左の出力 | Wayland のセッションで Win32 の主モニターにする出力の名前。XP のデスクトップとタスクバーはここに出ます |
 
-見た目を後から変えるときは、セッションを止めてから `scripts/setup.sh --media ISO --theme classic`（または `luna`）を実行してください。
-DPI（文字や画面の部品の大きさ）は `scripts/setup.sh --media ISO --dpi 120` で変え、ログインし直してください。XP と同じく、文字と寸法が
-大きくなり、アイコンは 32×32 のままです。Linux のアプリも同じ DPI で文字が大きくなります（GTK は 192 以上で部品も 2 倍になります）。
+## 見た目と文字の大きさを変える
+
+「画面のプロパティ」（デスクトップの右クリック → プロパティ）は、XP のシェルでも ReactOS のシェルでも開けません（その部品を
+入れていないため。XP ではエラーになり、ReactOS では何も出ません）。テーマ（見た目）と DPI（文字や画面の部品の大きさ）は `setup.sh` で変えます。セッションの Wine が動いている間は
+変えられないので、ログオフしてから次のようにします。
+
+1. スタート → ログオフ で、ログイン画面に戻ります。
+2. Ctrl+Alt+F2 で文字の画面に切り替えて同じ利用者でログインします（別のマシンから SSH で入っても構いません）。
+3. 次のどれかを実行します。
+
+   ```sh
+   cd ~/win4wine
+   scripts/setup.sh --media /path/to/WindowsXPSP3.iso --theme classic   # XP の「Windows クラシック」。戻すときは --theme luna
+   scripts/setup.sh --media /path/to/WindowsXPSP3.iso --dpi 120          # 文字の大きさ。96 が標準（XP の「通常のサイズ」）
+   scripts/setup.sh --shell reactos --theme lautus                      # ReactOS のシェル: classic、lautus、lunar、mizu
+   ```
+
+4. `exit` で文字の画面からログアウトし、Ctrl+Alt+F7 でログイン画面に戻って、ログインし直します。
+
+- テーマを変えると、XP でテーマを選んだときと同じく壁紙も変わります（クラシックは壁紙なし、luna は Bliss）。
+- 済んでいる段階は飛ばすので、2 回目からはすぐ終わります（Wine のパッチが変わっていれば、その分を作り直します）。
+- DPI を上げると、XP と同じく文字と寸法が大きくなり、アイコンは 32×32 のままです。Linux のアプリも同じ DPI で文字が大きくなります
+  （GTK は 192 以上で部品も 2 倍になります）。
 
 Wayland のセッションでは、Linux のアプリは出力ごとの倍率（`outputs` の `scale`）で描かれ、XP のシェルは DPI で描かれて、
 どの出力でもぼけません。DPI は主に使う出力の倍率に合わせてください（倍率 1.5 なら 144）。詳しくは [docs/wayland.md](docs/wayland.md) にあります。

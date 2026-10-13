@@ -106,10 +106,29 @@ Restart the display manager (or reboot).
 | `shell` | `xp` | `reactos` for ReactOS's shell (setup.sh writes it into `reactos-session.json`) |
 | `primary` | the leftmost output | the output the Wayland session makes Win32's primary monitor; XP's desktop and taskbar are on it |
 
-To change the look later, stop the session and run `scripts/setup.sh --media ISO --theme classic` (or `luna`).
-To change the DPI (the size of text and screen elements), run `scripts/setup.sh --media ISO --dpi 120` and log in again.
-As on XP, text and metrics grow while icons stay 32×32. Linux applications get the same DPI for their text (GTK also doubles
-its widgets from 192).
+## Changing the look and the text size
+
+Display Properties (right-click the desktop → Properties) do not open in the XP shell or the ReactOS shell (their parts are
+not installed: XP shows an error, ReactOS nothing). The theme (the look) and the DPI (the size of text and screen elements) are changed with `setup.sh`, while the
+session's Wine is not running: log off first.
+
+1. Start → Log Off, back to the login screen.
+2. Press Ctrl+Alt+F2 for a text console and log in as the same user (or log in over SSH from another machine).
+3. Run one of these:
+
+   ```sh
+   cd ~/win4wine
+   scripts/setup.sh --media /path/to/WindowsXPSP3.iso --theme classic   # XP's "Windows Classic"; --theme luna goes back
+   scripts/setup.sh --media /path/to/WindowsXPSP3.iso --dpi 120          # text size; 96 is normal (XP's "Normal size")
+   scripts/setup.sh --shell reactos --theme lautus                      # the ReactOS shell: classic, lautus, lunar or mizu
+   ```
+
+4. Log out of the console with `exit`, press Ctrl+Alt+F7 for the login screen and log in again.
+
+- A theme brings its wallpaper, as choosing a theme on XP does (none for classic, Bliss for luna).
+- Steps already done are skipped, so later runs are quick (Wine is rebuilt only where its patches changed).
+- A higher DPI makes text and metrics larger while icons stay 32×32, as on XP. Linux applications get the same DPI for their
+  text (GTK also doubles its widgets from 192).
 
 In the Wayland session Linux applications draw at each output's scale (`scale` in `outputs`) and the XP shell at its DPI,
 crisp on every output; set the DPI to the scale of the output you mostly use (144 for 1.5). See [docs/wayland.md](../../docs/wayland.md) (Japanese).
