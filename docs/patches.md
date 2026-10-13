@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 72 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 73 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -142,7 +142,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0065 | user32: SwitchToThisWindow で窓を前面にもする（ReactOS のタスクバー。Wayland のセッションで戻した窓が有効にならなかった） | あり |
 | 0066 | user32: ダイアログの部品のリソースの番号を、ReactOS と同じ「#番号」の名前で渡す（ReactOS の Static がバナーとアイコンを読めるように。`WIN4WINE_SHELL=reactos` のときだけ） | あり |
 
-### その後の修正（0067〜0072）
+### その後の修正（0067〜0073）
 
 | 番号 | 内容 | opt-in |
 |---|---|---|
@@ -152,6 +152,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0070 | imm32: 消えた IME の UI の窓を作り直す（XP の「ファイル名を指定して実行」の 2 回目から、変換中の文字が出なかった） | あり |
 | 0071 | win32u: Windows キーだけか、ほかのキーと一緒かを、サーバーのキーの反転ビットで見分ける（0023 の判定が、Win+R の R の離しを別のスレッドより先に Windows キーの離しを処理して誤り、開いたダイアログが有効にならなかった） | あり |
 | 0072 | uxtheme: テーマを当てたときのメニューバーの高さを XP と同じ 19（96 DPI）から始める（Luna はクラシックより 1 高い。英語版の Tahoma では 18 のままだった） | あり |
+| 0073 | win32u: 窓のドラッグを EVENT_SYSTEM_MOVESIZESTART/END と `Win4WineSizeMove` で知らせ、寄せた窓を引き剥がすと元の大きさに戻す。`WIN4WINE_WINDOW_SNAP=1` では最大化した窓もドラッグで元の大きさに戻す（proxy の窓の寄せ。`window_snap` のときだけ使われます） | あり |
 
 ## 並び順の考え方
 

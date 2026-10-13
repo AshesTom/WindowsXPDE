@@ -118,6 +118,7 @@ scripts/setup.sh --shell reactos --lang ja
 | `outputs` | （無し） | Wayland のセッションの、出力ごとの設定。例: `{"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}`（`mode` も書けます。出力の名前は `wlr-randr` で見られます） |
 | `shell` | `xp` | `reactos` で ReactOS のシェル（`reactos-session.json` に setup.sh が書きます） |
 | `primary` | 一番左の出力 | Wayland のセッションで Win32 の主モニターにする出力の名前。XP のデスクトップとタスクバーはここに出ます |
+| `window_snap` | `false` | `true` で窓を画面の半分に寄せられます（Windows 7 の Aero Snap 風。XP には無い機能です）。Win+←/→ で左右の半分、Win+↑ で最大化、Win+↓ で元に戻す・最小化。タイトルバーを画面の左右の端へドラッグすると半分に、上端へドラッグすると最大化します。最大化した窓は、タイトルバーをドラッグすると元の大きさに戻ります。次にログインしたときから効きます |
 
 ## 見た目と文字の大きさを変える
 

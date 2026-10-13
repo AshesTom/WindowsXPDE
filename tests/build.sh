@@ -23,6 +23,7 @@ compile() {
 for name in shellhook title-change wine-restore exit-windows shell-activation shell-layout-sync wine-maximize workarea no-redraw button-size system-menu rebar print-window foreign-icons mono-advance text-vcenter taskbar-fonts nc-context-menu marlett-caption frame-control default-position ui-state screen-capture text-mask; do
     compile "$out/$name-test.exe" -municode "$root/tests/$name.c" -luser32 -lgdi32
 done
+compile "$out/size-move-snap-test.exe" "$root/tests/size-move-snap.c" -luser32
 compile "$out/toolbar-layout-test.exe" "$root/tests/toolbar-layout.c" -luser32 -lgdi32
 compile "$out/stretch-map-test.exe" "$root/tests/stretch-map.c" -lgdi32 -lmsimg32
 compile "$out/margin-shrink-test.exe" "$root/tests/margin-shrink.c" -luxtheme -lgdi32 -luser32

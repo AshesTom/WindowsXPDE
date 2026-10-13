@@ -77,6 +77,14 @@ static void geometry_command(HWND hwnd, unsigned long xid)
     write_command(data);
 }
 
+/* Whether Wine's move loop drags this window now (Wine 0073: "Win4WineSizeMove"
+ * without SIZE_MOVE_ENDED; see window snapping below). */
+static BOOL snap_moving(HWND hwnd)
+{
+    UINT_PTR state = (UINT_PTR)GetPropW(hwnd, L"Win4WineSizeMove");
+    return state && !(state & 0x1000);
+}
+
 /* Keep diagnostic readback usable with unpatched Wine10 too. This read-only
  * scalar query performs public icon/readback APIs in their owning process. */
 static LRESULT icon_readback(HWND hwnd, WPARAM field)
@@ -193,6 +201,14 @@ static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if ((wp & 0xfff0) == SC_MINIMIZE) { command("minimize", xid); return 0; }
             if ((wp & 0xfff0) == SC_MAXIMIZE)
             { command(GetPropW(hwnd, L"Win4WineMaximized") ? "restore" : "maximize", xid); return 0; }
+            if ((wp & 0xfff0) == SC_RESTORE && snap_moving(hwnd))
+            {
+                /* Window snapping: Wine's move loop restores a maximized
+                 * window dragged by its caption, and moves it on at once. */
+                command("restore", xid);
+                RemovePropW(hwnd, L"Win4WineMaximized");
+                return DefWindowProcW(hwnd, msg, wp, lp);
+            }
             if ((wp & 0xfff0) == SC_RESTORE)
             { command(IsIconic(hwnd) ? "activate" : "restore", xid); return 0; }
         }
@@ -467,7 +483,8 @@ static void frame_geometry(void)
                     else RemovePropW(c->hwnd, L"Win4WineMaximized");
                     RedrawWindow(c->hwnd, NULL, NULL, RDW_INVALIDATE | RDW_FRAME);
                 }
-                if (!!IsZoomed(c->hwnd) != !!maximized)
+                /* (not while a drag restores it: the WM has not had "restore" yet) */
+                if (!!IsZoomed(c->hwnd) != !!maximized && !snap_moving(c->hwnd))
                     ShowWindow(c->hwnd, maximized ? SW_MAXIMIZE : SW_RESTORE);
                 c->x = x; c->y = y; c->width = width; c->height = height;
                 place_frame(c);
@@ -1170,6 +1187,500 @@ static void tray_start(void)
     }
 }
 
+/* Window snapping, opt-in (session.json "window_snap"), as Windows 7 does:
+ * Win+Left and Win+Right put the foreground window on half of its monitor's
+ * work area, Win+Up maximizes it and Win+Down restores or minimizes it.
+ * Dragging a caption to the left or right edge of the screen snaps the
+ * window there, to the top edge maximizes it; an outline shows where.
+ * Wine's move loop reports drags (Wine 0073: EVENT_SYSTEM_MOVESIZESTART/END
+ * and "Win4WineSizeMove") and gives a snapped window its size back when its
+ * caption is dragged away ("Win4WineSnapRestore"), and restores a maximized
+ * window dragged by its caption. Native clients' frames snap like Wine's
+ * windows; the WM moves their clients after them.
+ * In the Wayland session labwc drags windows, snaps them at the edges and
+ * keeps which are snapped: Win+arrows ask it to snap or unsnap a window
+ * ("snap HWND SIDE", "unsnap HWND"), tiled.tsv says which windows are, and
+ * snapping.tsv where a dragged one would go, for this outline. */
+#define SIZE_MOVE_ENDED     0x1000
+#define SIZE_MOVE_MOVED     0x0100
+#define SIZE_MOVE_CANCELLED 0x0200
+#define MAX_SNAPPED 256
+enum snap_side { SNAP_NONE, SNAP_LEFT, SNAP_RIGHT, SNAP_TOP };
+static struct snapped { HWND hwnd; enum snap_side side; RECT restore, rect; } snapped[MAX_SNAPPED];
+static BOOL snap_enabled, snap_compositor;
+static struct
+{
+    HWND hwnd, preview[4];  /* the outline's sides */
+    BOOL snapped;  /* whether the window was snapped when its drag began */
+    BOOL zoomed;   /* or maximized */
+    RECT restore;  /* then its size and place to restore */
+    RECT shown;
+    UINT_PTR timer;
+} snap_drag;
+static struct { HWND hwnd; enum snap_side side; HMONITOR monitor; BOOL known; RECT restore; int tries; UINT_PTR timer; } snap_pending;
+
+static BOOL snap_window(HWND hwnd)
+{
+    WCHAR name[80];
+    LONG style = GetWindowLongW(hwnd, GWL_STYLE);
+    if (!hwnd || !IsWindowVisible(hwnd) || (style & WS_CHILD) || (style & WS_CAPTION) != WS_CAPTION) return FALSE;
+    GetClassNameW(hwnd, name, 80);
+    return wcsicmp(name, L"Progman") && wcsicmp(name, L"Shell_TrayWnd") && wcsicmp(name, L"WorkerW") &&
+           wcsicmp(name, L"DV2ControlHost") && wcsicmp(name, L"Win4WineSwitch");
+}
+
+/* A native client's frame is maximized by the WM, and Win32 learns it later. */
+static BOOL snap_zoomed(HWND hwnd)
+{
+    return IsZoomed(hwnd) || GetPropW(hwnd, L"Win4WineMaximized");
+}
+
+static RECT snap_box(HMONITOR monitor, enum snap_side side)
+{
+    MONITORINFO info = {.cbSize = sizeof(info)};
+    RECT box;
+    GetMonitorInfoW(monitor, &info);
+    box = info.rcWork;
+    if (side == SNAP_LEFT) box.right = box.left + (box.right - box.left) / 2;
+    else if (side == SNAP_RIGHT) box.left = box.left + (box.right - box.left) / 2;
+    return box;
+}
+
+/* labwc's word on a window (tiled.tsv): which half it is snapped to. */
+static struct snapped *snap_tiled(HWND hwnd)
+{
+    static struct snapped entry;
+    WCHAR path[MAX_PATH + 32];
+    unsigned long window;
+    int right;
+    FILE *file;
+    swprintf(path, MAX_PATH + 32, L"%ls\\tiled.tsv", directory);
+    if (!(file = _wfopen(path, L"rb"))) return NULL;
+    memset(&entry, 0, sizeof(entry));
+    while (fscanf(file, "%lx %d", &window, &right) == 2)
+        if ((HWND)(ULONG_PTR)window == hwnd)
+        {
+            entry.hwnd = hwnd;
+            entry.side = right ? SNAP_RIGHT : SNAP_LEFT;
+        }
+    fclose(file);
+    return entry.hwnd ? &entry : NULL;
+}
+
+/* RESTORE: where unsnapping it puts it, if labwc does not know that yet. */
+static void snap_command(const char *op, HWND hwnd, enum snap_side side, const RECT *restore)
+{
+    char data[160];
+    if (side == SNAP_NONE) snprintf(data, sizeof(data), "%s %lx\n", op, (unsigned long)(ULONG_PTR)hwnd);
+    else if (!restore) snprintf(data, sizeof(data), "%s %lx %d\n", op, (unsigned long)(ULONG_PTR)hwnd, side == SNAP_RIGHT);
+    else snprintf(data, sizeof(data), "%s %lx %d %ld %ld %ld %ld\n", op, (unsigned long)(ULONG_PTR)hwnd,
+                  side == SNAP_RIGHT, restore->left, restore->top, restore->right - restore->left,
+                  restore->bottom - restore->top);
+    write_command(data);
+}
+
+/* The entry of a window that is still where it was snapped. */
+static struct snapped *snap_find(HWND hwnd)
+{
+    unsigned i;
+    if (snap_compositor) return snap_tiled(hwnd);
+    for (i = 0; i < MAX_SNAPPED; ++i)
+    {
+        RECT rect;
+        if (!snapped[i].hwnd) continue;
+        if (!IsWindow(snapped[i].hwnd)) { memset(&snapped[i], 0, sizeof(snapped[i])); continue; }
+        if (snapped[i].hwnd != hwnd) continue;
+        GetWindowRect(hwnd, &rect);
+        /* A client with size increments may stop short of the box's far edges. */
+        if (snap_zoomed(hwnd) || (rect.left == snapped[i].rect.left && rect.top == snapped[i].rect.top))
+            return &snapped[i];
+        RemovePropW(hwnd, L"Win4WineSnapRestore");
+        memset(&snapped[i], 0, sizeof(snapped[i]));
+        return NULL;
+    }
+    return NULL;
+}
+
+static void snap_forget(HWND hwnd)
+{
+    unsigned i;
+    if (snap_compositor) return;
+    RemovePropW(hwnd, L"Win4WineSnapRestore");
+    for (i = 0; i < MAX_SNAPPED; ++i) if (snapped[i].hwnd == hwnd) memset(&snapped[i], 0, sizeof(snapped[i]));
+}
+
+static void snap_place(HWND hwnd, enum snap_side side, HMONITOR monitor, const RECT *restore)
+{
+    struct snapped *entry;
+    RECT box = snap_box(monitor, side);
+    unsigned i;
+    if (snap_compositor)
+    {
+        /* labwc snaps it on its output, and keeps where it was. */
+        snap_command("snap", hwnd, side, restore);
+        return;
+    }
+    entry = snap_find(hwnd);
+    if (!entry)
+        for (i = 0; i < MAX_SNAPPED && !entry; ++i) if (!snapped[i].hwnd) entry = &snapped[i];
+    if (!entry) return;
+    entry->hwnd = hwnd;
+    entry->side = side;
+    entry->restore = *restore;
+    entry->rect = box;
+    SetPropW(hwnd, L"Win4WineSnapRestore", (HANDLE)(UINT_PTR)MAKELONG(restore->right - restore->left,
+                                                                       restore->bottom - restore->top));
+    SetWindowPos(hwnd, NULL, box.left, box.top, box.right - box.left, box.bottom - box.top,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+/* A maximized window is restored first; a native client's frame follows its
+ * client's restore when the WM reports it. */
+static void CALLBACK snap_pending_timer(HWND hwnd, UINT msg, UINT_PTR id, DWORD time)
+{
+    (void)hwnd; (void)msg; (void)time;
+    if (id != snap_pending.timer) return;
+    if (!IsWindow(snap_pending.hwnd) || (snap_zoomed(snap_pending.hwnd) && ++snap_pending.tries < 40)) return;
+    KillTimer(NULL, snap_pending.timer);
+    snap_pending.timer = 0;
+    if (snap_zoomed(snap_pending.hwnd)) return;
+    if (!snap_pending.known) GetWindowRect(snap_pending.hwnd, &snap_pending.restore);
+    snap_place(snap_pending.hwnd, snap_pending.side, snap_pending.monitor, &snap_pending.restore);
+}
+
+static void snap_to(HWND hwnd, enum snap_side side, HMONITOR monitor)
+{
+    struct snapped *entry = snap_find(hwnd);
+    LONG style = GetWindowLongW(hwnd, GWL_STYLE);
+    RECT restore;
+    if (side == SNAP_TOP)
+    {
+        if ((style & WS_MAXIMIZEBOX) && !snap_zoomed(hwnd)) PostMessageW(hwnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+        return;
+    }
+    if (!(style & WS_THICKFRAME)) return;
+    if (entry) restore = entry->restore;
+    if (snap_zoomed(hwnd))
+    {
+        /* Wine gives other processes no normal position: the window's
+         * restored rectangle is the place to restore it to later. */
+        DWORD_PTR result;
+        SendMessageTimeoutW(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0, SMTO_ABORTIFHUNG, 1000, &result);
+        if (snap_zoomed(hwnd))
+        {
+            if (snap_pending.timer) KillTimer(NULL, snap_pending.timer);
+            snap_pending.hwnd = hwnd;
+            snap_pending.side = side;
+            snap_pending.monitor = monitor;
+            snap_pending.known = entry != NULL;
+            snap_pending.restore = restore;
+            snap_pending.tries = 0;
+            snap_pending.timer = SetTimer(NULL, 0, 50, snap_pending_timer);
+            return;
+        }
+    }
+    if (!entry) GetWindowRect(hwnd, &restore);
+    snap_place(hwnd, side, monitor, &restore);
+}
+
+static void snap_unsnap(struct snapped *entry)
+{
+    HWND hwnd = entry->hwnd;
+    RECT restore = entry->restore;
+    if (snap_compositor)
+    {
+        snap_command("unsnap", hwnd, SNAP_NONE, NULL);
+        return;
+    }
+    snap_forget(hwnd);
+    SetWindowPos(hwnd, NULL, restore.left, restore.top, restore.right - restore.left,
+                 restore.bottom - restore.top, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+/* The monitor beside this one, or NULL at the edge of the screen. */
+static HMONITOR snap_neighbour(HMONITOR monitor, int direction)
+{
+    MONITORINFO info = {.cbSize = sizeof(info)};
+    POINT pt;
+    GetMonitorInfoW(monitor, &info);
+    pt.x = direction < 0 ? info.rcMonitor.left - 1 : info.rcMonitor.right;
+    pt.y = (info.rcMonitor.top + info.rcMonitor.bottom) / 2;
+    return MonitorFromPoint(pt, MONITOR_DEFAULTTONULL);
+}
+
+static void snap_hotkey(UINT vk)
+{
+    HWND hwnd = GetForegroundWindow();
+    struct snapped *entry;
+    HMONITOR monitor, next;
+    LONG style;
+    unsigned i;
+    /* A native client with X focus is the foreground, as for the taskbar. */
+    for (i = 0; i < MAX_CLIENTS; ++i)
+        if (clients[i].xid && clients[i].active && !clients[i].hidden) hwnd = clients[i].hwnd;
+    if (hwnd) hwnd = GetAncestor(hwnd, GA_ROOT);
+    if (!snap_window(hwnd) || IsIconic(hwnd)) return;
+    style = GetWindowLongW(hwnd, GWL_STYLE);
+    entry = snap_find(hwnd);
+    monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    switch (vk)
+    {
+    case VK_LEFT:
+    case VK_RIGHT:
+    {
+        enum snap_side side = vk == VK_LEFT ? SNAP_LEFT : SNAP_RIGHT, other = vk == VK_LEFT ? SNAP_RIGHT : SNAP_LEFT;
+        if (entry && entry->side == other && !snap_zoomed(hwnd)) snap_unsnap(entry);
+        else if (entry && entry->side == side && !snap_zoomed(hwnd))
+        {
+            /* On to the next monitor's near half; labwc does that itself. */
+            if (snap_compositor) snap_command("snap", hwnd, side, NULL);
+            else if ((next = snap_neighbour(monitor, vk == VK_LEFT ? -1 : 1))) snap_to(hwnd, other, next);
+        }
+        else snap_to(hwnd, side, monitor);
+        break;
+    }
+    case VK_UP:
+        snap_to(hwnd, SNAP_TOP, monitor);
+        break;
+    case VK_DOWN:
+        if (snap_zoomed(hwnd)) PostMessageW(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
+        else if (entry) snap_unsnap(entry);
+        else if (style & WS_MINIMIZEBOX) PostMessageW(hwnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+        break;
+    }
+}
+
+/* Where a caption dragged to this point would snap. Only the outer edges of
+ * the screen count, not the edges between two monitors. */
+static enum snap_side snap_edge(HWND hwnd, POINT pt, HMONITOR *monitor)
+{
+    MONITORINFO info = {.cbSize = sizeof(info)};
+    LONG style = GetWindowLongW(hwnd, GWL_STYLE);
+    POINT beyond = pt;
+    *monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    GetMonitorInfoW(*monitor, &info);
+    if (pt.y <= info.rcMonitor.top && (style & WS_MAXIMIZEBOX))
+    {
+        beyond.y = info.rcMonitor.top - 1;
+        if (!MonitorFromPoint(beyond, MONITOR_DEFAULTTONULL)) return SNAP_TOP;
+    }
+    if (!(style & WS_THICKFRAME)) return SNAP_NONE;
+    beyond = pt;
+    if (pt.x <= info.rcMonitor.left)
+    {
+        beyond.x = info.rcMonitor.left - 1;
+        if (!MonitorFromPoint(beyond, MONITOR_DEFAULTTONULL)) return SNAP_LEFT;
+    }
+    if (pt.x >= info.rcMonitor.right - 1)
+    {
+        beyond.x = info.rcMonitor.right;
+        if (!MonitorFromPoint(beyond, MONITOR_DEFAULTTONULL)) return SNAP_RIGHT;
+    }
+    return SNAP_NONE;
+}
+
+/* The outline: a frame in the selection colour with XP's halftone, a little
+ * inside the box so that it is never under the pointer at the edge. Its four
+ * sides are windows of their own: Xwayland shows a window region's outside. */
+static LRESULT CALLBACK snap_preview_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_PAINT)
+    {
+        static const WORD pattern[8] = {0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa};
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        HBITMAP bitmap = CreateBitmap(8, 8, 1, 1, pattern);
+        HBRUSH brush = CreatePatternBrush(bitmap);
+        RECT rect, window;
+        /* One pattern across the sides */
+        GetWindowRect(hwnd, &window);
+        SetBrushOrgEx(dc, -window.left & 7, -window.top & 7, NULL);
+        GetClientRect(hwnd, &rect);
+        SetTextColor(dc, GetSysColor(COLOR_HIGHLIGHT));
+        SetBkColor(dc, GetSysColor(COLOR_WINDOW));
+        FillRect(dc, &rect, brush);
+        DeleteObject(brush);
+        DeleteObject(bitmap);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    if (msg == WM_NCHITTEST) return HTTRANSPARENT;
+    if (msg == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static void snap_show_preview(const RECT *box)
+{
+    int thickness = max(4, GetSystemMetrics(SM_CXSIZEFRAME)), inset = 2 * thickness;
+    RECT rect, sides[4];
+    unsigned i;
+    if (!box)
+    {
+        for (i = 0; i < ARRAYSIZE(snap_drag.preview); ++i)
+            if (snap_drag.preview[i]) ShowWindow(snap_drag.preview[i], SW_HIDE);
+        SetRectEmpty(&snap_drag.shown);
+        return;
+    }
+    rect = *box;
+    InflateRect(&rect, -inset, -inset);
+    if (EqualRect(&rect, &snap_drag.shown)) return;
+    snap_drag.shown = rect;
+    SetRect(&sides[0], rect.left, rect.top, rect.right, rect.top + thickness);
+    SetRect(&sides[1], rect.left, rect.bottom - thickness, rect.right, rect.bottom);
+    SetRect(&sides[2], rect.left, rect.top + thickness, rect.left + thickness, rect.bottom - thickness);
+    SetRect(&sides[3], rect.right - thickness, rect.top + thickness, rect.right, rect.bottom - thickness);
+    for (i = 0; i < ARRAYSIZE(sides); ++i)
+    {
+        if (!snap_drag.preview[i])
+            snap_drag.preview[i] = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+                                                   L"Win4WineSnapPreview", L"", WS_POPUP, 0, 0, 0, 0,
+                                                   NULL, NULL, GetModuleHandleW(NULL), NULL);
+        if (!snap_drag.preview[i]) continue;
+        SetWindowPos(snap_drag.preview[i], HWND_TOPMOST, sides[i].left, sides[i].top, sides[i].right - sides[i].left,
+                     sides[i].bottom - sides[i].top, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        /* Now: the proxy's own frames are dragged in a move loop of this thread. */
+        RedrawWindow(snap_drag.preview[i], NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+    }
+}
+
+static void snap_drag_end(void)
+{
+    if (snap_drag.timer) KillTimer(NULL, snap_drag.timer);
+    snap_show_preview(NULL);
+    snap_drag.timer = 0;
+    snap_drag.hwnd = NULL;
+}
+
+/* The pointer, while a caption is dragged; timers run in the move loop too. */
+static void CALLBACK snap_drag_timer(HWND hwnd, UINT msg, UINT_PTR id, DWORD time)
+{
+    UINT_PTR state;
+    HMONITOR monitor;
+    enum snap_side side;
+    POINT pt;
+    (void)hwnd; (void)msg; (void)time;
+    if (id != snap_drag.timer) return;
+    state = (UINT_PTR)GetPropW(snap_drag.hwnd, L"Win4WineSizeMove");
+    if (!IsWindow(snap_drag.hwnd) || (state & SIZE_MOVE_ENDED) || !(GetAsyncKeyState(VK_LBUTTON) & 0x8000))
+    {
+        /* EVENT_SYSTEM_MOVESIZEEND snaps; this only hides the outline. */
+        snap_show_preview(NULL);
+        return;
+    }
+    GetCursorPos(&pt);
+    side = snap_edge(snap_drag.hwnd, pt, &monitor);
+    if (side == SNAP_NONE) snap_show_preview(NULL);
+    else
+    {
+        RECT box = snap_box(monitor, side);
+        snap_show_preview(&box);
+    }
+}
+
+static void snap_move_size(DWORD event, HWND hwnd)
+{
+    UINT_PTR state = (UINT_PTR)GetPropW(hwnd, L"Win4WineSizeMove");
+    if (event == EVENT_SYSTEM_MOVESIZESTART)
+    {
+        /* A drag that already ended was a click. */
+        if ((state & SIZE_MOVE_ENDED) || (state & 0xff) != HTCAPTION || !snap_window(hwnd)) return;
+        struct snapped *entry = snap_find(hwnd);
+        snap_drag_end();
+        snap_drag.hwnd = hwnd;
+        snap_drag.snapped = entry != NULL;
+        snap_drag.zoomed = snap_zoomed(hwnd);
+        if (entry) snap_drag.restore = entry->restore;
+        else GetWindowRect(hwnd, &snap_drag.restore);
+        snap_drag.timer = SetTimer(NULL, 0, 30, snap_drag_timer);
+        return;
+    }
+    if (!(state & SIZE_MOVE_ENDED)) return;
+    RemovePropW(hwnd, L"Win4WineSizeMove");
+    if ((state & 0xff) != HTCAPTION)
+    {
+        /* Resizing a snapped window keeps its new size. */
+        if (state & SIZE_MOVE_MOVED) snap_forget(hwnd);
+        return;
+    }
+    if (hwnd != snap_drag.hwnd) return;
+    if ((state & SIZE_MOVE_MOVED) && !(state & SIZE_MOVE_CANCELLED))
+    {
+        HMONITOR monitor;
+        POINT pt;
+        RECT restore = snap_drag.restore;
+        enum snap_side side;
+        if (snap_drag.zoomed && !snap_drag.snapped)
+        {
+            /* Wine restored it on the way, at "Win4WineSizeMoveRestored"
+             * (left and top plus 0x8000); its size has not changed since. */
+            UINT_PTR origin = (UINT_PTR)RemovePropW(hwnd, L"Win4WineSizeMoveRestored");
+            GetWindowRect(hwnd, &restore);
+            if (origin) OffsetRect(&restore, (int)LOWORD(origin) - 0x8000 - restore.left,
+                                   (int)HIWORD(origin) - 0x8000 - restore.top);
+        }
+        GetCursorPos(&pt);
+        side = snap_edge(hwnd, pt, &monitor);
+        if (snap_drag.snapped && side != SNAP_LEFT && side != SNAP_RIGHT) snap_forget(hwnd);
+        if (side == SNAP_TOP)
+        {
+            /* Restoring it later gives back its place before the drag. */
+            SetWindowPos(hwnd, NULL, restore.left, restore.top, restore.right - restore.left,
+                         restore.bottom - restore.top, SWP_NOZORDER | SWP_NOACTIVATE);
+            snap_to(hwnd, SNAP_TOP, monitor);
+        }
+        else if (side != SNAP_NONE)
+        {
+            snap_forget(hwnd);
+            snap_place(hwnd, side, monitor, &restore);
+        }
+    }
+    snap_drag_end();
+}
+
+/* labwc writes snapping.tsv as it drags a window: "NUMBER X Y WIDTH HEIGHT",
+ * the box it would snap to, or an empty one. */
+static void snap_compositor_events(BOOL start)
+{
+    static unsigned seen;
+    WCHAR path[MAX_PATH + 32];
+    unsigned number;
+    long x, y, width, height;
+    FILE *file;
+    if (!snap_compositor) return;
+    swprintf(path, MAX_PATH + 32, L"%ls\\snapping.tsv", directory);
+    if (!(file = _wfopen(path, L"rb"))) return;
+    if (fscanf(file, "%u %ld %ld %ld %ld", &number, &x, &y, &width, &height) != 5) number = seen;
+    fclose(file);
+    if (number == seen) return;
+    seen = number;
+    if (start || width <= 0 || height <= 0 || width > 65535 || height > 65535) snap_show_preview(NULL);
+    else
+    {
+        RECT box = {x, y, x + width, y + height};
+        snap_show_preview(&box);
+    }
+}
+
+static void snap_start(void)
+{
+    static const UINT keys[] = {VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN};
+    WNDCLASSW cls = {0};
+    WCHAR value[8];
+    DWORD len = GetEnvironmentVariableW(L"WIN4WINE_WINDOW_SNAP", value, ARRAYSIZE(value));
+    unsigned i;
+    snap_enabled = len && len < ARRAYSIZE(value) && !wcscmp(value, L"1");
+    if (!snap_enabled) return;
+    snap_compositor = GetEnvironmentVariableW(L"WAYLAND_DISPLAY", NULL, 0) != 0;
+    cls.lpfnWndProc = snap_preview_proc;
+    cls.hInstance = GetModuleHandleW(NULL);
+    cls.hCursor = LoadCursorW(NULL, IDC_ARROW);
+    cls.lpszClassName = L"Win4WineSnapPreview";
+    RegisterClassW(&cls);
+    for (i = 0; i < ARRAYSIZE(keys); ++i)
+        if (!RegisterHotKey(NULL, (int)keys[i], MOD_WIN, keys[i]))
+            fprintf(stderr, "snap: Win+%02x is taken: %lu\n", keys[i], GetLastError());
+}
+
 /* Out-of-context WinEvents arrive as messages for this thread. Only top-level
  * windows can be tasks; a destroyed one is matched against the last list. */
 static void CALLBACK win_event(HWINEVENTHOOK hook, DWORD event, HWND hwnd, LONG object, LONG child,
@@ -1177,6 +1688,7 @@ static void CALLBACK win_event(HWINEVENTHOOK hook, DWORD event, HWND hwnd, LONG 
 {
     (void)hook; (void)thread; (void)time;
     if (event == EVENT_SYSTEM_FOREGROUND) dirty = TRUE;
+    else if (event == EVENT_SYSTEM_MOVESIZESTART || event == EVENT_SYSTEM_MOVESIZEEND) snap_move_size(event, hwnd);
     else if (object != OBJID_WINDOW || child != CHILDID_SELF || !hwnd) return;
     else if (event == EVENT_OBJECT_DESTROY) dirty |= contains(previous, previous_count, hwnd);
     else if (GetAncestor(hwnd, GA_PARENT) == GetDesktopWindow()) dirty = TRUE;
@@ -1224,11 +1736,16 @@ int wmain(int argc, WCHAR **argv)
     SetWinEventHook(EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
     SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_HIDE, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
     SetWinEventHook(EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
+    snap_start();
+    if (snap_enabled)
+        SetWinEventHook(EVENT_SYSTEM_MOVESIZESTART, EVENT_SYSTEM_MOVESIZEEND, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
     shell_key_events(TRUE);
+    snap_compositor_events(TRUE);
     for (;;)
     {
         switch_events();
         shell_key_events(FALSE);
+        snap_compositor_events(FALSE);
         if (dirty)
         {
             dirty = FALSE;
@@ -1256,6 +1773,11 @@ int wmain(int argc, WCHAR **argv)
                 }
                 for (i = 0; i < MAX_TRAY; ++i) if (tray_icons[i].id) tray_remove(&tray_icons[i]);
                 return 0;
+            }
+            if (msg.message == WM_HOTKEY && !msg.hwnd)
+            {
+                snap_hotkey(HIWORD(msg.lParam));
+                continue;
             }
             if (msg.message == WM_TIMER && !msg.hwnd && msg.wParam == layout_timer)
             {

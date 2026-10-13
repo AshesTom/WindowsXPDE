@@ -70,3 +70,4 @@
 0070-imm32-external-stale-ime-ui-window.patch
 0071-win32u-external-task-list-key-toggles.patch
 0072-uxtheme-external-menu-bar-height.patch
+0073-win32u-external-window-snap.patch
