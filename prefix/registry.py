@@ -5,7 +5,12 @@ import struct
 
 VERSION = 24
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
-CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPClassic'
+# The classic fonts of a new prefix (prefix/theme-settings.c classic-initialize).
+CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\XPClassic'
+# The classic theme's fonts per language of the XP media, read with public SPI
+# calls on the reference machines: Japanese XP uses MS UI Gothic 9pt, English
+# XP Tahoma 8pt (captions bold in both).
+CLASSIC_FONTS = {'ja': ('MS UI Gothic', -12), 'en': ('Tahoma', -11)}
 
 
 def shell_view(args):
@@ -14,8 +19,11 @@ def shell_view(args):
     The XP shell is a 32-bit process. In a 64-bit (WoW64) prefix it sees the
     32-bit view of HKCR\\CLSID and HKLM\\Software, while `wine reg` runs the
     64-bit reg.exe; HKCU and the rest of HKCR are shared by both views. In a
-    32-bit prefix there is one view and the option changes nothing."""
-    return (*args, '/reg:32') if args and args[0] == 'reg' else args
+    32-bit prefix there is one view and the option changes nothing. Arguments
+    that name a view already keep it."""
+    if not args or args[0] != 'reg' or any(arg in ('/reg:32', '/reg:64') for arg in args):
+        return args
+    return (*args, '/reg:32')
 
 
 def font_profile_defaults():
@@ -51,14 +59,15 @@ def font_profile_defaults():
     return values
 
 
-def install_classic_fonts(run, exists):
+def install_classic_fonts(run, exists, language='ja'):
     """Fresh-prefix baseline only; existing-prefix migrations never call this."""
-    face = 'MS UI Gothic'.encode('utf-16le').ljust(64, b'\0')
+    face, height = CLASSIC_FONTS[language]
+    face = face.encode('utf-16le').ljust(64, b'\0')
     for name, weight in (('CaptionFont', 700), ('SmallCaptionFont', 700),
                          ('MenuFont', 400), ('StatusFont', 400),
                          ('MessageFont', 400), ('IconFont', 400)):
         if not exists(CLASSIC_FONT_PROFILE, name):
-            data = struct.pack('<5l8B64s', -12, 0, 0, 0, weight,
+            data = struct.pack('<5l8B64s', height, 0, 0, 0, weight,
                                0, 0, 0, 1, 0, 0, 0, 0, face)
             run('reg', 'add', CLASSIC_FONT_PROFILE, '/v', name,
                 '/t', 'REG_BINARY', '/d', data.hex(), '/f')
@@ -102,10 +111,16 @@ NAMESPACE_STRINGS = (
 )
 
 
-def install(run, exists):
+def install(run, exists, language='ja'):
+    """The XP shell's registry profile. LANGUAGE is the XP media's (extract/media.py).
+
+    English XP needs no font profile and keeps Wine's 75px icon spacing: Wine's
+    reading of the English Luna theme and its defaults give the fonts and
+    metrics that public calls report on the English reference machine."""
+    japanese = language == 'ja'
     # Seed defaults once. Migrations preserve disabled profiles, custom fonts,
     # and even unrecognized values: the builtin reader validates or falls back.
-    for name, (kind, data) in font_profile_defaults().items():
+    for name, (kind, data) in font_profile_defaults().items() if japanese else ():
         if not exists(FONT_PROFILE, name):
             run('reg', 'add', FONT_PROFILE, '/v', name, '/t', kind, '/d', data, '/f')
     advanced = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
@@ -122,7 +137,7 @@ def install(run, exists):
     # reference machine); Wine's 75px default wraps labels such as My Computer
     # that are 74px wide in MS UI Gothic. Seed once, then keep user changes.
     marker = r'HKCU\Software\Win4Wine\Profile'
-    if not exists(marker, 'IconSpacing'):
+    if japanese and not exists(marker, 'IconSpacing'):
         run('reg', 'add', r'HKCU\Control Panel\Desktop\WindowMetrics', '/v', 'IconSpacing',
             '/t', 'REG_SZ', '/d', '-1170', '/f')
         run('reg', 'add', marker, '/v', 'IconSpacing', '/t', 'REG_DWORD', '/d', '1', '/f')
@@ -156,12 +171,23 @@ def install(run, exists):
     # fixed-pitch font, which has no Japanese glyphs; with these values and
     # Wine patch 0041 it lays the 16-pixel font out in 8x18 cells as XP does.
     # The English family name keeps reg.exe's command line ASCII. Seed once.
+    # English XP's console draws 8x12 cells with its raster Terminal font
+    # (vgaoem.fon, extracted for English media), as on the English reference
+    # machine; Wine's conhost would take a TrueType fixed-pitch font instead.
     if not exists(marker, 'ConsoleFont'):
         console = r'HKCU\Console'
-        for name, kind, value in (('FaceName', 'REG_SZ', 'MS Gothic'), ('FontSize', 'REG_DWORD', '0x00120008'),
-                                  ('FontFamily', 'REG_DWORD', '0x36'), ('FontWeight', 'REG_DWORD', '400')):
+        font = (('MS Gothic', '0x00120008', '0x36') if japanese else ('Terminal', '0x000c0008', '0x30'))
+        for name, kind, value in (('FaceName', 'REG_SZ', font[0]), ('FontSize', 'REG_DWORD', font[1]),
+                                  ('FontFamily', 'REG_DWORD', font[2]), ('FontWeight', 'REG_DWORD', '400')):
             run('reg', 'add', console, '/v', name, '/t', kind, '/d', value, '/f')
         run('reg', 'add', marker, '/v', 'ConsoleFont', '/t', 'REG_DWORD', '/d', '1', '/f')
+    if not japanese:
+        # English XP maps MS Shell Dlg to Microsoft Sans Serif (its micross.ttf,
+        # extracted for English media); Wine's default for code page 1252 is
+        # Tahoma. Wine reads the 64-bit view and rewrites the value only when
+        # the prefix's code page changes, so it is set at every update.
+        run('reg', 'add', r'HKLM\Software\Microsoft\Windows NT\CurrentVersion\FontSubstitutes',
+            '/v', 'MS Shell Dlg', '/t', 'REG_SZ', '/d', 'Microsoft Sans Serif', '/f', '/reg:64')
     for clsid, name, tip in NAMESPACE_STRINGS:
         key = 'HKCR\\CLSID\\' + clsid
         if name:

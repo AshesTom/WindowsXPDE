@@ -24,6 +24,13 @@ def controls_targets(prefix, wine):
         return ((lib / 'x86_64-windows', windows / 'system32'), (lib / 'i386-windows', windows / 'syswow64'))
     return ((lib / 'i386-windows', windows / 'system32'),)
 
+def language(prefix):
+    """The language of the prefix's XP media; prefixes made before English XP was supported are Japanese."""
+    try:
+        return json.loads((prefix / 'xp-shell.json').read_text()).get('language', 'ja')
+    except (OSError, ValueError):
+        return 'ja'
+
 def prepare(prefix, wine):
     inf = wine.parent.parent / 'share/wine/wine.inf'
     timestamp = prefix / '.update-timestamp'
@@ -55,7 +62,7 @@ def prepare(prefix, wine):
             # After a Wine install changes, the update installs every DLL
             # again; on a slow or busy machine it takes minutes.
             run('wineboot', '-u', timeout=600)
-        registry.install(run, exists)
+        registry.install(run, exists, language(prefix))
         current = timestamp.read_text().strip() if timestamp.is_file() else ''
         temp = version.with_suffix('.tmp')
         temp.write_text(f'{registry.VERSION} {current}\n')

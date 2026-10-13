@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../../docs/images/screenshot.png" alt="win4wine: the Windows XP shell running on Debian 13" width="800" />
+  <img src="../../docs/images/screenshot-en.png" alt="win4wine: the English Windows XP shell with Linux and Windows applications on Debian 13" width="800" />
 </p>
 <p align="center">
   <strong>Your Linux desktop, with the Windows XP shell.</strong>
@@ -23,7 +23,7 @@
 
 ## Install
 
-1. Get a Japanese Windows XP Professional SP3 (x86) ISO **yourself**.
+1. Get a Windows XP Professional SP3 (x86) ISO (Japanese or English) **yourself**.
 2. On a freshly installed Debian 13, run as the user who will log in:
 
 ```sh
@@ -62,6 +62,8 @@ ReactOS is free software, so the setup script downloads it from its official rel
   Linux applications are listed under All Programs.
 - **Notification area**: Linux tray icons (StatusNotifierItem and XEmbed) show up in XP's notification area.
 - **Japanese input**: fcitx5 + Mozc, toggled with Ctrl+Space (or Zenkaku/Hankaku), in GTK, Qt and Wine applications.
+- **Japanese or English XP**: either ISO works. The language is detected from the ISO, and the fonts (Tahoma and others on
+  English XP), the locale and the Welcome screen follow that XP (no Japanese input is set up for English XP).
 - **Windows applications**: a WoW64 Wine 11.0 runs 32-bit and 64-bit programs. Run `wine setup.exe` in a terminal and
   the installer's shortcuts land in XP's Start menu.
 - **XP Welcome screen**: an optional LightDM greeter that shows XP's Welcome and log-off screens.
@@ -77,11 +79,11 @@ ReactOS is free software, so the setup script downloads it from its official rel
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="../../docs/images/screenshot-classic.png" alt="The XP shell with the classic theme and Linux applications" width="400" /><br />
+      <img src="../../docs/images/screenshot-classic-en.png" alt="The XP shell with the classic theme and Linux applications" width="400" /><br />
       XP's classic theme (<code>--theme classic</code>)
     </td>
     <td align="center" width="50%">
-      <img src="../../docs/images/screenshot-reactos.png" alt="The ReactOS shell and Linux applications" width="400" /><br />
+      <img src="../../docs/images/screenshot-reactos-en.png" alt="The ReactOS shell and Linux applications" width="400" /><br />
       The ReactOS shell (<code>--shell reactos</code>; no XP ISO needed)
     </td>
   </tr>
@@ -94,14 +96,14 @@ ReactOS is free software, so the setup script downloads it from its official rel
 >   Follow Microsoft's license terms for the ISO and the files extracted from it.
 > - **Use at your own risk.** The author is not responsible for data loss or any other problems.
 > - This is an unofficial project, not affiliated with Microsoft or the Wine project.
-> - Only the Japanese XP SP3 (x86) has been tested; the setup expects the Japanese fonts (MS Gothic).
+> - Only the Japanese and the English XP SP3 (x86) have been tested; `setup.sh` refuses XP in other languages.
 
 ## How it works
 
 ```text
 LightDM ─ XP Welcome greeter (greeter/)
    └─ XP Shell session (session/supervisor.py)
-        ├─ Wine 11.0 + 71 patches (wine/patches/)
+        ├─ Wine 11.0 + 72 patches (wine/patches/)
         │    └─ XP's explorer.exe, shell32.dll, … (extracted from the ISO)
         ├─ bridge-wm: an X11 WM + Win32 proxy windows (bridge-wm/)
         │    (Wayland session: a patched labwc instead of the WM, wayland/)

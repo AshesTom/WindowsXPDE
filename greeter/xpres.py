@@ -65,6 +65,17 @@ class Resources:
                 return self.data[start:start + size]
         return None
 
+    def languages(self, rtype):
+        """The LANGIDs of the resources of type RTYPE, in the order of the directory."""
+        found = []
+        for entry, target in self.entries(self.base):
+            if self.name(entry) != rtype or not target & 0x80000000:
+                continue
+            for _, names in self.entries(self.base + (target & 0x7fffffff)):
+                if names & 0x80000000:
+                    found += [self.name(lang) for lang, _ in self.entries(self.base + (names & 0x7fffffff))]
+        return found
+
     def bitmap(self, name):
         """A BITMAP resource as the bytes of a .bmp file."""
         dib = self.find(RT_BITMAP, name)

@@ -49,7 +49,15 @@ sudo install -d -m755 "$share/code" "$share/assets/system32" "$share/assets/font
 sudo install -m644 "$root"/greeter/{welcome,xpres,xdraw}.py "$share/code/"
 sudo install -m755 "$root/greeter/xp-greeter.py" "$share/code/"
 sudo install -m644 "$assets"/system32/{logonui.exe,msgina.dll,winlogon.exe} "$share/assets/system32/"
-for f in fonts/msgothic.ttc fonts/arial.ttf themes/Luna/luna.msstyles; do
+fonts=(fonts/msgothic.ttc fonts/arial.ttf)
+if [[ $(python3 "$root/extract/media.py" "$assets") == en ]]; then
+    # English XP's screen is drawn in Arial, Tahoma and Franklin Gothic Medium with
+    # their own bold and italic faces, its dialog in Microsoft Sans Serif.
+    fonts+=(fonts/{arialbd,arialbi,ariali,tahoma,tahomabd,framd,framdit,micross}.ttf)
+fi
+# Only this media's fonts (another language's may be left from an earlier install).
+sudo find "$share/assets/fonts" -maxdepth 1 -type f -delete
+for f in "${fonts[@]}" themes/Luna/luna.msstyles; do
     [[ ! -f $assets/$f ]] || sudo install -m644 "$assets/$f" "$share/assets/$f"
 done
 shopt -s nullglob

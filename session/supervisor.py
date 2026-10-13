@@ -109,7 +109,9 @@ class Session:
             self.env.update(XCURSOR_THEME=self.cursor_theme)
         else:
             self.cursor_theme = None
-        self.linux_font = config.get('linux_font', 'MS UI Gothic')
+        # Linux applications take the XP shell's UI font: MS UI Gothic on
+        # Japanese XP, Tahoma on English XP (the prefix's "language").
+        self.linux_font = config.get('linux_font', 'Tahoma' if self.language() == 'en' else 'MS UI Gothic')
         self.linux_menu = config.get('linux_menu', True)
         # Wine's ExitWindowsEx records log off / shut down / restart here,
         # so that the shell's exit ends the session instead of restarting it.
@@ -140,6 +142,13 @@ class Session:
         if self.linux_font:
             self.env['FONTCONFIG_FILE'] = str(self.font_config())
         self.status('starting')
+
+    def language(self):
+        """The language of the XP prefix's media (prefix/create.py); Japanese before English was supported."""
+        try:
+            return json.loads((self.prefix / self.shell['marker']).read_text()).get('language', 'ja')
+        except (OSError, ValueError):
+            return 'ja'
 
     @staticmethod
     def find_cursor_theme(name):

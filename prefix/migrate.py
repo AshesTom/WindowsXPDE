@@ -80,8 +80,9 @@ def migrate(old, new, wine, assets=None, home=None):
     # Fonts and XP files added to the old prefix by hand, such as msgina.dll.
     merge(old / 'drive_c/windows/Fonts', new / 'drive_c/windows/Fonts', replace=False)
     merge(old / 'drive_c/xp/native', new / 'drive_c/xp/native', replace=False)
+    language = json.loads((new / 'xp-shell.json').read_text())['language']
     (new / 'xp-shell.json').write_text(json.dumps(dict(config, assets=str(assets), home=str(home), wine=wine,
-                                                       migrated_from=str(old)), indent=2) + '\n')
+                                                       language=language, migrated_from=str(old)), indent=2) + '\n')
     stage.prepare(new, wine_path)
     stage.stage(new, wine_path)
     stage.stage_media(new, wine_path)

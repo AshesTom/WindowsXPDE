@@ -11,7 +11,8 @@
 ## 必要なもの
 
 - **Debian 13（trixie）amd64** のマシン（実機または仮想マシン）。デスクトップ環境は要りません。
-- **日本語版 Windows XP Professional SP3（x86）の ISO**（または XP の Windows ディレクトリ）。
+- **Windows XP Professional SP3（x86）の ISO**（または XP の Windows ディレクトリ）。**日本語版か英語版**です。
+  どちらかは ISO から自動で判断します。
 - ネットワーク（パッケージと Wine のソースの取得に使います）と、**40 GB ほどの空き**（Wine のソースとビルド）。
 - sudo を使える利用者。
 
@@ -43,16 +44,28 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 ## 2. スクリプトがすること
 
 1. パッケージを入れます（Wine のビルドの依存、Xorg、python3-xlib、fcitx5 + Mozc など）。ディスプレイマネージャが無ければ LightDM も入れます。
-2. `ja_JP.UTF-8` のロケールを作ります。
-3. Wine 11.0 を取得し、パッチを当ててビルドします（`.local/wine-install`。4 コアで 1 時間半ほど。ログは `.local/wine-build.log`）。
+2. Wine 11.0 を取得し、パッチを当ててビルドします（`.local/wine-install`。4 コアで 1 時間半ほど。ログは `.local/wine-build.log`）。
    ビルドの間は、段階、コンパイルしたファイルの数と割合、残りの目安の時間、出力の最後の数行だけを画面に出します。
-4. bridge（ウィンドウマネージャーと代理ウィンドウ）をビルドします。
-5. ISO から必要なファイルだけを取り出します（`.local/assets`）。
-6. XP 用の Wine の prefix を作ります（`.local/prefix`）。
+3. bridge（ウィンドウマネージャーと代理ウィンドウ）をビルドします。
+4. ISO から必要なファイルだけを取り出します（`.local/assets`）。XP の言語（日本語か英語）もここで判断します。
+5. XP の言語のロケール（`ja_JP.UTF-8` か `en_US.UTF-8`）を作ります。
+6. XP 用の Wine の prefix を作ります（`.local/prefix`）。字体などはその XP に合わせます（下の「英語版の XP」）。
 7. `~/.config/win4wine/session.json` を書き、セッション「XP Shell (Wine, X11)」を登録します。
 8. `--greeter` のときは XP のようこそ画面を入れます。
 9. `--wayland` のときは labwc と wlroots にパッチを当ててビルドし（`.local/labwc-install`。ログは `.local/labwc-build.log`）、
    セッション「XP Shell (Wine, Wayland)」も登録します。
+
+## 英語版の XP
+
+英語版の XP SP3 の ISO を `--media` に渡すと、英語版の XP に合わせて入れます。オプションは同じです。
+
+- ロケールは `en_US.UTF-8` です。日本語入力（fcitx5）は設定しません（`session.json` に `input_method` を書きません）。
+- 字体は英語版の XP と同じです。Luna ではタイトルバーが Trebuchet MS、ほかは Tahoma 8 ポイント、スタートボタンと
+  スタートメニューの利用者名が Franklin Gothic Medium、クラシックでは Tahoma 8 ポイントです。Linux のアプリの字体も Tahoma です。
+- コマンド プロンプトは英語版の XP と同じ、ラスタ フォントの Terminal（8×12）です。
+- ようこそ画面は英語版の XP の文言と字体（Arial、Tahoma、Franklin Gothic Medium）で描きます。
+- 字体のファイルは ISO から取り出します（英語版の ISO にある Franklin Gothic、Arial の太字・斜体、Microsoft Sans Serif、Terminal）。
+- 一つのマシンで日本語版と英語版を混ぜることは想定していません。ようこそ画面はマシンで一つなので、最後に `--greeter` で入れた方になります。
 
 ## ReactOS のシェル
 
@@ -95,9 +108,9 @@ scripts/setup.sh --shell reactos --lang ja
 | キー | 既定 | 意味 |
 |---|---|---|
 | `wine`, `prefix` | （setup.sh が書きます） | 使う Wine と prefix の絶対パス |
-| `locale` | `ja_JP.UTF-8` | セッションのロケール |
-| `input_method` | `fcitx5` | 入力メソッド。省くと起動しません |
-| `linux_font` | `MS UI Gothic` | Linux のアプリの字体。`null` で変えません |
+| `locale` | `ja_JP.UTF-8`（英語版の XP では `en_US.UTF-8`） | セッションのロケール |
+| `input_method` | `fcitx5`（英語版の XP では無し） | 入力メソッド。省くと起動しません |
+| `linux_font` | `MS UI Gothic`（英語版の XP では `Tahoma`） | Linux のアプリの字体。`null` で変えません |
 | `linux_menu` | `true` | Linux のアプリをスタートメニューに入れます |
 | `welcome_screen` | `true` | ログイン後とログオフ中に XP の画面を出します |
 | `cursor_theme` | `win4wine-xp` | カーソルのテーマ。`null` で使いません |

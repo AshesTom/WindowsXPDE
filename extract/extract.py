@@ -6,8 +6,11 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from media import language as media_language
 
 FILES = {
     'explorer.exe': 'windows',
@@ -34,6 +37,15 @@ FILES = {
     'metal_ss.dll': 'themes/Luna/Shell/Metallic',
 }
 
+# English XP's own fonts where Japanese XP uses MS UI Gothic: its Luna theme's
+# Franklin Gothic Medium (Start panel), the Welcome screen's Arial with its
+# bold and italic faces, Microsoft Sans Serif behind MS Shell Dlg, and the
+# console's raster Terminal font (code page 437), which Wine does not have.
+LANGUAGE_FILES = {
+    'en': dict.fromkeys(('framd.ttf', 'framdit.ttf', 'arialbd.ttf', 'arialbi.ttf', 'ariali.ttf',
+                         'micross.ttf', 'vgaoem.fon'), 'fonts'),
+}
+
 def run(*args):
     subprocess.run(args, check=True, stdout=subprocess.DEVNULL)
 
@@ -51,14 +63,17 @@ def extract(source, output):
         paths = sorted(p for p in media.rglob('*') if p.is_file())
         output.mkdir(parents=True)
         manifest = []
-        for name, group in FILES.items():
+        def copy(files):
+            for name, group in files.items():
+                copy_one(name, group)
+        def copy_one(name, group):
             stem, extension = name.rsplit('.', 1)
             compressed = stem + '.' + extension[:2] + '_'
             matches = [p for p in paths if p.name.lower() in (name, compressed)]
             # System32 controls v5 must not accidentally be replaced with SxS v6.
             matches.sort(key=lambda p: (any(s.lower() in ('winsxs', 'asms') for s in p.parts), len(p.parts)))
             if not matches:
-                continue
+                return
             original = matches[0]
             target = output / group / ('shellstyle.dll' if name.endswith('_ss.dll') else name)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -77,6 +92,7 @@ def extract(source, output):
             manifest.append({'name': str(target.relative_to(output)),
                              'source': str(original.relative_to(media)),
                              'sha256': hashlib.sha256(target.read_bytes()).hexdigest()})
+        copy(FILES)
         for original in paths:
             if original.name.lower() != 'shellstyle.dll':
                 continue
@@ -138,13 +154,15 @@ def extract(source, output):
         missing = [n for n in required if not (output / n).is_file()]
         if missing:
             raise SystemExit('Incomplete XP assets: ' + ', '.join(missing))
+        language = media_language(output)
+        copy(LANGUAGE_FILES.get(language, {}))
         # Read PE header architecture; no disassembly.
         pe = (output / 'windows/explorer.exe').read_bytes()
         offset = int.from_bytes(pe[60:64], 'little')
         if pe[offset:offset+6] != b'PE\0\0\x4c\x01':
             raise SystemExit('Only x86 XP media is supported')
         (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-        print(f'Extracted {len(manifest)} files to {output}')
+        print(f'Extracted {len(manifest)} files ({language}) to {output}')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
