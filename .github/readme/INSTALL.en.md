@@ -11,7 +11,8 @@
 ## Requirements
 
 - A **Debian 13 (trixie) amd64** machine (real or virtual). No desktop environment is needed.
-- A **Japanese Windows XP Professional SP3 (x86) ISO** (or an XP Windows directory).
+- A **Windows XP Professional SP3 (x86) ISO** (or an XP Windows directory), **Japanese or English**; which one is
+  detected from the ISO.
 - Network access (packages and the Wine source) and **about 40 GB of free space** (Wine's source and build).
 - A user who can use sudo.
 
@@ -43,16 +44,29 @@ If it fails, just run it again: finished steps are skipped. Everything it builds
 ## 2. What the script does
 
 1. Installs packages (Wine's build dependencies, Xorg, python3-xlib, fcitx5 + Mozc, …), and LightDM if there is no display manager.
-2. Generates the `ja_JP.UTF-8` locale.
-3. Fetches Wine 11.0, applies the patches and builds it (`.local/wine-install`; about 90 minutes on 4 cores; log in `.local/wine-build.log`).
+2. Fetches Wine 11.0, applies the patches and builds it (`.local/wine-install`; about 90 minutes on 4 cores; log in `.local/wine-build.log`).
    While it builds, only the step, the number and share of files compiled, an estimate of the time left and the last few lines of output are shown.
-4. Builds the bridge (the WM and the proxy windows).
-5. Extracts only the needed files from the ISO (`.local/assets`).
-6. Creates the XP prefix (`.local/prefix`).
+3. Builds the bridge (the WM and the proxy windows).
+4. Extracts only the needed files from the ISO (`.local/assets`), and finds out the XP's language (Japanese or English).
+5. Generates the locale of that language (`ja_JP.UTF-8` or `en_US.UTF-8`).
+6. Creates the XP prefix (`.local/prefix`), with that XP's fonts and settings (see "English XP" below).
 7. Writes `~/.config/win4wine/session.json` and registers the session "XP Shell (Wine, X11)".
 8. With `--greeter`, installs XP's Welcome screen.
 9. With `--wayland`, builds labwc and wlroots with their patches (`.local/labwc-install`; log in `.local/labwc-build.log`)
    and registers the session "XP Shell (Wine, Wayland)" too.
+
+## English XP
+
+Give an English XP SP3 ISO to `--media` and the setup follows English XP; the options are the same.
+
+- The locale is `en_US.UTF-8`. Japanese input (fcitx5) is not set up (`session.json` gets no `input_method`).
+- The fonts are English XP's: with Luna, Trebuchet MS in title bars and Tahoma 8 pt elsewhere, Franklin Gothic Medium for
+  the Start button and the user name in the Start menu; with the classic theme, Tahoma 8 pt. Linux applications get Tahoma.
+- The command prompt uses the raster font Terminal (8×12), as on English XP.
+- The Welcome screen has English XP's text and fonts (Arial, Tahoma, Franklin Gothic Medium).
+- The font files come from the ISO (Franklin Gothic, Arial bold and italic, Microsoft Sans Serif and Terminal of the English ISO).
+- Mixing Japanese and English XP on one machine is not intended. There is one Welcome screen per machine: the last one set
+  up with `--greeter`.
 
 ## The ReactOS shell
 
@@ -95,9 +109,9 @@ Restart the display manager (or reboot).
 | Key | Default | Meaning |
 |---|---|---|
 | `wine`, `prefix` | (written by setup.sh) | absolute paths of the Wine and prefix to use |
-| `locale` | `ja_JP.UTF-8` | the session's locale |
-| `input_method` | `fcitx5` | the input method; leave it out to start none |
-| `linux_font` | `MS UI Gothic` | font of Linux applications; `null` leaves it alone |
+| `locale` | `ja_JP.UTF-8` (`en_US.UTF-8` for English XP) | the session's locale |
+| `input_method` | `fcitx5` (none for English XP) | the input method; leave it out to start none |
+| `linux_font` | `MS UI Gothic` (`Tahoma` for English XP) | font of Linux applications; `null` leaves it alone |
 | `linux_menu` | `true` | list Linux applications in the Start menu |
 | `welcome_screen` | `true` | show XP's screens after login and while logging off |
 | `cursor_theme` | `win4wine-xp` | cursor theme; `null` for none |
