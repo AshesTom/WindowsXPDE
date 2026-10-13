@@ -96,7 +96,8 @@ ReactOS is free software, so the setup script downloads it from its official rel
 >   Follow Microsoft's license terms for the ISO and the files extracted from it.
 > - **Use at your own risk.** The author is not responsible for data loss or any other problems.
 > - This is an unofficial project, not affiliated with Microsoft or the Wine project.
-> - Only the Japanese and the English XP SP3 (x86) have been tested; `setup.sh` refuses XP in other languages.
+> - Only the Japanese and the English XP SP3 (x86) have been tested. XP in other languages is set up the same way as English XP
+>   and might work, but it has not been tested at all (`setup.sh` warns and goes on).
 
 ## How it works
 

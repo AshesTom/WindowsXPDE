@@ -74,8 +74,9 @@ def use_fonts(root, cache):
 
 
 def english_media(root):
-    """Whether the Welcome screen's files are English XP's (logonui's strings are in English)."""
-    return 0x409 in Resources(Path(root) / 'system32/logonui.exe').languages(6)
+    """Whether the Welcome screen's files are English XP's (logonui's strings are not in
+    Japanese: XP in other languages is set up as English XP)."""
+    return 0x411 not in Resources(Path(root) / 'system32/logonui.exe').languages(6)
 
 
 def config_dpi(config):
@@ -260,7 +261,7 @@ class Assets:
         self.bottom_face = self.logonui.string(2) or self.face
         self.account_face = self.logonui.string(3) or self.face
         languages = self.logonui.languages(6)
-        self.system_font = SYSTEM_FONTS.get(languages[0] if languages else 0x411, SYSTEM_FONTS[0x411])
+        self.system_font = SYSTEM_FONTS[0x411 if not languages or languages[0] == 0x411 else 0x409]
         self.dialog = self.template(self.msgina.find(5, 20100))
 
     def bitmap(self, module, number, key=None, alpha=False, dimmed=False):

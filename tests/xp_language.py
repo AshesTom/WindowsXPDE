@@ -79,6 +79,17 @@ class Language(unittest.TestCase):
         for expected, path in ASSETS.items():
             self.assertEqual(media.language(path), expected)
             self.assertEqual(media.LOCALES[expected].split('_')[0], expected)
+            self.assertIsNone(media.warning(path))
+
+    def test_untested_language(self):
+        # German XP's shell32: set up as English XP, with a warning.
+        saved = media.resource_languages
+        media.resource_languages = lambda path, rtype: [0x407]
+        try:
+            self.assertEqual(media.language('assets'), 'en')
+            self.assertIn('0x0407', media.warning('assets'))
+        finally:
+            media.resource_languages = saved
 
 
 if __name__ == '__main__':

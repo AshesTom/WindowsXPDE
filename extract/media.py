@@ -2,9 +2,11 @@
 """The language of extracted XP files: ja (Japanese XP) or en (English XP).
 
 It is the language of the version resource of the extraction's shell32.dll,
-read from the PE resource directory (no code is read or run).
+read from the PE resource directory (no code is read or run). XP in any other
+language is set up as English XP; no other language has been tested.
 
-  media.py ASSETS    prints the language of an extract/extract.py output
+  media.py [--warn] ASSETS    prints the language of an extract/extract.py output;
+                              --warn also warns on stderr about an untested language
 """
 from pathlib import Path
 import struct
@@ -49,17 +51,34 @@ def resource_languages(path, rtype):
     return languages
 
 
-def language(assets):
-    """ja or en for the extracted XP files in ASSETS; SystemExit for other languages."""
-    shell32 = Path(assets) / 'system32/shell32.dll'
-    for lang in resource_languages(shell32, RT_VERSION):
+def tested(assets):
+    """The tested language (ja or en) of the extracted XP files in ASSETS, or None."""
+    for lang in resource_languages(Path(assets) / 'system32/shell32.dll', RT_VERSION):
         if lang in LANGUAGES:
             return LANGUAGES[lang]
+    return None
+
+
+def language(assets):
+    """ja or en for the extracted XP files in ASSETS; en for XP in other languages."""
+    return tested(assets) or 'en'
+
+
+def warning(assets):
+    """A warning when the XP files in ASSETS are in an untested language, or None."""
+    if tested(assets):
+        return None
+    shell32 = Path(assets) / 'system32/shell32.dll'
     found = ', '.join(f'{lang:#06x}' for lang in resource_languages(shell32, RT_VERSION)) or 'none'
-    raise SystemExit(f'Only Japanese and English XP media are supported (language of {shell32}: {found})')
+    return (f'Warning: this XP is neither Japanese nor English (language of {shell32}: {found}).\n'
+            'It is set up as English XP. XP in other languages has not been tested at all.')
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
+    args = sys.argv[1:]
+    warn = args[:1] == ['--warn']
+    if len(args) != 1 + warn:
         raise SystemExit(__doc__.strip())
-    print(language(sys.argv[1]))
+    if warn and (text := warning(args[-1])):
+        print(text, file=sys.stderr)
+    print(language(args[-1]))
