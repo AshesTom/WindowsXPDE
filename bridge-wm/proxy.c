@@ -19,6 +19,8 @@ struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; 
     HICON icon; int icon_checked, icon_present; FILETIME icon_time; DWORD icon_size;
 };
 static struct client clients[MAX_CLIENTS];
+/* WM_TIMER of a frame whose caption is painted again after an activation change. */
+#define CAPTION_REPAINT_TIMER 0x574e
 static HWND previous[MAX_CLIENTS];
 static unsigned previous_count;
 static WCHAR previous_titles[MAX_CLIENTS][512];
@@ -164,6 +166,21 @@ static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 limits->ptMaxTrackSize.y = max(limits->ptMaxTrackSize.y, limits->ptMaxSize.y);
                 return result;
             }
+    }
+    /* While its client has the X focus the frame stays active: a Win32
+     * activation of another process that arrives after the WM's report (a
+     * window the user had activated just before) deactivates this frame. */
+    if (msg == WM_NCACTIVATE && !wp && xid)
+    {
+        unsigned i;
+        for (i = 0; i < MAX_CLIENTS; ++i)
+            if (clients[i].xid == xid && clients[i].active) return DefWindowProcW(hwnd, msg, TRUE, lp);
+    }
+    if (msg == WM_TIMER && wp == CAPTION_REPAINT_TIMER)
+    {
+        KillTimer(hwnd, CAPTION_REPAINT_TIMER);
+        RedrawWindow(hwnd, NULL, NULL, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
+        return 0;
     }
     /* Border metrics written to frames.tsv follow theme and settings changes. */
     if (msg == WM_THEMECHANGED || msg == WM_SETTINGCHANGE || msg == WM_DISPLAYCHANGE) dirty = TRUE;
@@ -536,11 +553,24 @@ static void snapshot(void)
         c->hidden = hidden;
         if (hidden && !IsIconic(c->hwnd)) ShowWindow(c->hwnd, SW_SHOWMINNOACTIVE);
         else if (!hidden && IsIconic(c->hwnd)) ShowWindow(c->hwnd, SW_SHOWNOACTIVATE);
-        if (active && !c->active)
+        if (active != c->active)
         {
-            SetForegroundWindow(c->hwnd);
+            /* The frame looks active while its client has the X focus. Win32
+             * activation cannot always follow: like Windows, Wine refuses
+             * SetForegroundWindow to a process that did not get the last
+             * input, and the input goes to the native client, not to this
+             * process. So the frame's caption is set directly, both ways;
+             * it would otherwise keep the look of its last real activation. */
+            c->active = active; /* before WM_NCACTIVATE, which proxy_proc checks */
+            if (active) SetForegroundWindow(c->hwnd);
+            SendMessageW(c->hwnd, WM_NCACTIVATE, active, 0);
+            /* Activations of other processes' windows around this one
+             * sometimes leave its caption painted in the previous state,
+             * though WM_NCACTIVATE's state is right (seen in the classic
+             * theme; a repaint shows it). Paint the caption again once
+             * they are over. */
+            SetTimer(c->hwnd, CAPTION_REPAINT_TIMER, 250, NULL);
         }
-        c->active = active;
     }
     fclose(file);
     for (i = 0; i < MAX_CLIENTS; ++i)
