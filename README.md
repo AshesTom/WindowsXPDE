@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/screenshot.png" alt="win4wine: Debian 13 の上で動く Windows XP のシェル" width="800" />
+  <img src="docs/images/screenshot.png" alt="win4wine: Debian 13 の上で動く Windows XP のシェルと、Linux と Windows のアプリ" width="800" />
 </p>
 <p align="center">
   <strong>Linux のデスクトップを、Windows XP のシェルで。</strong>

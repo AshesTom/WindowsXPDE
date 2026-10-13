@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../../docs/images/screenshot.png" alt="win4wine: the Windows XP shell running on Debian 13" width="800" />
+  <img src="../../docs/images/screenshot-en.png" alt="win4wine: the English Windows XP shell with Linux and Windows applications on Debian 13" width="800" />
 </p>
 <p align="center">
   <strong>Your Linux desktop, with the Windows XP shell.</strong>
@@ -79,11 +79,11 @@ ReactOS is free software, so the setup script downloads it from its official rel
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="../../docs/images/screenshot-classic.png" alt="The XP shell with the classic theme and Linux applications" width="400" /><br />
+      <img src="../../docs/images/screenshot-classic-en.png" alt="The XP shell with the classic theme and Linux applications" width="400" /><br />
       XP's classic theme (<code>--theme classic</code>)
     </td>
     <td align="center" width="50%">
-      <img src="../../docs/images/screenshot-reactos.png" alt="The ReactOS shell and Linux applications" width="400" /><br />
+      <img src="../../docs/images/screenshot-reactos-en.png" alt="The ReactOS shell and Linux applications" width="400" /><br />
       The ReactOS shell (<code>--shell reactos</code>; no XP ISO needed)
     </td>
   </tr>
