@@ -235,7 +235,7 @@ if [[ $shell == xp ]]; then
         mkdir -p "$local/tmp"
         TMPDIR=$local/tmp python3 "$root/extract/extract.py" "$media" "$assets"
     fi
-    lang=$(python3 "$root/extract/media.py" "$assets")
+    lang=$(python3 "$root/extract/media.py" --warn "$assets")
     printf 'Windows XP in %s\n' "$([[ $lang == ja ]] && echo Japanese || echo English)"
     make_locale
 

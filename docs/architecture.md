@@ -19,7 +19,7 @@ win4wine がどの部品でできていて、どうつながっているかの�
 
 | 部品 | 役割 |
 |---|---|
-| `extract/extract.py` | ISO（または XP の Windows ディレクトリ）から、必要なファイルだけを `.local/assets` に取り出します。ネットワークは使いません。XP の言語（日本語か英語）は `extract/media.py` が shell32.dll のリソースの言語から判断し、英語版では英語版にだけある字体も取り出します。 |
+| `extract/extract.py` | ISO（または XP の Windows ディレクトリ）から、必要なファイルだけを `.local/assets` に取り出します。ネットワークは使いません。XP の言語（日本語か英語）は `extract/media.py` が shell32.dll のリソースの言語から判断し、英語版では英語版にだけある字体も取り出します。ほかの言語の XP は英語版として扱います（試していません）。 |
 | `wine/build.sh` | Wine 11.0 を取得し、`wine/patches/` を当ててビルドします（[patches.md](patches.md)）。 |
 | `prefix/create.py`、`prefix/stage.py` | XP 用の Wine の prefix を作り、XP の DLL と COM の登録、レジストリの設定（registry profile）を入れます。設定は XP の言語に合わせます（日本語版は MS UI Gothic の字体の profile とコンソールの MS ゴシック、英語版はクラシックの Tahoma、MS Shell Dlg の Microsoft Sans Serif、コンソールの Terminal）。言語は `xp-shell.json` の `language` に記録します。 |
 | `bridge-wm/build.sh` | proxy.exe などの Win32 の補助プログラムをビルドします（`.local/bridge`）。 |

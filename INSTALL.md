@@ -66,6 +66,7 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 - ようこそ画面は英語版の XP の文言と字体（Arial、Tahoma、Franklin Gothic Medium）で描きます。
 - 字体のファイルは ISO から取り出します（英語版の ISO にある Franklin Gothic、Arial の太字・斜体、Microsoft Sans Serif、Terminal）。
 - 一つのマシンで日本語版と英語版を混ぜることは想定していません。ようこそ画面はマシンで一つなので、最後に `--greeter` で入れた方になります。
+- 日本語版と英語版以外の XP は、英語版と同じ設定（ロケール `en_US.UTF-8` を含む）で入れます。一切試していないので、`setup.sh` は警告を出します（止まりはしません）。
 
 ## ReactOS のシェル
 
