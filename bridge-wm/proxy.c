@@ -165,6 +165,15 @@ static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 return result;
             }
     }
+    /* While its client has the X focus the frame stays active: a Win32
+     * activation of another process that arrives after the WM's report (a
+     * window the user had activated just before) deactivates this frame. */
+    if (msg == WM_NCACTIVATE && !wp && xid)
+    {
+        unsigned i;
+        for (i = 0; i < MAX_CLIENTS; ++i)
+            if (clients[i].xid == xid && clients[i].active) return DefWindowProcW(hwnd, msg, TRUE, lp);
+    }
     /* Border metrics written to frames.tsv follow theme and settings changes. */
     if (msg == WM_THEMECHANGED || msg == WM_SETTINGCHANGE || msg == WM_DISPLAYCHANGE) dirty = TRUE;
     if (!syncing && xid)
@@ -544,10 +553,10 @@ static void snapshot(void)
              * input, and the input goes to the native client, not to this
              * process. So the frame's caption is set directly, both ways;
              * it would otherwise keep the look of its last real activation. */
+            c->active = active; /* before WM_NCACTIVATE, which proxy_proc checks */
             if (active) SetForegroundWindow(c->hwnd);
             SendMessageW(c->hwnd, WM_NCACTIVATE, active, 0);
         }
-        c->active = active;
     }
     fclose(file);
     for (i = 0; i < MAX_CLIENTS; ++i)
