@@ -15,7 +15,8 @@
     <font place="ActiveWindow"><size>9</size><weight>bold</weight></font>
     <font place="InactiveWindow"><size>9</size><weight>bold</weight></font>
   </theme>
-  <!-- XP neither snaps nor tiles windows at screen edges -->
+  <!-- XP neither snaps nor tiles windows at screen edges; with "window_snap"
+       in session.json, session.sh turns snapping on (range 1, topMaximize) -->
   <snapping>
     <range>0</range>
     <topMaximize>no</topMaximize>

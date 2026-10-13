@@ -68,6 +68,8 @@ ReactOS is free software, so the setup script downloads it from its official rel
   the installer's shortcuts land in XP's Start menu.
 - **XP Welcome screen**: an optional LightDM greeter that shows XP's Welcome and log-off screens.
 - **XP's keys**: the Windows key, Ctrl+Esc, Win+R and Win+E.
+- **Window snapping (optional)**: with `window_snap` in `session.json`, Win+arrow keys or dragging a title bar to an edge
+  of the screen put a window on the left or right half or maximize it (like Windows 7's Aero Snap; XP has none, so it is off by default).
 - **Recovery**: if the XP shell keeps crashing, the session falls back to Wine's own explorer and an xterm.
 - **Wayland session (optional, even more experimental than the X11 session)**: a patched labwc instead of the X11 WM,
   with a scale per monitor and scales such as 125% or 150%; the XP shell stays crisp, and Wayland applications get XP's

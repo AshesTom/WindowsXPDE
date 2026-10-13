@@ -14,7 +14,8 @@ from icons import payload as icon_payload
 IN_CLOSE_WRITE, IN_MOVED_TO = 0x8, 0x80
 # Keys besides letters, digits and F1-F24 that XP's hotkeys use with the Windows key.
 VIRTUAL_KEYS = {XK.XK_Tab: 0x09, XK.XK_Pause: 0x13, XK.XK_Break: 0x13, XK.XK_space: 0x20,
-                XK.XK_Escape: 0x1b, XK.XK_Return: 0x0d}
+                XK.XK_Escape: 0x1b, XK.XK_Return: 0x0d,
+                XK.XK_Left: 0x25, XK.XK_Up: 0x26, XK.XK_Right: 0x27, XK.XK_Down: 0x28}
 
 
 class Inotify:

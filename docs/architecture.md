@@ -116,6 +116,13 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 - **Windows キーと Ctrl+Esc**: Wine の窓にフォーカスがあるときは、そのまま Wine に渡します（パッチ 0023 でスタートメニューが
   開き、Win+R などのホットキーも Wine が処理します）。Linux の窓にフォーカスがあるときは、WM が Windows キーを離すまでの
   キーを受け取って `shellkeys.tsv` に書き、proxy が `SendInput` で Wine に入れます。
+- **窓の寄せ（`window_snap` のときだけ）**: proxy が Win+←/→/↑/↓ を `RegisterHotKey` で受け取り、前面の窓（Linux の窓に
+  フォーカスがあればその枠）を作業領域の左右の半分に寄せたり、最大化・元に戻す・最小化したりします。寄せる前の位置は proxy が
+  覚えていて、Win+↓ や反対側の Win+矢印で戻します。X11 のセッションでは、Wine の移動のループが送る EVENT_SYSTEM_MOVESIZESTART/END
+  （パッチ 0073）でタイトルバーのドラッグを知り、ポインタが画面の左右の端・上端にあれば XP のドラッグの枠と同じ網掛けで行き先を
+  示し、離したときに寄せます。寄せた窓には `Win4WineSnapRestore` を付け、ドラッグで引き剥がすと Wine が元の大きさに戻します。
+  Wayland のセッションでは Wine の窓のドラッグは labwc が行うので、`wayland/session.sh` が labwc の snapping を有効にした
+  `rc.xml` を IPC のディレクトリに作って使います。
 
 ## トレイアイコン（`bridge-wm/tray.py`）
 

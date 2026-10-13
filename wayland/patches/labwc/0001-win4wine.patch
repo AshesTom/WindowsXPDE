@@ -54,11 +54,11 @@ falls to no window.
  src/ssd/ssd.c              |   15 +-
  src/view-impl-common.c     |   14 +-
  src/view.c                 |   25 +-
- src/win4wine.c             | 1892 ++++++++++++++++++++++++++++++++++++++++++++
+ src/win4wine.c             | 1896 ++++++++++++++++++++++++++++++++++++++++++++
  src/xwayland-scale.c       |  445 +++++++++++
  src/xwayland-unmanaged.c   |   45 +-
  src/xwayland.c             |  304 +++++--
- 25 files changed, 2945 insertions(+), 98 deletions(-)
+ 25 files changed, 2949 insertions(+), 98 deletions(-)
 
 diff --git a/include/ssd.h b/include/ssd.h
 index 5cbac60..2500f57 100644
@@ -931,10 +931,10 @@ index cc5af20..92c2358 100644
  		mappable_disconnect(&view->mappable);
 diff --git a/src/win4wine.c b/src/win4wine.c
 new file mode 100644
-index 0000000..ec92bc5
+index 0000000..eec808f
 --- /dev/null
 +++ b/src/win4wine.c
-@@ -0,0 +1,1892 @@
+@@ -0,0 +1,1896 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#define _POSIX_C_SOURCE 200809L
 +/*
@@ -2646,6 +2646,10 @@ index 0000000..ec92bc5
 +	case XKB_KEY_space: return 0x20;
 +	case XKB_KEY_Escape: return 0x1b;
 +	case XKB_KEY_Return: return 0x0d;
++	case XKB_KEY_Left: return 0x25;
++	case XKB_KEY_Up: return 0x26;
++	case XKB_KEY_Right: return 0x27;
++	case XKB_KEY_Down: return 0x28;
 +	}
 +	if (sym >= XKB_KEY_a && sym <= XKB_KEY_z) {
 +		return sym - XKB_KEY_a + 'A';
