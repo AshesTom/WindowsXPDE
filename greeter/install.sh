@@ -4,6 +4,10 @@
 #                                copy the greeter and the XP files it reads from ASSETS
 #                                (extract/extract.py's output), then make it LightDM's greeter;
 #                                SESSION is the default session (xp-shell, or xp-shell-wayland)
+#   greeter/install.sh --reactos ASSETS LANG [SESSION]
+#                                the same with ReactOS's logon screen (greeter/reactos-greeter.py)
+#                                from extract/reactos.py's output, in LANG (ja or en); SESSION
+#                                defaults to reactos-shell
 #   greeter/install.sh --remove  go back to the greeter LightDM used before
 # Restart LightDM afterwards. Without the XP files the greeter starts lightdm-gtk-greeter.
 set -euo pipefail
@@ -16,7 +20,26 @@ if [[ ${1:-} == --remove ]]; then
     printf 'Removed %s; LightDM uses its previous greeter after a restart.\n' "$seat"
     exit 0
 fi
-assets=${1:?Usage: greeter/install.sh ASSETS | --remove}
+if [[ ${1:-} == --reactos ]]; then
+    assets=${2:?Usage: greeter/install.sh --reactos ASSETS LANG [SESSION]}
+    lang=${3:?Usage: greeter/install.sh --reactos ASSETS LANG [SESSION]}
+    for f in system32/msgina.dll wallpaper/Nebula.bmp fonts/tahoma.ttf fonts/tahomabd.ttf fonts/DroidSansFallback.ttf; do
+        [[ -f $assets/$f ]] || { printf 'Missing %s: extract again with extract/reactos.py\n' "$assets/$f" >&2; exit 1; }
+    done
+    sudo install -d -m755 "$share/code" "$share/reactos/system32" "$share/reactos/wallpaper" "$share/reactos/fonts"
+    sudo install -m644 "$root"/greeter/{welcome,xpres,xdraw,rosdialog}.py "$share/code/"
+    sudo install -m755 "$root/greeter/reactos-greeter.py" "$share/code/"
+    sudo install -m644 "$assets/system32/msgina.dll" "$share/reactos/system32/"
+    sudo install -m644 "$assets/wallpaper/Nebula.bmp" "$share/reactos/wallpaper/"
+    sudo install -m644 "$assets"/fonts/{tahoma.ttf,tahomabd.ttf,DroidSansFallback.ttf} "$share/reactos/fonts/"
+    printf '{"assets": "%s/reactos", "lang": "%s", "fallback": "lightdm-gtk-greeter"}\n' "$share" "$lang" |
+        sudo install -Dm644 /dev/stdin /etc/win4wine/reactos-greeter.json
+    sudo install -Dm644 "$root/greeter/reactos-greeter.desktop" /usr/share/xgreeters/reactos-greeter.desktop
+    printf '[Seat:*]\ngreeter-session=reactos-greeter\nuser-session=%s\n' "${4:-reactos-shell}" | sudo install -Dm644 /dev/stdin "$seat"
+    printf 'Installed the ReactOS logon screen as %s. Settings: /etc/win4wine/reactos-greeter.json\n' "$seat"
+    exit 0
+fi
+assets=${1:?Usage: greeter/install.sh ASSETS | --reactos ASSETS LANG | --remove}
 for f in system32/logonui.exe system32/msgina.dll system32/winlogon.exe fonts/msgothic.ttc; do
     [[ -f $assets/$f ]] || { printf 'Missing %s: extract again with extract/extract.py\n' "$assets/$f" >&2; exit 1; }
 done

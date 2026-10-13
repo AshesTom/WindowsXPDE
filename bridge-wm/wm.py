@@ -758,7 +758,11 @@ class Manager:
             self.unmanage(e.window.id)
         elif e.type == X.UnmapNotify:
             c = self.clients.get(e.window.id)
-            if c and not c['hidden'] and c['kind'] != 'proxy':
+            # A minimized client that withdraws itself sends only the synthetic
+            # UnmapNotify (XWithdrawWindow); Wine 11 restores a minimized window
+            # this way and maps it again once WM_STATE is gone.
+            withdrawn = c and c['hidden'] and e.send_event and c['kind'] == 'normal'
+            if c and (not c['hidden'] or withdrawn) and c['kind'] != 'proxy':
                 # ICCCM withdrawal acknowledgement. Wine waits for PropertyDelete
                 # (WithdrawnState) before issuing a subsequent XMapWindow. Keep
                 # iconic clients and deliberately hidden proxy frames registered.

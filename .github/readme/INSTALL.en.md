@@ -30,11 +30,13 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `--media PATH` | the XP ISO or Windows directory (required) |
 | `--greeter` | make the login screen XP's Welcome screen (LightDM becomes the display manager) |
 | `--no-greeter` | keep the current login screen (default); only XP's cursors are installed |
-| `--theme luna\|classic` | `luna` (default, XP-style Start menu) or `classic` (classic Start menu) |
+| `--theme luna\|classic` | `luna` (default: XP's "Windows XP" theme, the XP-style Start menu, the Bliss wallpaper) or `classic` (XP's "Windows Classic" theme, the classic Start menu, no wallpaper) |
 | `--dpi N` | the screen's DPI (XP's "DPI setting"): 96 (normal), 120 (large) or any value from 19 to 480; for the XP shell, the Linux applications in its session and the Welcome screen |
 | `--wayland` | also install the Wayland session "XP Shell (Wine, Wayland)" (builds labwc and wlroots): a scale per monitor, scales such as 125% or 150%, XP frames for Wayland applications; with `--greeter` it becomes the Welcome screen's default session. **Even more experimental than the X11 session** (tested less, with known limits; [docs/wayland.md](../../docs/wayland.md)) |
 | `--wine-install DIR` | use a Wine built on another Debian 13 machine (a copy of its `.local/wine-install`) instead of building it here |
 | `--jobs N` | parallel jobs for the Wine build (default: the number of CPUs) |
+| `--shell reactos` | set up ReactOS's shell instead of XP's (no `--media`; see "The ReactOS shell" below) |
+| `--lang ja\|en` | the ReactOS shell's language (default: `ja` if the current locale is Japanese, else `en`) |
 
 If it fails, just run it again: finished steps are skipped. Everything it builds stays in `.local/` of this checkout.
 
@@ -43,6 +45,7 @@ If it fails, just run it again: finished steps are skipped. Everything it builds
 1. Installs packages (Wine's build dependencies, Xorg, python3-xlib, fcitx5 + Mozc, …), and LightDM if there is no display manager.
 2. Generates the `ja_JP.UTF-8` locale.
 3. Fetches Wine 11.0, applies the patches and builds it (`.local/wine-install`; about 90 minutes on 4 cores; log in `.local/wine-build.log`).
+   While it builds, only the step, the number and share of files compiled, an estimate of the time left and the last few lines of output are shown.
 4. Builds the bridge (the WM and the proxy windows).
 5. Extracts only the needed files from the ISO (`.local/assets`).
 6. Creates the XP prefix (`.local/prefix`).
@@ -50,6 +53,24 @@ If it fails, just run it again: finished steps are skipped. Everything it builds
 8. With `--greeter`, installs XP's Welcome screen.
 9. With `--wayland`, builds labwc and wlroots with their patches (`.local/labwc-install`; log in `.local/labwc-build.log`)
    and registers the session "XP Shell (Wine, Wayland)" too.
+
+## The ReactOS shell
+
+Without an XP ISO, set up ReactOS's shell (classic look):
+
+```sh
+scripts/setup.sh --shell reactos --lang en
+```
+
+- It downloads the ReactOS 0.4.16 release (about 200 MB) from GitHub, checks its SHA-256 and extracts only the shell's files into
+  `.local/assets-reactos`; the zip stays in `.local/dl`.
+- The prefix is `.local/prefix-reactos`, the settings `~/.config/win4wine/reactos-session.json` and the session
+  "**ReactOS Shell (Wine, X11)**". The XP shell's settings and session are left alone, so both can be set up (Wine and the bridge are shared).
+- With `--greeter`, the login screen becomes ReactOS's logon screen.
+- `--theme` is `classic` (the default, a Windows 2000-like classic look) or one of ReactOS's themes, `lautus`, `lunar` or
+  `mizu`; run setup.sh again with `--theme` to change it later.
+- With `--wayland`, the Wayland session "ReactOS Shell (Wine, Wayland)" is installed too (even more experimental than X11).
+- Details: [docs/reactos.md](../../docs/reactos.md) (Japanese).
 
 ## 3. Log in
 
@@ -82,12 +103,32 @@ Restart the display manager (or reboot).
 | `cursor_theme` | `win4wine-xp` | cursor theme; `null` for none |
 | `shutdown_command`, `reboot_command` | `systemctl poweroff` / `reboot` | commands run by Turn Off Computer |
 | `outputs` | (none) | the Wayland session's settings per output, e.g. `{"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}` (`mode` too; `wlr-randr` lists the names) |
+| `shell` | `xp` | `reactos` for ReactOS's shell (setup.sh writes it into `reactos-session.json`) |
 | `primary` | the leftmost output | the output the Wayland session makes Win32's primary monitor; XP's desktop and taskbar are on it |
 
-To change the look later, stop the session and run `scripts/setup.sh --media ISO --theme classic` (or `luna`).
-To change the DPI (the size of text and screen elements), run `scripts/setup.sh --media ISO --dpi 120` and log in again.
-As on XP, text and metrics grow while icons stay 32×32. Linux applications get the same DPI for their text (GTK also doubles
-its widgets from 192).
+## Changing the look and the text size
+
+Display Properties (right-click the desktop → Properties) do not open in the XP shell or the ReactOS shell (their parts are
+not installed: XP shows an error, ReactOS nothing). The theme (the look) and the DPI (the size of text and screen elements) are changed with `setup.sh`, while the
+session's Wine is not running: log off first.
+
+1. Start → Log Off, back to the login screen.
+2. Press Ctrl+Alt+F2 for a text console and log in as the same user (or log in over SSH from another machine).
+3. Run one of these:
+
+   ```sh
+   cd ~/win4wine
+   scripts/setup.sh --media /path/to/WindowsXPSP3.iso --theme classic   # XP's "Windows Classic"; --theme luna goes back
+   scripts/setup.sh --media /path/to/WindowsXPSP3.iso --dpi 120          # text size; 96 is normal (XP's "Normal size")
+   scripts/setup.sh --shell reactos --theme lautus                      # the ReactOS shell: classic, lautus, lunar or mizu
+   ```
+
+4. Log out of the console with `exit`, press Ctrl+Alt+F7 for the login screen and log in again.
+
+- A theme brings its wallpaper, as choosing a theme on XP does (none for classic, Bliss for luna).
+- Steps already done are skipped, so later runs are quick (Wine is rebuilt only where its patches changed).
+- A higher DPI makes text and metrics larger while icons stay 32×32, as on XP. Linux applications get the same DPI for their
+  text (GTK also doubles its widgets from 192).
 
 In the Wayland session Linux applications draw at each output's scale (`scale` in `outputs`) and the XP shell at its DPI,
 crisp on every output; set the DPI to the scale of the output you mostly use (144 for 1.5). See [docs/wayland.md](../../docs/wayland.md) (Japanese).
@@ -106,6 +147,8 @@ crisp on every output; set the DPI to the scale of the output you mostly use (14
 greeter/install.sh --remove                     # stop using the Welcome screen (back to LightDM's previous greeter)
 sudo rm /usr/share/xsessions/xp-shell.desktop /usr/local/bin/xp-shell-session   # unregister the session
 sudo rm /usr/share/wayland-sessions/xp-shell-wayland.desktop /usr/local/bin/xp-shell-wayland-session   # and the Wayland one
+sudo rm /usr/share/xsessions/reactos-shell.desktop /usr/local/bin/reactos-shell-session   # and the ReactOS shell's
+sudo rm /usr/share/wayland-sessions/reactos-shell-wayland.desktop /usr/local/bin/reactos-shell-wayland-session
 python3 session/linux_apps.py .local/prefix --wine .local/wine-install/bin/wine --remove   # remove the Start menu entries it made
 ```
 

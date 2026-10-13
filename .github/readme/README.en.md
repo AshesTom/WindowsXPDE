@@ -34,7 +34,16 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 
 3. Reboot. The XP Welcome screen logs you straight into the XP shell.
 
+Without an XP ISO, try the ReactOS shell instead (no ISO needed):
+
+```sh
+scripts/setup.sh --shell reactos --lang en   # or --lang ja
+```
+
+and choose the session "ReactOS Shell (Wine, X11)" at the login screen.
+
 Details: 🔗 [installation guide (INSTALL.en.md)](INSTALL.en.md). Building Wine takes about 90 minutes on 4 cores.
+The theme (XP's classic one, for example) and the text size can be changed later ([Changing the look and the text size](INSTALL.en.md#changing-the-look-and-the-text-size)).
 
 ## What it is
 
@@ -42,6 +51,9 @@ It runs Windows XP's own `explorer.exe` on a patched Wine as the **desktop shell
 The taskbar, Start menu, desktop and folder windows are XP's real ones, and Linux applications get XP's frames and taskbar buttons.
 
 No Microsoft files are included. Only the files that are needed are extracted locally from your own ISO.
+
+Without an XP ISO, the session can run **[ReactOS](https://reactos.org/)'s shell** instead (a Windows 2000-like classic look).
+ReactOS is free software, so the setup script downloads it from its official release ([docs/reactos.md](../../docs/reactos.md), Japanese).
 
 ## What it does
 
@@ -59,6 +71,21 @@ No Microsoft files are included. Only the files that are needed are extracted lo
   with a scale per monitor and scales such as 125% or 150%; the XP shell stays crisp, and Wayland applications get XP's
   frames too. It is new, tested less than the X11 session and has known limits ([docs/wayland.md](../../docs/wayland.md),
   Japanese). The X11 session is the one to try first.
+- **ReactOS shell (optional)**: the session with ReactOS 0.4.16's explorer instead of XP's, in Japanese or English; it can be set
+  up beside the XP shell.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="../../docs/images/screenshot-classic.png" alt="The XP shell with the classic theme and Linux applications" width="400" /><br />
+      XP's classic theme (<code>--theme classic</code>)
+    </td>
+    <td align="center" width="50%">
+      <img src="../../docs/images/screenshot-reactos.png" alt="The ReactOS shell and Linux applications" width="400" /><br />
+      The ReactOS shell (<code>--shell reactos</code>; no XP ISO needed)
+    </td>
+  </tr>
+</table>
 
 ## Caution
 
@@ -74,7 +101,7 @@ No Microsoft files are included. Only the files that are needed are extracted lo
 ```text
 LightDM ─ XP Welcome greeter (greeter/)
    └─ XP Shell session (session/supervisor.py)
-        ├─ Wine 11.0 + 62 patches (wine/patches/)
+        ├─ Wine 11.0 + 71 patches (wine/patches/)
         │    └─ XP's explorer.exe, shell32.dll, … (extracted from the ISO)
         ├─ bridge-wm: an X11 WM + Win32 proxy windows (bridge-wm/)
         │    (Wayland session: a patched labwc instead of the WM, wayland/)
@@ -99,3 +126,4 @@ The design documents are in Japanese; [docs/README.md](../../docs/README.md) lis
 [LGPL-2.1-or-later](../../LICENSE), the same as Wine. It covers only the code and patches in this repository,
 except `wayland/patches/labwc/` (GPL-2.0-only, as labwc) and `wayland/patches/wlroots/` (MIT, as wlroots).
 The Windows XP files, and the XP screens in the screenshot, are copyrighted by Microsoft.
+The ReactOS files that the ReactOS shell uses are under ReactOS's licenses (GPL-2.0-or-later; most of its DLLs LGPL-2.1-or-later).

@@ -53,6 +53,9 @@ Wine 自身の管理のプロセスや復旧の経路まで XP の DLL に頼る
 - 起動と環境変数は supervisor が管理し、im-config は使いません。ほかのセッションに影響しないようにするためです
   （「日本語入力（段階 6）」）。
 - 入力モードは、fcitx5 のアイコンを XP の通知領域に出して示します。
+- 変換中の文字は、XP の IME と同じく入力欄の中に出します（XIM の on-the-spot）。fcitx5 は XIM の利用者に on-the-spot を
+  `~/.config/fcitx5/conf/xim.conf` の `UseOnTheSpot=True` のときだけ出すので、supervisor が（利用者が決めていなければ）書きます。
+  Wine はキャレットの行の下端を fcitx5 に渡し、候補の窓はその下に出ます（パッチ 0069）。xterm などは今までどおり over-the-spot です。
 
 ## ログイン画面
 

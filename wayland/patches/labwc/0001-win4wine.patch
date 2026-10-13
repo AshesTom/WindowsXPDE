@@ -28,11 +28,14 @@ following the scene; Alt+Tab with XP's switch window, the Windows key and
 Ctrl+Esc under Linux windows; the taskbar's edge of the work area; Wine
 choosing the window to activate when one of its windows goes, and
 mapped windows activated as Wine marks them (_NET_WM_USER_TIME); the active
-Linux window's frame shown active through _NET_ACTIVE_WINDOW only.
+Linux window's frame shown active through _NET_ACTIVE_WINDOW only; Wine's
+unmanaged windows (the ReactOS Start menu) leaving the keyboard with the
+Wine window that has it, and X's focus given back to that window when it
+falls to no window.
 ---
  include/ssd.h              |    2 +
  include/view.h             |    3 +
- include/win4wine.h         |  103 +++
+ include/win4wine.h         |  107 +++
  include/xwayland-scale.h   |   72 ++
  include/xwayland.h         |   15 +
  meson.build                |    2 +
@@ -51,11 +54,11 @@ Linux window's frame shown active through _NET_ACTIVE_WINDOW only.
  src/ssd/ssd.c              |   15 +-
  src/view-impl-common.c     |   14 +-
  src/view.c                 |   25 +-
- src/win4wine.c             | 1842 ++++++++++++++++++++++++++++++++++++++++++++
+ src/win4wine.c             | 1892 ++++++++++++++++++++++++++++++++++++++++++++
  src/xwayland-scale.c       |  445 +++++++++++
- src/xwayland-unmanaged.c   |   40 +-
- src/xwayland.c             |  304 ++++++--
- 25 files changed, 2887 insertions(+), 97 deletions(-)
+ src/xwayland-unmanaged.c   |   45 +-
+ src/xwayland.c             |  304 +++++--
+ 25 files changed, 2945 insertions(+), 98 deletions(-)
 
 diff --git a/include/ssd.h b/include/ssd.h
 index 5cbac60..2500f57 100644
@@ -86,10 +89,10 @@ index fa84911..a8ca55f 100644
  		struct wl_signal new_title;
 diff --git a/include/win4wine.h b/include/win4wine.h
 new file mode 100644
-index 0000000..caf252a
+index 0000000..0e8528a
 --- /dev/null
 +++ b/include/win4wine.h
-@@ -0,0 +1,103 @@
+@@ -0,0 +1,107 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * win4wine: the Windows XP shell on Wine (Xwayland) as the desktop.
@@ -113,6 +116,7 @@ index 0000000..caf252a
 +struct server;
 +struct view;
 +struct wlr_box;
++struct wlr_xwayland_surface;
 +struct wlr_surface;
 +
 +enum win4wine_kind {
@@ -156,6 +160,8 @@ index 0000000..caf252a
 +bool win4wine_activates_next(struct view *view);
 +/* Whether map should focus the view (not frames, the desktop or the taskbar) */
 +bool win4wine_focus_on_map(struct view *view);
++/* Whether a Wine window keeps the keyboard when Wine maps an unmanaged window */
++bool win4wine_unmanaged_keeps_keyboard(struct wlr_xwayland_surface *xsurface);
 +/* The XP frame around a native view, in layout coordinates */
 +bool win4wine_margin(struct view *view, struct border *margin);
 +/* Whether labwc leaves a maximize request to the client (Wine sizes its own) */
@@ -184,6 +190,7 @@ index 0000000..caf252a
 +static inline enum win4wine_kind win4wine_kind(struct view *view) { return WIN4WINE_UNKNOWN; }
 +static inline struct view *win4wine_focus_target(struct view *view) { return view; }
 +static inline bool win4wine_focus_on_map(struct view *view) { return true; }
++static inline bool win4wine_unmanaged_keeps_keyboard(struct wlr_xwayland_surface *xsurface) { return false; }
 +static inline bool win4wine_activates_next(struct view *view) { return false; }
 +static inline bool win4wine_margin(struct view *view, struct border *margin) { return false; }
 +static inline bool win4wine_client_maximizes(struct view *view) { return false; }
@@ -924,10 +931,10 @@ index cc5af20..92c2358 100644
  		mappable_disconnect(&view->mappable);
 diff --git a/src/win4wine.c b/src/win4wine.c
 new file mode 100644
-index 0000000..3f74f8e
+index 0000000..ec92bc5
 --- /dev/null
 +++ b/src/win4wine.c
-@@ -0,0 +1,1842 @@
+@@ -0,0 +1,1892 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#define _POSIX_C_SOURCE 200809L
 +/*
@@ -1445,6 +1452,8 @@ index 0000000..3f74f8e
 +	}
 +}
 +
++static void focus_wine_window(struct wlr_surface *focused);
++
 +static int
 +handle_x_events(int fd, uint32_t mask, void *unused)
 +{
@@ -1461,7 +1470,7 @@ index 0000000..3f74f8e
 +		return 0;
 +	}
 +	xcb_generic_event_t *event;
-+	bool origin = false;
++	bool origin = false, refocus = false;
 +	while ((event = xcb_poll_for_event(w.x))) {
 +		uint8_t type = event->response_type & 0x7f;
 +		if (type == XCB_PROPERTY_NOTIFY) {
@@ -1471,6 +1480,12 @@ index 0000000..3f74f8e
 +			} else if (ev->atom == w.atom_class || ev->atom == w.atom_hwnd
 +					|| ev->atom == w.atom_user_time) {
 +				request_property(ev->window, ev->atom, ev->atom == w.atom_class ? 8 : 32);
++			}
++		} else if (type == XCB_FOCUS_IN) {
++			xcb_focus_in_event_t *ev = (void *)event;
++			if (ev->event == w.root && ev->mode == XCB_NOTIFY_MODE_NORMAL
++					&& ev->detail == XCB_NOTIFY_DETAIL_NONE) {
++				refocus = true;
 +			}
 +		} else if (w.randr && (type == w.randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY
 +				|| type == w.randr_event + XCB_RANDR_NOTIFY)) {
@@ -1494,6 +1509,19 @@ index 0000000..3f74f8e
 +	if (origin) {
 +		set_randr_primary();
 +		update_origin();
++	}
++	if (refocus) {
++		/*
++		 * X's focus went to no window. wlroots, on its own X
++		 * connection, clears X's focus when the keyboard moves from
++		 * one X window to another; that can come after this
++		 * connection gave the focus to a Wine window (the taskbar,
++		 * clicked). The keys then went nowhere (Esc in the ReactOS
++		 * Start menu, Win+E). Give it back to the window with the
++		 * keyboard, if a Wine one has it.
++		 */
++		w.x_focus = XCB_WINDOW_NONE;
++		focus_wine_window(w.server->seat.seat->keyboard_state.focused_surface);
 +	}
 +	xcb_flush(w.x);
 +	return 0;
@@ -1526,6 +1554,9 @@ index 0000000..3f74f8e
 +		xcb_randr_select_input(w.x, w.root, XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE
 +			| XCB_RANDR_NOTIFY_MASK_OUTPUT_CHANGE | XCB_RANDR_NOTIFY_MASK_CRTC_CHANGE);
 +	}
++	/* X's focus going to no window (handle_x_events) */
++	uint32_t focus_mask = XCB_EVENT_MASK_FOCUS_CHANGE;
++	xcb_change_window_attributes(w.x, w.root, XCB_CW_EVENT_MASK, &focus_mask);
 +	w.x_source = wl_event_loop_add_fd(server->wl_event_loop, xcb_get_file_descriptor(w.x),
 +		WL_EVENT_READABLE, handle_x_events, NULL);
 +	set_randr_primary();
@@ -2004,7 +2035,6 @@ index 0000000..3f74f8e
 +	}
 +}
 +
-+static void focus_wine_window(struct wlr_surface *focused);
 +
 +void
 +win4wine_focus_changed(struct wlr_surface *surface)
@@ -2422,6 +2452,33 @@ index 0000000..3f74f8e
 +	case WIN4WINE_DESKTOP:
 +	case WIN4WINE_DOCK:
 +		return w.ipc && bridge_alive();
++	default:
++		return false;
++	}
++}
++
++/*
++ * Wine's own unmanaged windows (override-redirect) take no keyboard from a
++ * Wine window: Wine moves X's focus among its windows itself. Taking the
++ * keyboard made wlroots deactivate the Wine window and focus no X window;
++ * the ReactOS Start menu, shown without activation and read from its
++ * owner's (the taskbar's) keys, then had no keys (Esc), nor had Wine any
++ * after it closed (Win+E).
++ */
++bool
++win4wine_unmanaged_keeps_keyboard(struct wlr_xwayland_surface *xsurface)
++{
++	struct wlr_surface *focused = w.server ? w.server->seat.seat->keyboard_state.focused_surface : NULL;
++	struct view *view = w.server ? w.server->active_view : NULL;
++	if (!w.ipc || !focused || !view || view->surface != focused || view->type != LAB_XWAYLAND_VIEW) {
++		return false;
++	}
++	switch (win4wine_kind(view)) {
++	case WIN4WINE_WINE:
++	case WIN4WINE_POPUP:
++	case WIN4WINE_DESKTOP:
++	case WIN4WINE_DOCK:
++		return xwayland_surface_from_view(view)->pid == xsurface->pid;
 +	default:
 +		return false;
 +	}
@@ -3222,12 +3279,14 @@ index 0000000..392fd81
 +	}
 +}
 diff --git a/src/xwayland-unmanaged.c b/src/xwayland-unmanaged.c
-index 38d3c31..ff47ce5 100644
+index 38d3c31..a99a42a 100644
 --- a/src/xwayland-unmanaged.c
 +++ b/src/xwayland-unmanaged.c
-@@ -6,6 +6,31 @@
+@@ -5,7 +5,33 @@
+ #include "common/macros.h"
  #include "common/mem.h"
  #include "labwc.h"
++#include "win4wine.h"
  #include "xwayland.h"
 +#include "xwayland-scale.h"
 +
@@ -3257,7 +3316,7 @@ index 38d3c31..ff47ce5 100644
  
  static void
  handle_request_configure(struct wl_listener *listener, void *data)
-@@ -16,7 +41,7 @@ handle_request_configure(struct wl_listener *listener, void *data)
+@@ -16,7 +42,7 @@ handle_request_configure(struct wl_listener *listener, void *data)
  	struct wlr_xwayland_surface_configure_event *ev = data;
  	wlr_xwayland_surface_configure(xsurface, ev->x, ev->y, ev->width, ev->height);
  	if (unmanaged->node) {
@@ -3266,7 +3325,7 @@ index 38d3c31..ff47ce5 100644
  		cursor_update_focus(unmanaged->server);
  	}
  }
-@@ -28,7 +53,7 @@ handle_set_geometry(struct wl_listener *listener, void *data)
+@@ -28,7 +54,7 @@ handle_set_geometry(struct wl_listener *listener, void *data)
  		wl_container_of(listener, unmanaged, set_geometry);
  	struct wlr_xwayland_surface *xsurface = unmanaged->xwayland_surface;
  	if (unmanaged->node) {
@@ -3275,7 +3334,14 @@ index 38d3c31..ff47ce5 100644
  		cursor_update_focus(unmanaged->server);
  	}
  }
-@@ -50,11 +75,9 @@ handle_map(struct wl_listener *listener, void *data)
+@@ -46,15 +72,15 @@ handle_map(struct wl_listener *listener, void *data)
+ 
+ 	CONNECT_SIGNAL(xsurface, unmanaged, set_geometry);
+ 
+-	if (wlr_xwayland_or_surface_wants_focus(xsurface)) {
++	/* win4wine: not from a Wine window, for Wine's own windows */
++	if (wlr_xwayland_or_surface_wants_focus(xsurface)
++			&& !win4wine_unmanaged_keeps_keyboard(xsurface)) {
  		seat_focus_surface(&unmanaged->server->seat, xsurface->surface);
  	}
  
@@ -3290,7 +3356,7 @@ index 38d3c31..ff47ce5 100644
  	cursor_update_focus(unmanaged->server);
  }
  
-@@ -91,7 +114,8 @@ handle_unmap(struct wl_listener *listener, void *data)
+@@ -91,7 +117,8 @@ handle_unmap(struct wl_listener *listener, void *data)
  
  	wl_list_remove(&unmanaged->link);
  	wl_list_remove(&unmanaged->set_geometry.link);

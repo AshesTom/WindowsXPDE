@@ -3,15 +3,28 @@
 #
 #   scripts/setup.sh --media PATH [--greeter | --no-greeter] [--theme luna|classic]
 #                    [--dpi N] [--wayland] [--wine-install DIR | --jobs N]
+#   scripts/setup.sh --shell reactos [--lang ja|en] [--theme T] [--greeter] [--dpi N]
+#                    [--wayland] [--wine-install DIR | --jobs N]
 #
 #   --media PATH   the user's Windows XP SP3 (x86) ISO or Windows directory
+#   --shell S      xp (the default) or reactos: ReactOS's shell (classic look),
+#                  downloaded from the ReactOS release, so no XP media is needed.
+#                  It is registered as its own session, "ReactOS Shell (Wine, X11)",
+#                  beside the XP shell's if that is set up too
+#   --lang L       ja or en: the language of the ReactOS shell and its session
+#                  (default: ja when the current locale is Japanese, else en;
+#                  an existing prefix keeps its language: move it away to change
+#                  it); with --greeter, LightDM shows ReactOS's logon screen instead
+#                  of XP's Welcome screen
 #   --greeter      also make LightDM show XP's Welcome screen (greeter/), with XP's
 #                  cursors; LightDM becomes the display manager
 #   --no-greeter   keep the display manager's own login screen (the default); XP's
 #                  cursors are still installed for the session
 #   --theme T      luna (XP's default, the default here, with XP's Start menu) or
 #                  classic (with the classic Start menu), for a new prefix; given
-#                  explicitly, it is applied to an existing prefix too
+#                  explicitly, it is applied to an existing prefix too. For the
+#                  ReactOS shell: classic (the default) or one of ReactOS's visual
+#                  styles, lautus, lunar or mizu
 #   --dpi N        the screen's DPI as XP sets it (LogPixels): 96 (normal), 120 (large)
 #                  or any value from 19 to 480; for the XP shell, the Linux
 #                  applications in its session and the Welcome screen
@@ -33,6 +46,8 @@ set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 local=$root/.local
 media=
+shell=xp
+lang=
 greeter=no
 jobs=$(nproc)
 theme=luna
@@ -43,6 +58,8 @@ prebuilt=
 while (($#)); do
     case $1 in
         --media) media=${2:?--media needs a path}; shift 2 ;;
+        --shell) shell=${2:?--shell needs xp or reactos}; shift 2 ;;
+        --lang) lang=${2:?--lang needs ja or en}; shift 2 ;;
         --greeter) greeter=yes; shift ;;
         --no-greeter) greeter=no; shift ;;
         --jobs) jobs=${2:?--jobs needs a number}; shift 2 ;;
@@ -54,11 +71,38 @@ while (($#)); do
         *) printf 'Unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
     esac
 done
-[[ -n $media ]] || { printf 'Give the XP media with --media (see --help)\n' >&2; exit 2; }
-[[ $theme == luna || $theme == classic ]] || { printf -- '--theme is luna or classic\n' >&2; exit 2; }
+[[ $shell == xp || $shell == reactos ]] || { printf -- '--shell is xp or reactos\n' >&2; exit 2; }
+if [[ $shell == reactos ]]; then
+    [[ -z $media ]] || { printf -- '--media is for the XP shell; the ReactOS shell needs no media\n' >&2; exit 2; }
+    [[ $theme_given == yes ]] || theme=classic
+    [[ $theme =~ ^(classic|lautus|lunar|mizu)$ ]] ||
+        { printf -- '--theme for the ReactOS shell is classic, lautus, lunar or mizu\n' >&2; exit 2; }
+    # An existing prefix keeps the language it was made in.
+    made=
+    if [[ -f $local/prefix-reactos/reactos-shell.json ]]; then
+        made=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("lang", "en"))' \
+            "$local/prefix-reactos/reactos-shell.json")
+    fi
+    if [[ -n $made && -n $lang && $lang != "$made" ]]; then
+        printf '%s is in %s; move it away to make one in %s\n' "$local/prefix-reactos" "$made" "$lang" >&2
+        exit 2
+    fi
+    if [[ -z $lang ]]; then
+        if [[ -n $made ]]; then
+            lang=$made
+        else
+            [[ ${LANG:-} == ja* ]] && lang=ja || lang=en
+        fi
+    fi
+    [[ $lang == ja || $lang == en ]] || { printf -- '--lang is ja or en\n' >&2; exit 2; }
+else
+    [[ -z $lang ]] || { printf -- '--lang is for the ReactOS shell; the XP shell follows its media\n' >&2; exit 2; }
+    [[ -n $media ]] || { printf 'Give the XP media with --media (see --help)\n' >&2; exit 2; }
+fi
+[[ $shell == reactos || $theme == luna || $theme == classic ]] || { printf -- '--theme is luna or classic\n' >&2; exit 2; }
 [[ -z $dpi || ( $dpi =~ ^[0-9]+$ && $dpi -ge 19 && $dpi -le 480 ) ]] ||
     { printf -- '--dpi is a number from 19 to 480\n' >&2; exit 2; }
-media=$(realpath -e -- "$media")
+[[ -z $media ]] || media=$(realpath -e -- "$media")
 [[ $EUID -ne 0 ]] || { printf 'Run this as the user who will log in, not as root\n' >&2; exit 2; }
 [[ $root != *[[:space:]]* ]] || { printf 'The checkout path must not contain spaces: %s\n' "$root" >&2; exit 2; }
 if ! grep -q '^VERSION_CODENAME=trixie' /etc/os-release; then
@@ -95,6 +139,11 @@ if [[ $wayland == yes ]]; then
         libxcb-xfixes0-dev libxcb-xinput-dev xwayland wlr-randr
     )
 fi
+if [[ $shell == reactos && $lang == ja ]]; then
+    # Japanese text where ReactOS's DroidSansFallback is not linked in (the folder
+    # window's address bar, Linux applications); the XP shell has XP's MS Gothic
+    packages+=(fonts-noto-cjk)
+fi
 if [[ $greeter == yes ]]; then
     packages+=(lightdm lightdm-gtk-greeter gir1.2-lightdm-1 gir1.2-gtk-3.0 python3-gi-cairo)
 elif [[ ! -e /etc/X11/default-display-manager ]]; then
@@ -117,27 +166,37 @@ if [[ $greeter == yes && $(cat /etc/X11/default-display-manager 2>/dev/null) != 
     sudo systemctl enable --force lightdm.service
 fi
 
-step 'Japanese locale'
-if ! locale -a | grep -qix 'ja_JP.utf8'; then
-    sudo sed -i 's/^# *\(ja_JP.UTF-8 UTF-8\)/\1/' /etc/locale.gen
-    grep -q '^ja_JP.UTF-8 UTF-8' /etc/locale.gen || echo 'ja_JP.UTF-8 UTF-8' | sudo tee -a /etc/locale.gen >/dev/null
+locale=ja_JP.UTF-8
+[[ $shell == xp || $lang == ja ]] || locale=en_US.UTF-8
+step "Locale $locale"
+if ! locale -a | grep -qix "${locale%.UTF-8}.utf8"; then
+    sudo sed -i "s/^# *\\($locale UTF-8\\)/\\1/" /etc/locale.gen
+    grep -q "^$locale UTF-8" /etc/locale.gen || echo "$locale UTF-8" | sudo tee -a /etc/locale.gen >/dev/null
     sudo locale-gen
 else
-    printf 'ja_JP.UTF-8 exists\n'
+    printf '%s exists\n' "$locale"
 fi
 
 step 'Wine'
 wine=$local/wine-install/bin/wine
+# The patches of this checkout; a build records those it was made with.
+patches=$(python3 "$root/wine/patch-state.py" --digest "$root/wine/patches")
 if [[ -n $prebuilt ]]; then
     [[ -f $prebuilt/lib/wine/x86_64-windows/win4wine-controls.dll && -x $prebuilt/bin/wine ]] ||
         { printf '%s is not a Wine install built by wine/build.sh\n' "$prebuilt" >&2; exit 1; }
     wine=$prebuilt/bin/wine
     printf 'Using %s: %s\n' "$prebuilt" "$("$wine" --version)"
-elif [[ -x $wine && -f $local/wine-install/lib/wine/x86_64-windows/win4wine-controls.dll ]]; then
+    [[ $(cat "$prebuilt/win4wine-patches" 2>/dev/null) == "$patches" ]] ||
+        printf 'Warning: %s was not built with the patches of this checkout\n' "$prebuilt" >&2
+elif [[ -x $wine && -f $local/wine-install/lib/wine/x86_64-windows/win4wine-controls.dll &&
+        $(cat "$local/wine-install/win4wine-patches" 2>/dev/null) == "$patches" ]]; then
     printf 'Built: %s\n' "$("$wine" --version)"
 else
+    if [[ -x $wine ]]; then
+        printf 'The patches changed since the last build; rebuilding what they touch\n'
+    fi
     printf 'Building Wine with %s jobs (log: .local/wine-build.log); this takes a long time\n' "$jobs"
-    JOBS=$jobs "$root/wine/build.sh" > "$local/wine-build.log" 2>&1 ||
+    JOBS=$jobs python3 "$root/scripts/progress.py" "$local/wine-build.log" Wine -- "$root/wine/build.sh" ||
         { tail -20 "$local/wine-build.log" >&2; printf 'Wine build failed; see .local/wine-build.log\n' >&2; exit 1; }
     "$wine" --version
 fi
@@ -149,78 +208,153 @@ printf 'Built .local/bridge\n'
 labwc=$local/labwc-install/bin/labwc
 if [[ $wayland == yes ]]; then
     step 'Wayland compositor'
-    if [[ -x $labwc ]]; then
+    labwc_patches=$(python3 "$root/wine/patch-state.py" --digest "$root/wayland/patches/labwc" "$root/wayland/patches/wlroots")
+    if [[ -x $labwc && $(cat "$local/labwc-install/win4wine-patches" 2>/dev/null) == "$labwc_patches" ]]; then
         printf 'Built: %s\n' "$("$labwc" --version)"
     else
+        [[ ! -x $labwc ]] || printf 'The patches changed since the last build; rebuilding what they touch\n'
         printf 'Building labwc and wlroots (log: .local/labwc-build.log)\n'
-        JOBS=$jobs "$root/wayland/build.sh" > "$local/labwc-build.log" 2>&1 ||
+        JOBS=$jobs python3 "$root/scripts/progress.py" "$local/labwc-build.log" labwc -- "$root/wayland/build.sh" ||
             { tail -20 "$local/labwc-build.log" >&2; printf 'labwc build failed; see .local/labwc-build.log\n' >&2; exit 1; }
         "$labwc" --version
     fi
 fi
 
-step 'XP files'
-assets=$local/assets
-if [[ -f $assets/manifest.json ]]; then
-    printf 'Extracted already: %s\n' "$assets"
-else
-    # 7z needs room for the whole medium; keep it out of a small /tmp.
-    mkdir -p "$local/tmp"
-    TMPDIR=$local/tmp python3 "$root/extract/extract.py" "$media" "$assets"
-fi
+if [[ $shell == xp ]]; then
+    step 'XP files'
+    assets=$local/assets
+    if [[ -f $assets/manifest.json ]]; then
+        printf 'Extracted already: %s\n' "$assets"
+    else
+        # 7z needs room for the whole medium; keep it out of a small /tmp.
+        mkdir -p "$local/tmp"
+        TMPDIR=$local/tmp python3 "$root/extract/extract.py" "$media" "$assets"
+    fi
 
-step 'XP prefix'
-prefix=$local/prefix
-if [[ -f $prefix/xp-shell.json ]]; then
-    printf 'Created already: %s\n' "$prefix"
+    step 'XP prefix'
+    prefix=$local/prefix
+    if [[ -f $prefix/xp-shell.json ]]; then
+        printf 'Created already: %s\n' "$prefix"
+    else
+        [[ ! -e $prefix ]] || { printf '%s exists but is incomplete; move it away and run again\n' "$prefix" >&2; exit 1; }
+        xvfb-run -a -s '-screen 0 1280x800x24' python3 "$root/prefix/create.py" "$assets" "$prefix" \
+            --home "$HOME" --wine "$wine" > "$local/prefix.log" 2>&1 ||
+            { tail -20 "$local/prefix.log" >&2; printf 'Prefix creation failed; see .local/prefix.log\n' >&2; exit 1; }
+        printf 'Created %s\n' "$prefix"
+        # Until the theme is set, a later run sets it too
+        touch "$prefix/.theme-pending"
+    fi
+    [[ ! -f $prefix/.theme-pending ]] || theme_given=yes
+    if [[ $theme_given == yes ]]; then
+        WINEPREFIX=$prefix WINE=$wine xvfb-run -a -s '-screen 0 1280x800x24' \
+            python3 "$root/prefix/display.py" --theme "$theme" --menu "$([[ $theme == luna ]] && echo xp || echo classic)" \
+            >> "$local/prefix.log" 2>&1 ||
+            { tail -20 "$local/prefix.log" >&2; printf 'Setting the theme failed; see .local/prefix.log\n' >&2; exit 1; }
+        WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
+        rm -f "$prefix/.theme-pending"
+        printf 'Theme: %s\n' "$theme"
+    fi
+    if [[ -n $dpi ]]; then
+        WINEPREFIX=$prefix WINE=$wine python3 "$root/prefix/display.py" --dpi "$dpi" >> "$local/prefix.log" 2>&1 ||
+            { tail -20 "$local/prefix.log" >&2; printf 'Setting the DPI failed; see .local/prefix.log\n' >&2; exit 1; }
+        WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
+        printf 'DPI: %s\n' "$dpi"
+    fi
 else
-    [[ ! -e $prefix ]] || { printf '%s exists but is incomplete; move it away and run again\n' "$prefix" >&2; exit 1; }
-    xvfb-run -a -s '-screen 0 1280x800x24' python3 "$root/prefix/create.py" "$assets" "$prefix" \
-        --home "$HOME" --wine "$wine" > "$local/prefix.log" 2>&1 ||
-        { tail -20 "$local/prefix.log" >&2; printf 'Prefix creation failed; see .local/prefix.log\n' >&2; exit 1; }
-    printf 'Created %s\n' "$prefix"
-    # Until the theme is set, a later run sets it too
-    touch "$prefix/.theme-pending"
-fi
-[[ ! -f $prefix/.theme-pending ]] || theme_given=yes
-if [[ $theme_given == yes ]]; then
-    WINEPREFIX=$prefix WINE=$wine xvfb-run -a -s '-screen 0 1280x800x24' \
-        python3 "$root/prefix/display.py" --theme "$theme" --menu "$([[ $theme == luna ]] && echo xp || echo classic)" \
-        >> "$local/prefix.log" 2>&1 ||
-        { tail -20 "$local/prefix.log" >&2; printf 'Setting the theme failed; see .local/prefix.log\n' >&2; exit 1; }
-    "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
-    rm -f "$prefix/.theme-pending"
-    printf 'Theme: %s\n' "$theme"
-fi
-if [[ -n $dpi ]]; then
-    WINEPREFIX=$prefix WINE=$wine python3 "$root/prefix/display.py" --dpi "$dpi" >> "$local/prefix.log" 2>&1 ||
-        { tail -20 "$local/prefix.log" >&2; printf 'Setting the DPI failed; see .local/prefix.log\n' >&2; exit 1; }
-    "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
-    printf 'DPI: %s\n' "$dpi"
+    step 'ReactOS files'
+    assets=$local/assets-reactos
+    if [[ -f $assets/manifest.json ]]; then
+        printf 'Extracted already: %s\n' "$assets"
+    else
+        # The release zip is kept in .local/dl; 7z needs room for the ISO, out of a small /tmp.
+        mkdir -p "$local/tmp"
+        TMPDIR=$local/tmp python3 "$root/extract/reactos.py" "$assets" --cache "$local/dl"
+    fi
+
+    step 'ReactOS shell prefix'
+    prefix=$local/prefix-reactos
+    if [[ ! -f $prefix/reactos-shell.json ]]; then
+        [[ ! -e $prefix ]] || { printf '%s exists but is incomplete; move it away and run again\n' "$prefix" >&2; exit 1; }
+        xvfb-run -a -s '-screen 0 1280x800x24' python3 "$root/prefix/reactos.py" create "$assets" "$prefix" \
+            --home "$HOME" --wine "$wine" --lang "$lang" --theme "$theme" > "$local/prefix-reactos.log" 2>&1 ||
+            { tail -20 "$local/prefix-reactos.log" >&2; printf 'Prefix creation failed; see .local/prefix-reactos.log\n' >&2; exit 1; }
+        printf 'Created %s\n' "$prefix"
+    elif [[ $theme_given == yes ]]; then
+        xvfb-run -a -s '-screen 0 1280x800x24' python3 "$root/prefix/reactos.py" theme "$prefix" "$theme" --wine "$wine" \
+            >> "$local/prefix-reactos.log" 2>&1 ||
+            { tail -20 "$local/prefix-reactos.log" >&2; printf 'Setting the theme failed; see .local/prefix-reactos.log\n' >&2; exit 1; }
+        printf 'Theme: %s\n' "$theme"
+    else
+        printf 'Created already: %s\n' "$prefix"
+    fi
+    if [[ -n $dpi ]]; then
+        WINEPREFIX=$prefix WINE=$wine python3 "$root/prefix/display.py" --dpi "$dpi" >> "$local/prefix-reactos.log" 2>&1 ||
+            { tail -20 "$local/prefix-reactos.log" >&2; printf 'Setting the DPI failed; see .local/prefix-reactos.log\n' >&2; exit 1; }
+        WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
+        printf 'DPI: %s\n' "$dpi"
+    fi
 fi
 
 step 'Session'
-config=${XDG_CONFIG_HOME:-$HOME/.config}/win4wine/session.json
-if [[ -f $config ]]; then
+config=${XDG_CONFIG_HOME:-$HOME/.config}/win4wine/$([[ $shell == xp ]] && echo session.json || echo reactos-session.json)
+if [[ -f $config && $shell == reactos ]]; then
+    # Kept, with the language of the prefix (a new prefix may be in another one)
+    python3 - "$config" "$locale" <<'EOF'
+import json, sys
+config, locale = sys.argv[1:]
+settings = json.load(open(config))
+if settings.get('locale') != locale:
+    settings['locale'] = locale
+    if locale.startswith('ja'):
+        settings['input_method'] = 'fcitx5'
+    else:
+        settings.pop('input_method', None)
+    open(config, 'w').write(json.dumps(settings, indent=2) + '\n')
+    print(f'Updated {config}: locale {locale}')
+else:
+    print(f'Keeping {config}')
+EOF
+elif [[ -f $config ]]; then
     printf 'Keeping %s\n' "$config"
 else
     mkdir -p "$(dirname "$config")"
-    python3 - "$config" "$wine" "$prefix" <<'EOF'
+    python3 - "$config" "$wine" "$prefix" "$shell" "$locale" <<'EOF'
 import json, sys
-config, wine, prefix = sys.argv[1:]
-open(config, 'w').write(json.dumps({'wine': wine, 'prefix': prefix, 'locale': 'ja_JP.UTF-8',
-                                    'input_method': 'fcitx5'}, indent=2) + '\n')
+config, wine, prefix, shell, locale = sys.argv[1:]
+settings = {'wine': wine, 'prefix': prefix, 'locale': locale}
+if locale.startswith('ja'):
+    settings['input_method'] = 'fcitx5'
+if shell == 'reactos':
+    settings.update(shell='reactos', cursor_theme='win4wine-reactos')
+open(config, 'w').write(json.dumps(settings, indent=2) + '\n')
 EOF
     printf 'Wrote %s\n' "$config"
 fi
-if [[ $wayland == yes ]]; then
+if [[ $wayland == yes && $shell == reactos ]]; then
+    "$root/session/install.sh" --reactos --wayland "$labwc"
+elif [[ $wayland == yes ]]; then
     "$root/session/install.sh" --wayland "$labwc"
+elif [[ $shell == reactos ]]; then
+    "$root/session/install.sh" --reactos
 else
     "$root/session/install.sh"
 fi
 
 step 'Login screen and cursors'
-if [[ $greeter == yes ]]; then
+if [[ $shell == reactos ]]; then
+    if [[ $greeter == yes ]]; then
+        "$root/greeter/install.sh" --reactos "$assets" "$lang" \
+            "$([[ $wayland == yes ]] && echo reactos-shell-wayland || echo reactos-shell)"
+    fi
+    # ReactOS's cursors for the session (and the logon screen).
+    theme=$(mktemp -d)
+    python3 "$root/greeter/cursors.py" "$assets/resources/user32.dll" "$theme/win4wine-reactos" --reactos
+    sudo rm -rf /usr/share/icons/win4wine-reactos
+    sudo cp -r "$theme/win4wine-reactos" /usr/share/icons/
+    sudo chmod -R a+rX /usr/share/icons/win4wine-reactos
+    rm -rf "$theme"
+    printf 'Installed ReactOS cursors\n'
+elif [[ $greeter == yes ]]; then
     "$root/greeter/install.sh" "$assets" "$([[ $wayland == yes ]] && echo xp-shell-wayland || echo xp-shell)"
     if [[ -n $dpi ]]; then
         # XP's Welcome screen takes the machine's DPI.
@@ -244,12 +378,18 @@ else
 fi
 
 step 'Done'
-if [[ $greeter == yes ]]; then
+if [[ $shell == reactos && $greeter == yes ]]; then
+    printf 'Restart the display manager (or reboot): the ReactOS logon screen logs in to the ReactOS shell.\n'
+elif [[ $shell == reactos ]]; then
+    printf 'Restart the display manager (or reboot) and choose "ReactOS Shell (Wine, X11)" at the login screen.\n'
+elif [[ $greeter == yes ]]; then
     printf 'Restart the display manager (or reboot): the XP Welcome screen logs in to the XP shell.\n'
 else
     printf 'Restart the display manager (or reboot) and choose "XP Shell (Wine, X11)" at the login screen.\n'
 fi
-if [[ $wayland == yes ]]; then
+if [[ $wayland == yes && $shell == reactos ]]; then
+    printf 'The Wayland session is "ReactOS Shell (Wine, Wayland)"; outputs and scales: reactos-session.json "outputs".\n'
+elif [[ $wayland == yes ]]; then
     printf 'The Wayland session is "XP Shell (Wine, Wayland)"; outputs and scales: session.json "outputs".\n'
 fi
 printf 'Logs of the session: ~/.local/state/win4wine/\n'

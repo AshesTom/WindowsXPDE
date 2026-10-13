@@ -48,6 +48,17 @@ int wmain(int argc, WCHAR **argv)
     HANDLE file = NULL;
     HRESULT hr;
     BOOL luna,initialize;
+    /* "msstyles PATH COLOR SIZE" applies another visual style (ReactOS's themes). */
+    const WCHAR *path = L"C:\\windows\\Resources\\Themes\\Luna\\luna.msstyles";
+    const WCHAR *color = L"NormalColor", *size = L"NormalSize";
+    if (argc == 5 && !wcscmp(argv[1], L"msstyles"))
+    {
+        path = argv[2];
+        color = argv[3];
+        size = argv[4];
+        argv[1] = (WCHAR *)L"luna";
+        argc = 2;
+    }
     if (argc != 2 || (wcscmp(argv[1], L"classic") && wcscmp(argv[1], L"luna") && wcscmp(argv[1],L"classic-initialize"))) return 2;
     luna = !wcscmp(argv[1], L"luna");
     initialize = !wcscmp(argv[1], L"classic-initialize");
@@ -65,8 +76,7 @@ int wmain(int argc, WCHAR **argv)
     {hr=E_FAIL;goto failed;}
     if (luna||initialize)
     {
-        hr = open_theme(L"C:\\windows\\Resources\\Themes\\Luna\\luna.msstyles",
-                        L"NormalColor", L"NormalSize", &file, 0);
+        hr = open_theme(path, color, size, &file, 0);
         if (SUCCEEDED(hr)) hr = apply_theme(file, NULL, NULL);
         if (file) close_theme(file);
         if (FAILED(hr)) goto failed;

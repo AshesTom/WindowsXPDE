@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Detect an ordered, overlapping patch series without changing local edits."""
 import argparse
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -62,12 +63,31 @@ def ensure_series(source, directory, apply=False):
     return [patch.name for patch in missing]
 
 
+def digest(directories):
+    """A digest of the series and patches in DIRECTORIES, to tell a build's patches."""
+    hasher = hashlib.sha256()
+    for directory in directories:
+        series = (directory / "series").read_text()
+        hasher.update(series.encode())
+        for line in series.splitlines():
+            if line.strip() and not line.lstrip().startswith("#"):
+                hasher.update(line.strip().encode() + b"\0" + (directory / line.strip()).read_bytes())
+    return hasher.hexdigest()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", type=Path)
-    parser.add_argument("patches", type=Path)
+    parser.add_argument("source", type=Path, nargs="?")
+    parser.add_argument("patches", type=Path, nargs="?")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--digest", type=Path, nargs="+", metavar="PATCHES",
+                        help="print a digest of these patch directories and exit")
     args = parser.parse_args()
+    if args.digest:
+        print(digest(args.digest))
+        return
+    if not args.source or not args.patches:
+        parser.error("give the source and the patch directory")
     try:
         missing = ensure_series(args.source, args.patches, args.apply)
     except (OSError, RuntimeError) as error:

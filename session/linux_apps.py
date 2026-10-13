@@ -595,7 +595,7 @@ def main():
     parser.add_argument('--remove', action='store_true', help='remove the shortcuts and folders made here')
     args = parser.parse_args()
     prefix = args.prefix.resolve(strict=True)
-    if not (prefix / 'xp-shell.json').is_file():
+    if not any((prefix / marker).is_file() for marker in ('xp-shell.json', 'reactos-shell.json')):
         raise SystemExit('Expected a dedicated XP prefix')
     menu = Menu(prefix, args.wine)
     if args.remove:

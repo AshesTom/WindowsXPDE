@@ -30,11 +30,13 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `--media PATH` | XP の ISO または Windows ディレクトリ（必須） |
 | `--greeter` | ログイン画面を XP のようこそ画面にします（LightDM をディスプレイマネージャにします） |
 | `--no-greeter` | 今のログイン画面のままにします（既定）。XP のカーソルだけ入れます |
-| `--theme luna\|classic` | 見た目です。`luna`（既定、XP 形式のスタートメニュー）か `classic`（クラシック形式） |
+| `--theme luna\|classic` | 見た目です。`luna`（既定。XP の「Windows XP」のテーマ、XP 形式のスタートメニュー、壁紙 Bliss）か `classic`（XP の「Windows クラシック」のテーマ、クラシック形式のスタートメニュー、壁紙なし）。ReactOS のシェルでは `classic`（既定）、`lautus`、`lunar`、`mizu` |
 | `--dpi N` | 画面の DPI（XP の「DPI 設定」）です。96（通常）、120（大きいサイズ）、または 19〜480 の任意の値。XP のシェル、セッションの Linux のアプリ、ようこそ画面に効きます |
 | `--wayland` | Wayland のセッション「XP Shell (Wine, Wayland)」も入れます（labwc と wlroots をビルドします）。モニターごとの倍率、125%・150% などの倍率が使え、Wayland のアプリにも XP の枠が付きます。`--greeter` と一緒なら、ようこそ画面の既定のセッションになります。**X11 のセッション以上に実験的です**（確かめた範囲が狭く、既知の制限があります。[docs/wayland.md](docs/wayland.md)） |
 | `--wine-install DIR` | 別の Debian 13 マシンでビルドした Wine（その `.local/wine-install` を写したもの）を使い、ここではビルドしません |
 | `--jobs N` | Wine のビルドの並列数です（既定は CPU の数） |
+| `--shell reactos` | XP のシェルの代わりに ReactOS のシェルを入れます（`--media` は要りません。下の「ReactOS のシェル」） |
+| `--lang ja\|en` | ReactOS のシェルの言語です（既定は今のロケールが日本語なら `ja`、ほかは `en`）。作った prefix はその言語のままなので、変えるときは `.local/prefix-reactos` を移してから実行します |
 
 途中で失敗しても、そのまま実行し直せば、済んだ段階は飛ばします。ビルドしたものはすべて、このチェックアウトの `.local/` に入ります。
 
@@ -43,6 +45,7 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 1. パッケージを入れます（Wine のビルドの依存、Xorg、python3-xlib、fcitx5 + Mozc など）。ディスプレイマネージャが無ければ LightDM も入れます。
 2. `ja_JP.UTF-8` のロケールを作ります。
 3. Wine 11.0 を取得し、パッチを当ててビルドします（`.local/wine-install`。4 コアで 1 時間半ほど。ログは `.local/wine-build.log`）。
+   ビルドの間は、段階、コンパイルしたファイルの数と割合、残りの目安の時間、出力の最後の数行だけを画面に出します。
 4. bridge（ウィンドウマネージャーと代理ウィンドウ）をビルドします。
 5. ISO から必要なファイルだけを取り出します（`.local/assets`）。
 6. XP 用の Wine の prefix を作ります（`.local/prefix`）。
@@ -50,6 +53,24 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 8. `--greeter` のときは XP のようこそ画面を入れます。
 9. `--wayland` のときは labwc と wlroots にパッチを当ててビルドし（`.local/labwc-install`。ログは `.local/labwc-build.log`）、
    セッション「XP Shell (Wine, Wayland)」も登録します。
+
+## ReactOS のシェル
+
+XP の ISO が無いときは、ReactOS のシェル（クラシックの見た目）を入れられます。
+
+```sh
+scripts/setup.sh --shell reactos --lang ja
+```
+
+- ReactOS 0.4.16 のリリース（約 200 MB）を GitHub から取得し、SHA-256 を確かめて、シェルのファイルだけを `.local/assets-reactos` に
+  取り出します。取得した zip は `.local/dl` に残ります。
+- prefix は `.local/prefix-reactos`、設定は `~/.config/win4wine/reactos-session.json`、セッションは「**ReactOS Shell (Wine, X11)**」です。
+  XP のシェルの設定とセッションには触れないので、両方を入れられます（Wine と bridge は共通です）。
+- `--greeter` を付けると、ログイン画面が ReactOS のログオンの画面になります。
+- `--theme` は `classic`（既定。Windows 2000 風のクラシック）か、ReactOS のテーマ `lautus`、`lunar`、`mizu` です。作った後でも
+  `--theme` を付けて実行し直せば変わります。
+- `--wayland` を付けると、Wayland のセッション「ReactOS Shell (Wine, Wayland)」も入れます（X11 のセッション以上に実験的です）。
+- 詳しくは [docs/reactos.md](docs/reactos.md) にあります。
 
 ## 3. ログインする
 
@@ -82,11 +103,32 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `cursor_theme` | `win4wine-xp` | カーソルのテーマ。`null` で使いません |
 | `shutdown_command`, `reboot_command` | `systemctl poweroff` / `reboot` | 終了オプションで実行するコマンド |
 | `outputs` | （無し） | Wayland のセッションの、出力ごとの設定。例: `{"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}`（`mode` も書けます。出力の名前は `wlr-randr` で見られます） |
+| `shell` | `xp` | `reactos` で ReactOS のシェル（`reactos-session.json` に setup.sh が書きます） |
 | `primary` | 一番左の出力 | Wayland のセッションで Win32 の主モニターにする出力の名前。XP のデスクトップとタスクバーはここに出ます |
 
-見た目を後から変えるときは、セッションを止めてから `scripts/setup.sh --media ISO --theme classic`（または `luna`）を実行してください。
-DPI（文字や画面の部品の大きさ）は `scripts/setup.sh --media ISO --dpi 120` で変え、ログインし直してください。XP と同じく、文字と寸法が
-大きくなり、アイコンは 32×32 のままです。Linux のアプリも同じ DPI で文字が大きくなります（GTK は 192 以上で部品も 2 倍になります）。
+## 見た目と文字の大きさを変える
+
+「画面のプロパティ」（デスクトップの右クリック → プロパティ）は、XP のシェルでも ReactOS のシェルでも開けません（その部品を
+入れていないため。XP ではエラーになり、ReactOS では何も出ません）。テーマ（見た目）と DPI（文字や画面の部品の大きさ）は `setup.sh` で変えます。セッションの Wine が動いている間は
+変えられないので、ログオフしてから次のようにします。
+
+1. スタート → ログオフ で、ログイン画面に戻ります。
+2. Ctrl+Alt+F2 で文字の画面に切り替えて同じ利用者でログインします（別のマシンから SSH で入っても構いません）。
+3. 次のどれかを実行します。
+
+   ```sh
+   cd ~/win4wine
+   scripts/setup.sh --media /path/to/WindowsXPSP3.iso --theme classic   # XP の「Windows クラシック」。戻すときは --theme luna
+   scripts/setup.sh --media /path/to/WindowsXPSP3.iso --dpi 120          # 文字の大きさ。96 が標準（XP の「通常のサイズ」）
+   scripts/setup.sh --shell reactos --theme lautus                      # ReactOS のシェル: classic、lautus、lunar、mizu
+   ```
+
+4. `exit` で文字の画面からログアウトし、Ctrl+Alt+F7 でログイン画面に戻って、ログインし直します。
+
+- テーマを変えると、XP でテーマを選んだときと同じく壁紙も変わります（クラシックは壁紙なし、luna は Bliss）。
+- 済んでいる段階は飛ばすので、2 回目からはすぐ終わります（Wine のパッチが変わっていれば、その分を作り直します）。
+- DPI を上げると、XP と同じく文字と寸法が大きくなり、アイコンは 32×32 のままです。Linux のアプリも同じ DPI で文字が大きくなります
+  （GTK は 192 以上で部品も 2 倍になります）。
 
 Wayland のセッションでは、Linux のアプリは出力ごとの倍率（`outputs` の `scale`）で描かれ、XP のシェルは DPI で描かれて、
 どの出力でもぼけません。DPI は主に使う出力の倍率に合わせてください（倍率 1.5 なら 144）。詳しくは [docs/wayland.md](docs/wayland.md) にあります。
@@ -105,6 +147,8 @@ Wayland のセッションでは、Linux のアプリは出力ごとの倍率（
 greeter/install.sh --remove                     # ようこそ画面をやめる（LightDM の元の画面に戻ります）
 sudo rm /usr/share/xsessions/xp-shell.desktop /usr/local/bin/xp-shell-session   # セッションの登録を消す
 sudo rm /usr/share/wayland-sessions/xp-shell-wayland.desktop /usr/local/bin/xp-shell-wayland-session   # Wayland のセッションも
+sudo rm /usr/share/xsessions/reactos-shell.desktop /usr/local/bin/reactos-shell-session   # ReactOS のシェルのセッションも
+sudo rm /usr/share/wayland-sessions/reactos-shell-wayland.desktop /usr/local/bin/reactos-shell-wayland-session
 python3 session/linux_apps.py .local/prefix --wine .local/wine-install/bin/wine --remove   # 作ったスタートメニューの項目を消す
 ```
 

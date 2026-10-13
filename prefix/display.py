@@ -4,6 +4,7 @@
 Restart the session afterwards."""
 import argparse
 import os
+import pwd
 from pathlib import Path
 import subprocess
 
@@ -21,8 +22,11 @@ parser.add_argument('--font-rendering', choices=('xp', 'wine'),
                     help='Prefix-wide Wine synthetic bold/italic antialiasing policy')
 args = parser.parse_args()
 prefix = Path(os.environ['WINEPREFIX']).resolve(strict=True)
-if not (prefix / 'xp-shell.json').is_file():
+reactos = (prefix / 'reactos-shell.json').is_file()
+if not reactos and not (prefix / 'xp-shell.json').is_file():
     raise SystemExit('Not a dedicated XP prefix')
+if reactos and (args.theme or args.menu):
+    raise SystemExit("The ReactOS shell has the classic look and Start menu only; give --dpi alone")
 if args.theme == 'luna' and not (prefix / 'drive_c/windows/Resources/Themes/Luna/luna.msstyles').is_file():
     raise SystemExit('Luna must be extracted from your local XP media first')
 theme_helper = Path(__file__).resolve().parents[1] / '.local/bridge/theme-settings.exe'
@@ -50,4 +54,12 @@ if args.dpi:
 if args.theme:
     subprocess.run([wine, str(theme_helper), args.theme],
                    env=dict(env, WIN4WINE_EXTERNAL_SHELL='1'), check=True)
+    # The wallpaper of XP's themes: none over the classic theme's blue-grey
+    # (Windows Classic.theme), Bliss with Windows XP's (luna.theme), here the
+    # bitmap stage.py makes of it as XP does for the default user.
+    user = pwd.getpwuid(os.getuid()).pw_name
+    reg(r'HKCU\Control Panel\Desktop', 'Wallpaper',
+        '' if args.theme == 'classic' else rf'C:\users\{user}\AppData\Local\Microsoft\Wallpaper1.bmp')
+    reg(r'HKCU\Control Panel\Desktop', 'WallpaperStyle', '2')
+    reg(r'HKCU\Control Panel\Desktop', 'TileWallpaper', '0')
 print('Display settings saved. Restart the dedicated Wine session to apply.')

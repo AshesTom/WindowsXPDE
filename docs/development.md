@@ -40,6 +40,7 @@ chroot の中で次のように作ります。
 ```sh
 cd /work
 ./wine/build.sh > .local/wine-build.log 2>&1    # Wine の取得、パッチ、ビルド
+# 進み具合を見るなら: scripts/progress.py .local/wine-build.log Wine -- ./wine/build.sh
 ./bridge-wm/build.sh                            # .local/bridge（proxy.exe、linux-launch.exe など）
 ./tests/build.sh                                # プローブ
 ./extract/extract.py localres/WindowsXPSP3.iso .local/assets
@@ -75,6 +76,7 @@ wlroots は `SOURCE/subprojects/wlroots` に `wayland/patches/wlroots` を当て
 | 試験 | 内容 |
 |---|---|
 | `tests/wm_integration.py` | WM 単体（Alt+Tab、フォーカス、最小化、Windows キーの受け渡し） |
+| `tests/wine_restore.py` | Win32 から最小化して元に戻した Wine の窓が、もう一度表示される（`WINE` と `WINEPREFIX` を渡します） |
 | `tests/bridge_integration.py` | WM と proxy と XP のシェル |
 | `tests/native_frames.py` | Linux のウィンドウの XP の枠（Luna とクラシック） |
 | `tests/xterm_redraw.py`, `tests/wm_latency.py` | 再描画と遅れ |
@@ -82,6 +84,8 @@ wlroots は `SOURCE/subprojects/wlroots` に `wayland/patches/wlroots` を当て
 | `tests/tray_host.py` | トレイの仲介（StatusNotifierItem と XEmbed） |
 | `tests/linux_apps.py` | Linux のアプリのスタートメニュー |
 | `tests/recovery_integration.py CONFIG.json` | シェルが落ちたときの切り替え |
+| `tests/reactos_session.py CONFIG.json` | ReactOS のシェルのセッション: タスクバーとデスクトップ、`explorer.exe` で開くフォルダ（0063）、ログオフ（0018） |
+| `tests/reactos_greeter.py ASSETS [OUTDIR]` | ReactOS のログイン画面の配置（英語と日本語）。ASSETS は `extract/reactos.py` が取り出したもの |
 | `tests/greeter_layout.py ASSETS`, `tests/cursor_theme.py ASSETS` | ようこそ画面の配置（96・120・144 DPI）、カーソル（32 と 64） |
 | `tests/patch_state.py`, `tests/font_*.py`, `tests/workarea.py`, `tests/dpi_settings.py` | 単体の試験 |
 | `tests/*.c` | 公開 API のプローブ。同じものを Wine と実際の XP で動かして数値を比べます（DPI は `dpi-metrics.c`、`char-widths-dpi.c`、`caption-glyph-dpi.c`、`text-bits-dpi.c`） |
@@ -107,7 +111,7 @@ wlroots は `SOURCE/subprojects/wlroots` に `wayland/patches/wlroots` を当て
    registry profile の適用、XP の DLL の配置を行います。セッションの起動時にも自動で動きます。
 4. `bridge-wm/build.sh` で bridge を作り直し、セッションを起動し直します。
 
-見た目と DPI は、セッションを止めてから `prefix/display.py --theme luna|classic --menu xp|classic --dpi N` で変えます。N は XP と
+見た目と DPI は、セッションを止めてから `prefix/display.py --theme luna|classic --menu xp|classic --dpi N` で変えます（`--theme` は XP のテーマと同じく壁紙も変えます。classic はなし、luna は Bliss）。N は XP と
 同じく 96（通常）、120（大きいサイズ）、またはカスタムの 19〜480 です。セッションは同じ DPI を Linux のアプリにも渡します
 （`Xft.dpi`、fontconfig、カーソルの大きさ、192 以上では GTK の `GDK_SCALE`。`session/dpi.py`）。ようこそ画面の DPI は
 `/etc/win4wine/greeter.json` の `"dpi"` で決めます（XP でもマシン全体の設定です）。
