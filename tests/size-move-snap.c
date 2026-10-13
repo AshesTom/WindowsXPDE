@@ -1,8 +1,11 @@
 /* Wine's move loop reports drags for window snapping (patch 0073): EVENT_SYSTEM_MOVESIZESTART
  * and EVENT_SYSTEM_MOVESIZEEND, "Win4WineSizeMove" (the hit test while the loop runs, then
  * with 0x1000 ended, 0x100 moved), and a window with "Win4WineSnapRestore" gets that size
- * back on the first mouse move, the pointer staying on its caption.
- * Usage: size-move-snap-test. Run with WIN4WINE_EXTERNAL_SHELL, Luna or classic. */
+ * back on the first mouse move, the pointer staying on its caption. With
+ * WIN4WINE_WINDOW_SNAP=1 a maximized window dragged by its caption is restored
+ * and moves on in its restored size; without it, it stays maximized.
+ * Usage: size-move-snap-test. Run with WIN4WINE_EXTERNAL_SHELL, Luna or classic,
+ * with and without WIN4WINE_WINDOW_SNAP=1. */
 #define UNICODE
 #include <windows.h>
 #include <stdio.h>
@@ -76,6 +79,8 @@ static void press_caption(BOOL drag)
 int main(void)
 {
     RECT before, after;
+    WCHAR value[8] = L"";
+    BOOL window_snap;
     int failures = 0;
     WNDCLASSW cls = {.lpfnWndProc = DefWindowProcW, .lpszClassName = L"SizeMoveSnap"};
     cls.hCursor = LoadCursorW(NULL, IDC_ARROW);
@@ -112,9 +117,34 @@ int main(void)
     if (GetPropW(window, L"Win4WineSnapRestore")) { printf("FAIL: drag: Win4WineSnapRestore stayed\n"); failures++; }
     if (!EqualRect(&moved_rect, &after)) { printf("FAIL: drag: the window changed after the release\n"); failures++; }
 
+    /* A drag of a maximized window. */
+    GetEnvironmentVariableW(L"WIN4WINE_WINDOW_SNAP", value, ARRAYSIZE(value));
+    window_snap = !wcscmp(value, L"1");
+    SetWindowPos(window, NULL, 150, 120, 320, 240, SWP_NOZORDER);
+    ShowWindow(window, SW_MAXIMIZE);
+    pump(300);
+    GetWindowRect(window, &before);
+    starts = ends = 0;
+    press_caption(TRUE);
+    GetWindowRect(window, &after);
+    if (window_snap)
+    {
+        if (IsZoomed(window)) { printf("FAIL: maximized drag: the window stayed maximized\n"); failures++; }
+        else if (moved_rect.right - moved_rect.left != 320 || moved_rect.bottom - moved_rect.top != 240)
+        { printf("FAIL: maximized drag: size %ldx%ld, want 320x240\n", moved_rect.right - moved_rect.left,
+                 moved_rect.bottom - moved_rect.top); failures++; }
+        else if (!PtInRect(&moved_rect, moved_cursor) ||
+                 moved_cursor.y - moved_rect.top > GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYCAPTION))
+        { printf("FAIL: maximized drag: the pointer %ld,%ld left the caption of %ld,%ld-%ld,%ld\n", moved_cursor.x,
+                 moved_cursor.y, moved_rect.left, moved_rect.top, moved_rect.right, moved_rect.bottom); failures++; }
+    }
+    else if (!IsZoomed(window) || !EqualRect(&before, &after))
+    { printf("FAIL: maximized drag without WIN4WINE_WINDOW_SNAP=1 changed the window\n"); failures++; }
+
     if (!failures)
-        printf("PASS: events and states for a click (1002) and a drag (1102); the snapped window became %ldx%ld at %ld,%ld\n",
-               after.right - after.left, after.bottom - after.top, after.left, after.top);
+        printf("PASS: events and states for a click (1002) and a drag (1102); the snapped window became %ldx%ld; "
+               "a dragged maximized window %s\n", after.right - after.left, after.bottom - after.top,
+               window_snap ? "was restored" : "stayed (no WIN4WINE_WINDOW_SNAP=1)");
     DestroyWindow(window);
     return failures != 0;
 }

@@ -35,7 +35,7 @@ falls to no window.
 ---
  include/ssd.h              |    2 +
  include/view.h             |    3 +
- include/win4wine.h         |  107 +++
+ include/win4wine.h         |  110 +++
  include/xwayland-scale.h   |   72 ++
  include/xwayland.h         |   15 +
  meson.build                |    2 +
@@ -46,6 +46,7 @@ falls to no window.
  src/input/keyboard.c       |   13 +
  src/meson.build            |    2 +
  src/output.c               |    7 +
+ src/overlay.c              |    7 +
  src/placement.c            |    6 +-
  src/resize-outlines.c      |    2 +-
  src/seat.c                 |    3 +
@@ -54,11 +55,11 @@ falls to no window.
  src/ssd/ssd.c              |   15 +-
  src/view-impl-common.c     |   14 +-
  src/view.c                 |   25 +-
- src/win4wine.c             | 1896 ++++++++++++++++++++++++++++++++++++++++++++
- src/xwayland-scale.c       |  445 +++++++++++
+ src/win4wine.c             | 1999 ++++++++++++++++++++++++++++++++++++++++++++
+ src/xwayland-scale.c       |  445 ++++++++++
  src/xwayland-unmanaged.c   |   45 +-
  src/xwayland.c             |  304 +++++--
- 25 files changed, 2949 insertions(+), 98 deletions(-)
+ 26 files changed, 3062 insertions(+), 98 deletions(-)
 
 diff --git a/include/ssd.h b/include/ssd.h
 index 5cbac60..2500f57 100644
@@ -89,10 +90,10 @@ index fa84911..a8ca55f 100644
  		struct wl_signal new_title;
 diff --git a/include/win4wine.h b/include/win4wine.h
 new file mode 100644
-index 0000000..0e8528a
+index 0000000..7dc0c69
 --- /dev/null
 +++ b/include/win4wine.h
-@@ -0,0 +1,107 @@
+@@ -0,0 +1,110 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * win4wine: the Windows XP shell on Wine (Xwayland) as the desktop.
@@ -170,6 +171,8 @@ index 0000000..0e8528a
 +void win4wine_set_workareas(const struct wlr_box *areas, size_t count);
 +/* XP's taskbar takes its edge of the output's usable area */
 +void win4wine_adjust_usable_area(struct output *output, struct wlr_box *usable);
++/* Where a dragged window would snap (NULL: nowhere), for the proxy to show. True if it does. */
++bool win4wine_snap_preview(const struct wlr_box *box);
 +/* Keys for XP: Alt+Tab, the Windows key and Ctrl+Esc. True if consumed. */
 +bool win4wine_key(struct server *server, uint32_t keycode, const xkb_keysym_t *syms,
 +	int nr_syms, uint32_t modifiers, bool pressed);
@@ -196,6 +199,7 @@ index 0000000..0e8528a
 +static inline bool win4wine_client_maximizes(struct view *view) { return false; }
 +static inline void win4wine_set_workareas(const struct wlr_box *areas, size_t count) {}
 +static inline void win4wine_adjust_usable_area(struct output *output, struct wlr_box *usable) {}
++static inline bool win4wine_snap_preview(const struct wlr_box *box) { return false; }
 +static inline bool win4wine_key(struct server *server, uint32_t keycode,
 +	const xkb_keysym_t *syms, int nr_syms, uint32_t modifiers, bool pressed) { return false; }
 +#endif
@@ -572,6 +576,38 @@ index 2d0368a..5b366f6 100644
  #endif
  	return !wlr_box_equal(&old, &output->usable_area);
  }
+diff --git a/src/overlay.c b/src/overlay.c
+index ba2cab3..0d959df 100644
+--- a/src/overlay.c
++++ b/src/overlay.c
+@@ -4,6 +4,7 @@
+ #include "overlay.h"
+ #include "view.h"
+ #include "theme.h"
++#include "win4wine.h"
+ 
+ static void
+ create_overlay_rect(struct seat *seat, struct overlay_rect *rect,
+@@ -58,6 +59,11 @@ show_overlay(struct seat *seat, struct overlay_rect *rect, struct wlr_box *box)
+ 	struct view *view = server->grabbed_view;
+ 	assert(view);
+ 
++	/* win4wine: the proxy shows XP's outline instead */
++	if (win4wine_snap_preview(box)) {
++		return;
++	}
++
+ 	if (!rect->tree) {
+ 		overlay_reconfigure(seat);
+ 		assert(rect->tree);
+@@ -88,6 +94,7 @@ inactivate_overlay(struct overlay *overlay)
+ 		wlr_scene_node_set_enabled(
+ 			&overlay->edge_rect.tree->node, false);
+ 	}
++	win4wine_snap_preview(NULL);
+ 	overlay->active.region = NULL;
+ 	overlay->active.edge = VIEW_EDGE_INVALID;
+ 	overlay->active.output = NULL;
 diff --git a/src/placement.c b/src/placement.c
 index 1e4fd93..509f588 100644
 --- a/src/placement.c
@@ -931,10 +967,10 @@ index cc5af20..92c2358 100644
  		mappable_disconnect(&view->mappable);
 diff --git a/src/win4wine.c b/src/win4wine.c
 new file mode 100644
-index 0000000..eec808f
+index 0000000..18d65c7
 --- /dev/null
 +++ b/src/win4wine.c
-@@ -0,0 +1,1896 @@
+@@ -0,0 +1,1999 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#define _POSIX_C_SOURCE 200809L
 +/*
@@ -947,7 +983,15 @@ index 0000000..eec808f
 + *  - geometry.tsv (here): their geometry and the work area, in Win32 screen
 + *    coordinates (X space less the primary output's origin, xwayland-scale.h)
 + *  - frames.tsv (proxy): each XP frame's HWND, its window's id and borders
-+ *  - *.cmd (proxy): activate, minimize, maximize, restore, close, geometry, switch
++ *  - *.cmd (proxy): activate, minimize, maximize, restore, close, geometry, switch;
++ *    snap and unsnap (window_snap: Win+arrows) name a Wine window or a frame by its HWND
++ *    ("snap HWND SIDE [X Y WIDTH HEIGHT]": SIDE 0 left, 1 right, and the window's
++ *    or frame's rectangle to restore it to later, in Win32 coordinates)
++ *  - tiled.tsv (here): "HWND EDGE" for each window snapped to the left or right
++ *    half of its output (EDGE 0 left, 1 right), Wine's by their HWND, native ones
++ *    by their frame's
++ *  - snapping.tsv (here): "SEQUENCE X Y WIDTH HEIGHT", where a window being dragged
++ *    would snap (all 0 for none); the proxy draws XP's outline there
 + *  - switch.tsv (here): XP's Alt+Tab window, "session steps state"
 + *  - shellkeys.tsv (here): the Windows key and Ctrl+Esc under a native window
 + *  - icon-ID.argb (here): a native window's icon ("W4I1", width, height, ARGB)
@@ -1032,7 +1076,9 @@ index 0000000..eec808f
 +	struct wl_event_source *idle, *inotify_source, *x_source;
 +	int inotify_fd;
 +	uint32_t next_native;
-+	char *windows_text, *geometry_text;
++	char *windows_text, *geometry_text, *tiled_text;
++	unsigned int snapping_seq;
++	struct wlr_box snapping;    /* the box last written to snapping.tsv */
 +	/* the X connection */
 +	xcb_connection_t *x;
 +	xcb_window_t root;
@@ -1185,6 +1231,21 @@ index 0000000..eec808f
 +	wl_list_for_each(view, &w.server->views, link) {
 +		struct win4wine_view *data = data_of(view);
 +		if (data && data->id == id) {
++			return view;
++		}
++	}
++	return NULL;
++}
++
++/* A Wine window, or the native window of a frame, by its HWND */
++static struct view *
++view_for_hwnd(uint32_t hwnd)
++{
++	struct view *view;
++	wl_list_for_each(view, &w.server->views, link) {
++		struct win4wine_view *data = data_of(view);
++		if (hwnd && data && ((data->kind == WIN4WINE_WINE && data->hwnd == hwnd)
++				|| (data->kind == WIN4WINE_NATIVE && data->frame_hwnd == hwnd))) {
 +			return view;
 +		}
 +	}
@@ -1936,6 +1997,52 @@ index 0000000..eec808f
 +	write_if_changed("geometry.tsv", text, &w.geometry_text);
 +}
 +
++/* Windows snapped to half of their output, for Win+arrows in the proxy */
++static void
++write_tiled(void)
++{
++	char *text = NULL;
++	size_t size = 0;
++	FILE *f = open_memstream(&text, &size);
++	struct view *view;
++	wl_list_for_each_reverse(view, &w.server->views, link) {
++		struct win4wine_view *data = data_of(view);
++		uint32_t hwnd = !data ? 0 : data->kind == WIN4WINE_WINE ? data->hwnd
++			: data->kind == WIN4WINE_NATIVE ? data->frame_hwnd : 0;
++		if (!hwnd || !view->mapped || view->fullscreen || view->maximized != VIEW_AXIS_NONE
++				|| (view->tiled != VIEW_EDGE_LEFT && view->tiled != VIEW_EDGE_RIGHT)) {
++			continue;
++		}
++		fprintf(f, "%x %d\n", hwnd, view->tiled == VIEW_EDGE_RIGHT);
++	}
++	fclose(f);
++	write_if_changed("tiled.tsv", text, &w.tiled_text);
++}
++
++bool
++win4wine_snap_preview(const struct wlr_box *box)
++{
++	struct wlr_box shown = {0};
++	if (!w.ipc || (!box && wlr_box_equal(&shown, &w.snapping))) {
++		/* (called as the pointer moves) */
++		return w.ipc;
++	}
++	if (box && !bridge_alive()) {
++		return false;
++	}
++	if (box) {
++		to_win32(box, &shown);
++	}
++	if (!wlr_box_equal(&shown, &w.snapping)) {
++		char text[96];
++		int n = snprintf(text, sizeof(text), "%u %d %d %d %d\n", ++w.snapping_seq,
++			shown.x, shown.y, shown.width, shown.height);
++		write_file("snapping.tsv", text, n);
++		w.snapping = shown;
++	}
++	return true;
++}
++
 +/* frames.tsv: hwnd id left right top bottom maximized iconic clip_x clip_y */
 +static void
 +read_frames(void)
@@ -2062,8 +2169,38 @@ index 0000000..eec808f
 +static void
 +run_command(const char *op, uint32_t id, int nargs, const int *args, const struct timespec *when)
 +{
-+	struct view *view = view_for_id(id);
++	bool snap = !strcmp(op, "snap") || !strcmp(op, "unsnap");
++	struct view *view = snap ? view_for_hwnd(id) : view_for_id(id);
 +	if (!view) {
++		return;
++	}
++	if (snap) {
++		/* Win+arrows (window_snap): labwc's snapping, as for a drag to an edge */
++		if (view->fullscreen) {
++			return;
++		}
++		if (!strcmp(op, "snap") && (nargs == 1 || nargs == 5)) {
++			bool natural = nargs == 5 && args[3] > 0 && args[4] > 0 && view_is_floating(view);
++			if (natural) {
++				/* A maximized window the proxy restored on the way */
++				struct win4wine_view *data = data_of(view);
++				struct wlr_box box = {args[1], args[2], args[3], args[4]};
++				if (data->kind == WIN4WINE_NATIVE) {
++					box.x += data->extents[0];
++					box.y += data->extents[2];
++					box.width -= data->extents[0] + data->extents[1];
++					box.height -= data->extents[2] + data->extents[3];
++				}
++				from_win32(&box, &view->natural_geometry);
++			}
++			view_snap_to_edge(view, args[0] ? VIEW_EDGE_RIGHT : VIEW_EDGE_LEFT,
++				/*across_outputs*/ true, /*store_natural_geometry*/ !natural);
++		} else if (!strcmp(op, "unsnap") && view->maximized == VIEW_AXIS_NONE
++				&& view_is_tiled(view)) {
++			view_set_untiled(view);
++			view_apply_natural_geometry(view);
++		}
++		win4wine_changed();
 +		return;
 +	}
 +	if (!strcmp(op, "switch")) {
@@ -2143,7 +2280,7 @@ index 0000000..eec808f
 +	for (size_t i = 0; i < count; i++) {
 +		char path[4096], op[32];
 +		unsigned int id;
-+		int args[4];
++		int args[5];
 +		snprintf(path, sizeof(path), "%s/%s", w.ipc, names[i]);
 +		struct stat st;
 +		struct timespec when = {0};
@@ -2151,8 +2288,8 @@ index 0000000..eec808f
 +			when = st.st_mtim;
 +		}
 +		FILE *f = fopen(path, "r");
-+		int fields = f ? fscanf(f, "%31s %x %d %d %d %d", op, &id, &args[0], &args[1],
-+			&args[2], &args[3]) : 0;
++		int fields = f ? fscanf(f, "%31s %x %d %d %d %d %d", op, &id, &args[0], &args[1],
++			&args[2], &args[3], &args[4]) : 0;
 +		if (f) {
 +			fclose(f);
 +		}
@@ -2247,6 +2384,7 @@ index 0000000..eec808f
 +	read_frames();
 +	pair_frames();
 +	write_geometry();
++	write_tiled();
 +	activate_frame();
 +}
 +
@@ -2827,6 +2965,7 @@ index 0000000..eec808f
 +	}
 +	free(w.windows_text);
 +	free(w.geometry_text);
++	free(w.tiled_text);
 +	free(w.workareas);
 +	free(w.ipc);
 +	memset(&w, 0, sizeof(w));

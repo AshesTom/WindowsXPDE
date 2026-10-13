@@ -77,6 +77,14 @@ static void geometry_command(HWND hwnd, unsigned long xid)
     write_command(data);
 }
 
+/* Whether Wine's move loop drags this window now (Wine 0073: "Win4WineSizeMove"
+ * without SIZE_MOVE_ENDED; see window snapping below). */
+static BOOL snap_moving(HWND hwnd)
+{
+    UINT_PTR state = (UINT_PTR)GetPropW(hwnd, L"Win4WineSizeMove");
+    return state && !(state & 0x1000);
+}
+
 /* Keep diagnostic readback usable with unpatched Wine10 too. This read-only
  * scalar query performs public icon/readback APIs in their owning process. */
 static LRESULT icon_readback(HWND hwnd, WPARAM field)
@@ -193,6 +201,14 @@ static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if ((wp & 0xfff0) == SC_MINIMIZE) { command("minimize", xid); return 0; }
             if ((wp & 0xfff0) == SC_MAXIMIZE)
             { command(GetPropW(hwnd, L"Win4WineMaximized") ? "restore" : "maximize", xid); return 0; }
+            if ((wp & 0xfff0) == SC_RESTORE && snap_moving(hwnd))
+            {
+                /* Window snapping: Wine's move loop restores a maximized
+                 * window dragged by its caption, and moves it on at once. */
+                command("restore", xid);
+                RemovePropW(hwnd, L"Win4WineMaximized");
+                return DefWindowProcW(hwnd, msg, wp, lp);
+            }
             if ((wp & 0xfff0) == SC_RESTORE)
             { command(IsIconic(hwnd) ? "activate" : "restore", xid); return 0; }
         }
@@ -467,7 +483,8 @@ static void frame_geometry(void)
                     else RemovePropW(c->hwnd, L"Win4WineMaximized");
                     RedrawWindow(c->hwnd, NULL, NULL, RDW_INVALIDATE | RDW_FRAME);
                 }
-                if (!!IsZoomed(c->hwnd) != !!maximized)
+                /* (not while a drag restores it: the WM has not had "restore" yet) */
+                if (!!IsZoomed(c->hwnd) != !!maximized && !snap_moving(c->hwnd))
                     ShowWindow(c->hwnd, maximized ? SW_MAXIMIZE : SW_RESTORE);
                 c->x = x; c->y = y; c->width = width; c->height = height;
                 place_frame(c);
@@ -1177,24 +1194,30 @@ static void tray_start(void)
  * window there, to the top edge maximizes it; an outline shows where.
  * Wine's move loop reports drags (Wine 0073: EVENT_SYSTEM_MOVESIZESTART/END
  * and "Win4WineSizeMove") and gives a snapped window its size back when its
- * caption is dragged away ("Win4WineSnapRestore"). Native clients' frames
- * snap like Wine's windows; the WM moves their clients after them. */
+ * caption is dragged away ("Win4WineSnapRestore"), and restores a maximized
+ * window dragged by its caption. Native clients' frames snap like Wine's
+ * windows; the WM moves their clients after them.
+ * In the Wayland session labwc drags windows, snaps them at the edges and
+ * keeps which are snapped: Win+arrows ask it to snap or unsnap a window
+ * ("snap HWND SIDE", "unsnap HWND"), tiled.tsv says which windows are, and
+ * snapping.tsv where a dragged one would go, for this outline. */
 #define SIZE_MOVE_ENDED     0x1000
 #define SIZE_MOVE_MOVED     0x0100
 #define SIZE_MOVE_CANCELLED 0x0200
 #define MAX_SNAPPED 256
 enum snap_side { SNAP_NONE, SNAP_LEFT, SNAP_RIGHT, SNAP_TOP };
 static struct snapped { HWND hwnd; enum snap_side side; RECT restore, rect; } snapped[MAX_SNAPPED];
-static BOOL snap_enabled;
+static BOOL snap_enabled, snap_compositor;
 static struct
 {
-    HWND hwnd, preview;
+    HWND hwnd, preview[4];  /* the outline's sides */
     BOOL snapped;  /* whether the window was snapped when its drag began */
+    BOOL zoomed;   /* or maximized */
     RECT restore;  /* then its size and place to restore */
     RECT shown;
     UINT_PTR timer;
 } snap_drag;
-static struct { HWND hwnd; enum snap_side side; HMONITOR monitor; RECT restore; int tries; UINT_PTR timer; } snap_pending;
+static struct { HWND hwnd; enum snap_side side; HMONITOR monitor; BOOL known; RECT restore; int tries; UINT_PTR timer; } snap_pending;
 
 static BOOL snap_window(HWND hwnd)
 {
@@ -1223,10 +1246,44 @@ static RECT snap_box(HMONITOR monitor, enum snap_side side)
     return box;
 }
 
+/* labwc's word on a window (tiled.tsv): which half it is snapped to. */
+static struct snapped *snap_tiled(HWND hwnd)
+{
+    static struct snapped entry;
+    WCHAR path[MAX_PATH + 32];
+    unsigned long window;
+    int right;
+    FILE *file;
+    swprintf(path, MAX_PATH + 32, L"%ls\\tiled.tsv", directory);
+    if (!(file = _wfopen(path, L"rb"))) return NULL;
+    memset(&entry, 0, sizeof(entry));
+    while (fscanf(file, "%lx %d", &window, &right) == 2)
+        if ((HWND)(ULONG_PTR)window == hwnd)
+        {
+            entry.hwnd = hwnd;
+            entry.side = right ? SNAP_RIGHT : SNAP_LEFT;
+        }
+    fclose(file);
+    return entry.hwnd ? &entry : NULL;
+}
+
+/* RESTORE: where unsnapping it puts it, if labwc does not know that yet. */
+static void snap_command(const char *op, HWND hwnd, enum snap_side side, const RECT *restore)
+{
+    char data[160];
+    if (side == SNAP_NONE) snprintf(data, sizeof(data), "%s %lx\n", op, (unsigned long)(ULONG_PTR)hwnd);
+    else if (!restore) snprintf(data, sizeof(data), "%s %lx %d\n", op, (unsigned long)(ULONG_PTR)hwnd, side == SNAP_RIGHT);
+    else snprintf(data, sizeof(data), "%s %lx %d %ld %ld %ld %ld\n", op, (unsigned long)(ULONG_PTR)hwnd,
+                  side == SNAP_RIGHT, restore->left, restore->top, restore->right - restore->left,
+                  restore->bottom - restore->top);
+    write_command(data);
+}
+
 /* The entry of a window that is still where it was snapped. */
 static struct snapped *snap_find(HWND hwnd)
 {
     unsigned i;
+    if (snap_compositor) return snap_tiled(hwnd);
     for (i = 0; i < MAX_SNAPPED; ++i)
     {
         RECT rect;
@@ -1247,15 +1304,23 @@ static struct snapped *snap_find(HWND hwnd)
 static void snap_forget(HWND hwnd)
 {
     unsigned i;
+    if (snap_compositor) return;
     RemovePropW(hwnd, L"Win4WineSnapRestore");
     for (i = 0; i < MAX_SNAPPED; ++i) if (snapped[i].hwnd == hwnd) memset(&snapped[i], 0, sizeof(snapped[i]));
 }
 
 static void snap_place(HWND hwnd, enum snap_side side, HMONITOR monitor, const RECT *restore)
 {
-    struct snapped *entry = snap_find(hwnd);
+    struct snapped *entry;
     RECT box = snap_box(monitor, side);
     unsigned i;
+    if (snap_compositor)
+    {
+        /* labwc snaps it on its output, and keeps where it was. */
+        snap_command("snap", hwnd, side, restore);
+        return;
+    }
+    entry = snap_find(hwnd);
     if (!entry)
         for (i = 0; i < MAX_SNAPPED && !entry; ++i) if (!snapped[i].hwnd) entry = &snapped[i];
     if (!entry) return;
@@ -1278,8 +1343,9 @@ static void CALLBACK snap_pending_timer(HWND hwnd, UINT msg, UINT_PTR id, DWORD 
     if (!IsWindow(snap_pending.hwnd) || (snap_zoomed(snap_pending.hwnd) && ++snap_pending.tries < 40)) return;
     KillTimer(NULL, snap_pending.timer);
     snap_pending.timer = 0;
-    if (!snap_zoomed(snap_pending.hwnd))
-        snap_place(snap_pending.hwnd, snap_pending.side, snap_pending.monitor, &snap_pending.restore);
+    if (snap_zoomed(snap_pending.hwnd)) return;
+    if (!snap_pending.known) GetWindowRect(snap_pending.hwnd, &snap_pending.restore);
+    snap_place(snap_pending.hwnd, snap_pending.side, snap_pending.monitor, &snap_pending.restore);
 }
 
 static void snap_to(HWND hwnd, enum snap_side side, HMONITOR monitor)
@@ -1294,19 +1360,10 @@ static void snap_to(HWND hwnd, enum snap_side side, HMONITOR monitor)
     }
     if (!(style & WS_THICKFRAME)) return;
     if (entry) restore = entry->restore;
-    else if (snap_zoomed(hwnd))
-    {
-        /* The normal position is in work area coordinates. */
-        WINDOWPLACEMENT placement = {.length = sizeof(placement)};
-        MONITORINFO info = {.cbSize = sizeof(info)};
-        GetWindowPlacement(hwnd, &placement);
-        GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &info);
-        restore = placement.rcNormalPosition;
-        OffsetRect(&restore, info.rcWork.left - info.rcMonitor.left, info.rcWork.top - info.rcMonitor.top);
-    }
-    else GetWindowRect(hwnd, &restore);
     if (snap_zoomed(hwnd))
     {
+        /* Wine gives other processes no normal position: the window's
+         * restored rectangle is the place to restore it to later. */
         DWORD_PTR result;
         SendMessageTimeoutW(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0, SMTO_ABORTIFHUNG, 1000, &result);
         if (snap_zoomed(hwnd))
@@ -1315,12 +1372,14 @@ static void snap_to(HWND hwnd, enum snap_side side, HMONITOR monitor)
             snap_pending.hwnd = hwnd;
             snap_pending.side = side;
             snap_pending.monitor = monitor;
+            snap_pending.known = entry != NULL;
             snap_pending.restore = restore;
             snap_pending.tries = 0;
             snap_pending.timer = SetTimer(NULL, 0, 50, snap_pending_timer);
             return;
         }
     }
+    if (!entry) GetWindowRect(hwnd, &restore);
     snap_place(hwnd, side, monitor, &restore);
 }
 
@@ -1328,6 +1387,11 @@ static void snap_unsnap(struct snapped *entry)
 {
     HWND hwnd = entry->hwnd;
     RECT restore = entry->restore;
+    if (snap_compositor)
+    {
+        snap_command("unsnap", hwnd, SNAP_NONE, NULL);
+        return;
+    }
     snap_forget(hwnd);
     SetWindowPos(hwnd, NULL, restore.left, restore.top, restore.right - restore.left,
                  restore.bottom - restore.top, SWP_NOZORDER | SWP_NOACTIVATE);
@@ -1368,8 +1432,9 @@ static void snap_hotkey(UINT vk)
         if (entry && entry->side == other && !snap_zoomed(hwnd)) snap_unsnap(entry);
         else if (entry && entry->side == side && !snap_zoomed(hwnd))
         {
-            /* On to the next monitor's near half. */
-            if ((next = snap_neighbour(monitor, vk == VK_LEFT ? -1 : 1))) snap_to(hwnd, other, next);
+            /* On to the next monitor's near half; labwc does that itself. */
+            if (snap_compositor) snap_command("snap", hwnd, side, NULL);
+            else if ((next = snap_neighbour(monitor, vk == VK_LEFT ? -1 : 1))) snap_to(hwnd, other, next);
         }
         else snap_to(hwnd, side, monitor);
         break;
@@ -1414,8 +1479,9 @@ static enum snap_side snap_edge(HWND hwnd, POINT pt, HMONITOR *monitor)
     return SNAP_NONE;
 }
 
-/* The outline: a ring in the selection colour with XP's halftone, a little
- * inside the box so that it is never under the pointer at the edge. */
+/* The outline: a frame in the selection colour with XP's halftone, a little
+ * inside the box so that it is never under the pointer at the edge. Its four
+ * sides are windows of their own: Xwayland shows a window region's outside. */
 static LRESULT CALLBACK snap_preview_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_PAINT)
@@ -1425,7 +1491,10 @@ static LRESULT CALLBACK snap_preview_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
         HDC dc = BeginPaint(hwnd, &ps);
         HBITMAP bitmap = CreateBitmap(8, 8, 1, 1, pattern);
         HBRUSH brush = CreatePatternBrush(bitmap);
-        RECT rect;
+        RECT rect, window;
+        /* One pattern across the sides */
+        GetWindowRect(hwnd, &window);
+        SetBrushOrgEx(dc, -window.left & 7, -window.top & 7, NULL);
         GetClientRect(hwnd, &rect);
         SetTextColor(dc, GetSysColor(COLOR_HIGHLIGHT));
         SetBkColor(dc, GetSysColor(COLOR_WINDOW));
@@ -1443,11 +1512,12 @@ static LRESULT CALLBACK snap_preview_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
 static void snap_show_preview(const RECT *box)
 {
     int thickness = max(4, GetSystemMetrics(SM_CXSIZEFRAME)), inset = 2 * thickness;
-    RECT rect;
-    HRGN ring, hole;
+    RECT rect, sides[4];
+    unsigned i;
     if (!box)
     {
-        if (snap_drag.preview) ShowWindow(snap_drag.preview, SW_HIDE);
+        for (i = 0; i < ARRAYSIZE(snap_drag.preview); ++i)
+            if (snap_drag.preview[i]) ShowWindow(snap_drag.preview[i], SW_HIDE);
         SetRectEmpty(&snap_drag.shown);
         return;
     }
@@ -1455,20 +1525,22 @@ static void snap_show_preview(const RECT *box)
     InflateRect(&rect, -inset, -inset);
     if (EqualRect(&rect, &snap_drag.shown)) return;
     snap_drag.shown = rect;
-    if (!snap_drag.preview)
-        snap_drag.preview = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
-                                            L"Win4WineSnapPreview", L"", WS_POPUP, 0, 0, 0, 0,
-                                            NULL, NULL, GetModuleHandleW(NULL), NULL);
-    if (!snap_drag.preview) return;
-    ring = CreateRectRgn(0, 0, rect.right - rect.left, rect.bottom - rect.top);
-    hole = CreateRectRgn(thickness, thickness, rect.right - rect.left - thickness, rect.bottom - rect.top - thickness);
-    CombineRgn(ring, ring, hole, RGN_DIFF);
-    DeleteObject(hole);
-    SetWindowRgn(snap_drag.preview, ring, FALSE);
-    SetWindowPos(snap_drag.preview, HWND_TOPMOST, rect.left, rect.top, rect.right - rect.left,
-                 rect.bottom - rect.top, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    /* Now: the proxy's own frames are dragged in a move loop of this thread. */
-    RedrawWindow(snap_drag.preview, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+    SetRect(&sides[0], rect.left, rect.top, rect.right, rect.top + thickness);
+    SetRect(&sides[1], rect.left, rect.bottom - thickness, rect.right, rect.bottom);
+    SetRect(&sides[2], rect.left, rect.top + thickness, rect.left + thickness, rect.bottom - thickness);
+    SetRect(&sides[3], rect.right - thickness, rect.top + thickness, rect.right, rect.bottom - thickness);
+    for (i = 0; i < ARRAYSIZE(sides); ++i)
+    {
+        if (!snap_drag.preview[i])
+            snap_drag.preview[i] = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+                                                   L"Win4WineSnapPreview", L"", WS_POPUP, 0, 0, 0, 0,
+                                                   NULL, NULL, GetModuleHandleW(NULL), NULL);
+        if (!snap_drag.preview[i]) continue;
+        SetWindowPos(snap_drag.preview[i], HWND_TOPMOST, sides[i].left, sides[i].top, sides[i].right - sides[i].left,
+                     sides[i].bottom - sides[i].top, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        /* Now: the proxy's own frames are dragged in a move loop of this thread. */
+        RedrawWindow(snap_drag.preview[i], NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+    }
 }
 
 static void snap_drag_end(void)
@@ -1516,6 +1588,7 @@ static void snap_move_size(DWORD event, HWND hwnd)
         snap_drag_end();
         snap_drag.hwnd = hwnd;
         snap_drag.snapped = entry != NULL;
+        snap_drag.zoomed = snap_zoomed(hwnd);
         if (entry) snap_drag.restore = entry->restore;
         else GetWindowRect(hwnd, &snap_drag.restore);
         snap_drag.timer = SetTimer(NULL, 0, 30, snap_drag_timer);
@@ -1536,6 +1609,15 @@ static void snap_move_size(DWORD event, HWND hwnd)
         POINT pt;
         RECT restore = snap_drag.restore;
         enum snap_side side;
+        if (snap_drag.zoomed && !snap_drag.snapped)
+        {
+            /* Wine restored it on the way, at "Win4WineSizeMoveRestored"
+             * (left and top plus 0x8000); its size has not changed since. */
+            UINT_PTR origin = (UINT_PTR)RemovePropW(hwnd, L"Win4WineSizeMoveRestored");
+            GetWindowRect(hwnd, &restore);
+            if (origin) OffsetRect(&restore, (int)LOWORD(origin) - 0x8000 - restore.left,
+                                   (int)HIWORD(origin) - 0x8000 - restore.top);
+        }
         GetCursorPos(&pt);
         side = snap_edge(hwnd, pt, &monitor);
         if (snap_drag.snapped && side != SNAP_LEFT && side != SNAP_RIGHT) snap_forget(hwnd);
@@ -1555,6 +1637,30 @@ static void snap_move_size(DWORD event, HWND hwnd)
     snap_drag_end();
 }
 
+/* labwc writes snapping.tsv as it drags a window: "NUMBER X Y WIDTH HEIGHT",
+ * the box it would snap to, or an empty one. */
+static void snap_compositor_events(BOOL start)
+{
+    static unsigned seen;
+    WCHAR path[MAX_PATH + 32];
+    unsigned number;
+    long x, y, width, height;
+    FILE *file;
+    if (!snap_compositor) return;
+    swprintf(path, MAX_PATH + 32, L"%ls\\snapping.tsv", directory);
+    if (!(file = _wfopen(path, L"rb"))) return;
+    if (fscanf(file, "%u %ld %ld %ld %ld", &number, &x, &y, &width, &height) != 5) number = seen;
+    fclose(file);
+    if (number == seen) return;
+    seen = number;
+    if (start || width <= 0 || height <= 0 || width > 65535 || height > 65535) snap_show_preview(NULL);
+    else
+    {
+        RECT box = {x, y, x + width, y + height};
+        snap_show_preview(&box);
+    }
+}
+
 static void snap_start(void)
 {
     static const UINT keys[] = {VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN};
@@ -1564,6 +1670,7 @@ static void snap_start(void)
     unsigned i;
     snap_enabled = len && len < ARRAYSIZE(value) && !wcscmp(value, L"1");
     if (!snap_enabled) return;
+    snap_compositor = GetEnvironmentVariableW(L"WAYLAND_DISPLAY", NULL, 0) != 0;
     cls.lpfnWndProc = snap_preview_proc;
     cls.hInstance = GetModuleHandleW(NULL);
     cls.hCursor = LoadCursorW(NULL, IDC_ARROW);
@@ -1633,10 +1740,12 @@ int wmain(int argc, WCHAR **argv)
     if (snap_enabled)
         SetWinEventHook(EVENT_SYSTEM_MOVESIZESTART, EVENT_SYSTEM_MOVESIZEEND, NULL, win_event, 0, 0, WINEVENT_OUTOFCONTEXT);
     shell_key_events(TRUE);
+    snap_compositor_events(TRUE);
     for (;;)
     {
         switch_events();
         shell_key_events(FALSE);
+        snap_compositor_events(FALSE);
         if (dirty)
         {
             dirty = FALSE;

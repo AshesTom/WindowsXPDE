@@ -121,8 +121,11 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
   覚えていて、Win+↓ や反対側の Win+矢印で戻します。X11 のセッションでは、Wine の移動のループが送る EVENT_SYSTEM_MOVESIZESTART/END
   （パッチ 0073）でタイトルバーのドラッグを知り、ポインタが画面の左右の端・上端にあれば XP のドラッグの枠と同じ網掛けで行き先を
   示し、離したときに寄せます。寄せた窓には `Win4WineSnapRestore` を付け、ドラッグで引き剥がすと Wine が元の大きさに戻します。
-  Wayland のセッションでは Wine の窓のドラッグは labwc が行うので、`wayland/session.sh` が labwc の snapping を有効にした
-  `rc.xml` を IPC のディレクトリに作って使います。
+  最大化した窓もタイトルバーをドラッグすると、Wine が元の大きさに戻して動かし続けます（`WIN4WINE_WINDOW_SNAP=1` のとき）。
+  Wayland のセッションでは、元の大きさの窓のドラッグは labwc が行うので、`wayland/session.sh` が labwc の snapping を有効にした
+  `rc.xml` を IPC のディレクトリに作って使います。どの窓を寄せたかは labwc だけが覚えます。proxy は Win+矢印を `snap HWND 側` と
+  `unsnap HWND` のコマンドで labwc に頼み、寄せた窓を `tiled.tsv` で知ります。ドラッグ中の行き先は labwc が `snapping.tsv` に書き、
+  proxy が X11 と同じ網掛けの枠で示します。
 
 ## トレイアイコン（`bridge-wm/tray.py`）
 
