@@ -35,8 +35,13 @@ STATUS = (0, 48, 156)
 ITEM = 80                       # height of one account
 INSET = 2                       # DirectUI draws text 2px in from its element's left and right edges
 MESSAGE = 320                   # where the left panel's message wraps, at every DPI
-# The shutdown dialog: its template is in DLUs, XP's MS UI Gothic 9pt base units are 7x12.
-BASE_X, BASE_Y = 7, 12
+# The shutdown dialog: its template is in DLUs. The base units of its font at 96 DPI,
+# by the template's face and size: Japanese XP's MS UI Gothic 9pt is 7x12, English
+# XP's MS Shell Dlg 8pt (Microsoft Sans Serif) 6x13 (the dialog is 313x199 there).
+BASE_UNITS = {('ms ui gothic', 9): (7, 12), ('ms shell dlg', 8): (6, 13)}
+# The font of tooltips and balloons (SPI's status font) by the language of logonui:
+# Japanese XP's MS UI Gothic 9pt, English XP's Tahoma 8pt.
+SYSTEM_FONTS = {0x411: ('MS UI Gothic', 9), 0x409: ('Tahoma', 8)}
 # The faded screen behind the shutdown dialog: an affine fit per channel of XP's final state
 # (mean error under 1, at most 11).
 DIM = ((0.1435, 0.6198, 0.1571, -4.37), (0.0952, 0.6789, 0.1426, -3.11), (0.0722, 0.6450, 0.1985, -3.15))
@@ -53,8 +58,24 @@ def setup(cache):
     missing = [name for name in REQUIRED if not (root / name).is_file()]
     if missing:
         raise FileNotFoundError('missing ' + ', '.join(missing))
-    os.environ['FONTCONFIG_FILE'] = str(fontconfig(root / 'fonts', Path(cache)))
+    use_fonts(root, cache)
     return config, Assets(root)
+
+
+def use_fonts(root, cache):
+    """Point fontconfig at the XP fonts in ROOT (extract/extract.py's output), before any text is drawn."""
+    english = english_media(root)
+    if english:
+        # GDI's TrueType hinting, as FreeType's older interpreter does it: XP's
+        # Arial and Tahoma get their 2px stems at the Welcome screen's sizes.
+        # FreeType reads this once, when it draws the first text.
+        os.environ.setdefault('FREETYPE_PROPERTIES', 'truetype:interpreter-version=35')
+    os.environ['FONTCONFIG_FILE'] = str(fontconfig(Path(root) / 'fonts', Path(cache), english))
+
+
+def english_media(root):
+    """Whether the Welcome screen's files are English XP's (logonui's strings are in English)."""
+    return 0x409 in Resources(Path(root) / 'system32/logonui.exe').languages(6)
 
 
 def config_dpi(config):
@@ -76,11 +97,12 @@ def points(pt, dpi=96):
     return (pt * dpi + 36) // 72
 
 
-def fontconfig(fonts, directory):
+def fontconfig(fonts, directory, english=False):
     """Write a fonts.conf that adds the XP fonts and renders them as XP's standard smoothing does.
 
     XP follows each font's gasp table: MS UI Gothic is drawn without
     antialiasing (from its bitmaps) up to 24 pixels, Arial up to 17.
+    English XP's fonts are fully hinted (with ENGLISH, see setup()).
     """
     directory = Path(directory).resolve()
     fonts = Path(fonts).resolve()
@@ -93,6 +115,15 @@ def fontconfig(fonts, directory):
     <edit name="embeddedbitmap" mode="assign"><bool>true</bool></edit>
     <edit name="hintstyle" mode="assign"><const>hintfull</const></edit>
   </match>''' for family, size in (('MS UI Gothic', 24), ('Arial', 17)))
+    if english:
+        rules += ''.join(f'''
+  <match target="font">
+    <test name="family"><string>{family}</string></test>
+    <edit name="hinting" mode="assign"><bool>true</bool></edit>
+    <edit name="autohint" mode="assign"><bool>false</bool></edit>
+    <edit name="hintstyle" mode="assign"><const>hintfull</const></edit>
+    <edit name="rgba" mode="assign"><const>none</const></edit>
+  </match>''' for family in ('Arial', 'Tahoma', 'Franklin Gothic Medium', 'Microsoft Sans Serif'))
     path = directory / 'fonts.conf'
     path.write_text(f'''<?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
@@ -222,7 +253,14 @@ class Assets:
         self.cache = {}
         theme = root / 'themes/Luna/luna.msstyles'
         self.luna = Resources(theme) if theme.is_file() else None
+        # The faces logonui's UI file names: rcstr(1) for the left panel, rcstr(2)
+        # for the bottom band, rcstr(3) for the accounts (all MS UI Gothic on
+        # Japanese XP; arial, tahoma and tahoma on English XP).
         self.face = self.logonui.string(1) or 'MS UI Gothic'
+        self.bottom_face = self.logonui.string(2) or self.face
+        self.account_face = self.logonui.string(3) or self.face
+        languages = self.logonui.languages(6)
+        self.system_font = SYSTEM_FONTS.get(languages[0] if languages else 0x411, SYSTEM_FONTS[0x411])
         self.dialog = self.template(self.msgina.find(5, 20100))
 
     def bitmap(self, module, number, key=None, alpha=False, dimmed=False):
@@ -261,9 +299,12 @@ class Assets:
         offset = 26
         for _ in range(3):
             _, offset = text(offset)
+        font = None
         if style & 0x40:
-            _, offset = text(offset + 6)
-        controls = {'size': (cx, cy)}
+            size = struct.unpack_from('<H', data, offset)[0]
+            face, offset = text(offset + 6)
+            font = (face, size)
+        controls = {'size': (cx, cy), 'font': font}
         for _ in range(count):
             offset = (offset + 3) & ~3
             x, y, w, h, number = struct.unpack_from('<12xhhhhI', data, offset)
@@ -274,8 +315,23 @@ class Assets:
         return controls
 
 
-# The XP fonts by family: file and index in a collection.
-FONT_FILES = {'MS UI Gothic': ('msgothic.ttc', 2), 'Arial': ('arial.ttf', 0), 'Tahoma': ('tahoma.ttf', 0)}
+# The XP fonts by family (in lower case, as GDI matches names): file and index in a collection.
+FONT_FILES = {'ms ui gothic': ('msgothic.ttc', 2), 'arial': ('arial.ttf', 0), 'tahoma': ('tahoma.ttf', 0),
+              'franklin gothic medium': ('framd.ttf', 0), 'microsoft sans serif': ('micross.ttf', 0)}
+# Their own bold and italic faces, by (family, bold, italic). English XP media has
+# them; where a face is missing, GDI simulates the style from the regular one.
+STYLE_FILES = {('arial', True, False): 'arialbd.ttf', ('arial', False, True): 'ariali.ttf',
+               ('arial', True, True): 'arialbi.ttf', ('tahoma', True, False): 'tahomabd.ttf',
+               ('franklin gothic medium', False, True): 'framdit.ttf'}
+# Names GDI draws with another family: XP's font substitute for MS Shell Dlg, and the
+# family XP's font mapper picks for msgina's "Franklin Gothic" (seen on English XP).
+SUBSTITUTES = {'ms shell dlg': 'microsoft sans serif', 'franklin gothic': 'franklin gothic medium'}
+
+
+def font_family(name):
+    """NAME as the family it is drawn with, in lower case if it is one of the XP fonts."""
+    key = SUBSTITUTES.get(name.lower(), name.lower())
+    return key if key in FONT_FILES else name
 
 
 def win_metrics(path, index):
@@ -334,12 +390,22 @@ class Text:
         PangoCairo.context_set_font_options(self.context, options)
         self.metrics = {}
 
-    def font_metrics(self, family, px):
-        if family not in self.metrics:
-            name, index = FONT_FILES.get(family, (None, 0))
+    def style_file(self, family, bold, italic):
+        """The file of FAMILY's own bold/italic face, if the XP media has it."""
+        name = STYLE_FILES.get((family, bold, italic))
+        return name if name and (self.assets.fonts / name).is_file() else None
+
+    def win(self, family, style=None):
+        """win_metrics() of FAMILY's regular face, or of its STYLE file; None for other fonts."""
+        key = style or family
+        if key not in self.metrics:
+            name, index = (style, 0) if style else FONT_FILES.get(family, (None, 0))
             path = self.assets.fonts / name if name else None
-            self.metrics[family] = win_metrics(path, index) if path and path.is_file() else None
-        metrics = self.metrics[family]
+            self.metrics[key] = win_metrics(path, index) if path and path.is_file() else None
+        return self.metrics[key]
+
+    def font_metrics(self, family, px, style=None):
+        metrics = self.win(family, style)
         if metrics is None:
             ascent = round(px * 0.86)
             return ascent, px - ascent, 1, 1
@@ -361,9 +427,12 @@ class Text:
 
     def layout(self, text, px, bold=False, italic=False, underline=False, family=None, width=None,
                align='left', mnemonic=False):
-        family = family or self.assets.face
-        simulated = family in FONT_FILES
-        font = Pango.FontDescription.from_string(family)
+        family = font_family(family or self.assets.face)
+        style = self.style_file(family, bold, italic) if bold or italic else None
+        simulated = family in FONT_FILES and not style
+        # Set, not parsed: from_string() takes the "Medium" of Franklin Gothic Medium for a weight.
+        font = Pango.FontDescription()
+        font.set_family(family)
         font.set_absolute_size(px * Pango.SCALE)
         if bold and not simulated:
             font.set_weight(Pango.Weight.BOLD)
@@ -401,7 +470,7 @@ class Text:
                 position += len(chunk)
             laid.append((runs, x))
             position += 1 if line is not lines[-1] else 0
-        return Block(laid, self.font_metrics(family, px), bold, 1 / 3 if italic and simulated else 0,
+        return Block(laid, self.font_metrics(family, px, style), bold, 1 / 3 if italic and simulated else 0,
                      marks, width, align)
 
     @staticmethod
@@ -562,12 +631,23 @@ class Screen:
         return None
 
     def name_width(self, i):
-        return self.text.size(self.text.layout(self.users[i].display, self.pt(12)))[0]
+        return self.text.size(self.name_layout(self.users[i].display))[0]
+
+    def name_layout(self, name):
+        """An account's name: logonui's account face at its size rcint(45)."""
+        return self.text.layout(name, self.pt(int(self.assets.string('logonui', 45) or 12)),
+                                family=self.assets.account_face)
 
     def power_rect(self, width, height):
-        layout = self.text.layout(self.assets.string('logonui', 11), self.pt(12))
+        layout = self.power_layout()
         px = self.px
         return (px(25), height - self.bottom() + px(2) + px(20), px(26 + 2) + self.text.size(layout)[0], px(26))
+
+    def power_layout(self, underline=False):
+        """"Turn off computer": the bottom band's face at the buttons' size rcint(42)."""
+        a = self.assets
+        return self.text.layout(a.string('logonui', 11), self.pt(int(a.string('logonui', 42) or 12)),
+                                underline=underline, family=a.bottom_face)
 
     def password_rects(self, width, height):
         g = self.geometry(width, height)
@@ -599,12 +679,17 @@ class Screen:
                            self.dlu(dw, base_x, 4), self.dlu(dh, base_y, 8))
         return rects
 
+    def dialog_font(self):
+        """The shutdown dialog template's face and point size."""
+        return self.assets.dialog['font'] or (self.assets.face, 9)
+
     def base_units(self):
-        """The dialog's base units: its MS UI Gothic 9pt as GdiGetCharDimensions measures it (7x12 at 96 DPI)."""
-        if self.dpi == 96:
-            return BASE_X, BASE_Y
+        """The dialog's base units: its font as GdiGetCharDimensions measures it (BASE_UNITS at 96 DPI)."""
+        face, size = self.dialog_font()
+        if self.dpi == 96 and (face.lower(), size) in BASE_UNITS:
+            return BASE_UNITS[face.lower(), size]
         letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-        width, height = self.text.size(self.text.layout(letters, self.pt(9)))
+        width, height = self.text.size(self.text.layout(letters, self.pt(size), family=face))
         return (width // 26 + 1) // 2, height
 
     @staticmethod
@@ -706,11 +791,11 @@ class Screen:
         if self.mode == 'list':
             x, y, w, h = self.power_rect(width, height)
             blit(a.bitmap('logonui', 107, key='corner', dimmed=dimmed), x, y, px(26), px(26), nearest=not smooth)
-            layout = self.text.layout(a.string('logonui', 11), self.pt(int(a.string('logonui', 42) or 12)),
-                                      underline=self.power_hover, family=a.string('logonui', 2) or None)
+            layout = self.power_layout(self.power_hover)
             self.text.draw(cr, layout, x + px(28 + INSET), y, tint((255, 255, 255)))
             layout = self.text.layout(a.string('logonui', 25).replace('\\n', '\n'),
-                                      self.pt(int(a.string('logonui', 43) or 9)), width=px(325 - 18))
+                                      self.pt(int(a.string('logonui', 43) or 9)), width=px(325 - 18),
+                                      family=a.bottom_face)
             self.text.draw(cr, layout, width - px(25 + 325 - 18) + INSET, y, tint((255, 255, 255)))
 
         if self.dialog and dialog:
@@ -746,11 +831,12 @@ class Screen:
                 user.picture = None
             else:
                 blit(picture, fx + px(5), fy + px(5), px(48), px(48), nearest=False)
-        name = self.text.layout(user.display, self.pt(12))
+        name = self.name_layout(user.display)
         name_x = x + px(5 + 2 + 58 + 7) + INSET
         self.text.draw(cr, name, name_x, fy, tint(TEXT))
         if self.mode == 'logon' and self.status:
-            layout = self.text.layout(self.status, self.pt(int(a.string('logonui', 46) or 9)), bold=True)
+            layout = self.text.layout(self.status, self.pt(int(a.string('logonui', 46) or 9)), bold=True,
+                                      family=a.account_face)
             self.text.draw(cr, layout, name_x, fy + self.text.size(name)[1], tint(STATUS))
         if alpha < 1:
             self.fade(target, area, under, 96)
@@ -840,8 +926,10 @@ class Screen:
         at 144 DPI, not reproduced).
         """
         a = self.assets
-        title = self.text.layout(title or a.string('logonui', 10), points(9), bold=True)
-        body = self.text.layout(body or a.string('logonui', 8).replace('\\n', '\n'), points(9), width=wrap)
+        face, size = a.system_font
+        title = self.text.layout(title or a.string('logonui', 10), points(size), bold=True, family=face)
+        body = self.text.layout(body or a.string('logonui', 8).replace('\\n', '\n'), points(size), width=wrap,
+                                family=face)
         tw, th = self.text.size(title)
         bw, bh = self.text.size(body)
         left, top = tip_x - 16, tip_y + 19
@@ -961,7 +1049,8 @@ class Screen:
             cr.set_source_rgb(243 / 255, 243 / 255, 239 / 255)
             cr.rectangle(x + 1, y + 1, w - 2, h - 2)
             cr.fill()
-        layout = self.text.layout(caption, self.pt(9), width=w, align='center')
+        face, size = self.dialog_font()
+        layout = self.text.layout(caption, self.pt(size), width=w, align='center', family=face)
         self.text.draw(cr, layout, x, y + (h - self.text.size(layout)[1]) // 2, (0, 0, 0))
 
     def render(self, width, height, fade=1.0):

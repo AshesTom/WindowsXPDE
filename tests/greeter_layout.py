@@ -131,7 +131,7 @@ def main():
     args = parser.parse_args()
     import welcome
     with tempfile.TemporaryDirectory(prefix='greeter-layout-') as cache:
-        os.environ['FONTCONFIG_FILE'] = str(welcome.fontconfig(args.assets / 'fonts', Path(cache)))
+        welcome.use_fonts(args.assets, cache)
         assets = welcome.Assets(args.assets)
         failures = 0
         renders = {}
