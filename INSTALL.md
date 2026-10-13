@@ -68,6 +68,19 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 - 一つのマシンで日本語版と英語版を混ぜることは想定していません。ようこそ画面はマシンで一つなので、最後に `--greeter` で入れた方になります。
 - 日本語版と英語版以外の XP は、英語版と同じ設定（ロケール `en_US.UTF-8` を含む）で入れます。一切試していないので、`setup.sh` は警告を出します（止まりはしません）。
 
+日本語版から英語版へ（またはその逆に）切り替えるときは、取り出したファイルと prefix を別の場所に移してから、もう一方の ISO で
+`setup.sh` を実行し直します。`setup.sh` は、それらが既にあれば作り直さないためです。ビルドした Wine はそのまま使います。
+`session.json` のロケールと日本語入力の設定は `setup.sh` が書き換えます。ログオフし、Ctrl+Alt+F2 の文字の画面（または SSH）で:
+
+```sh
+cd ~/win4wine
+mv .local/assets .local/assets-ja
+mv .local/prefix .local/prefix-ja
+scripts/setup.sh --media /path/to/English-XP.iso --greeter
+```
+
+うまく動いたら、`-ja` を付けたフォルダは消して構いません。
+
 ## ReactOS のシェル
 
 XP の ISO が無いときは、ReactOS のシェル（クラシックの見た目）を入れられます。

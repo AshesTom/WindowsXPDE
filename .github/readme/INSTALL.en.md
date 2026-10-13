@@ -67,6 +67,21 @@ Give an English XP SP3 ISO to `--media` and the setup follows English XP; the op
 - The font files come from the ISO (Franklin Gothic, Arial bold and italic, Microsoft Sans Serif and Terminal of the English ISO).
 - Mixing Japanese and English XP on one machine is not intended. There is one Welcome screen per machine: the last one set
   up with `--greeter`.
+- XP in languages other than Japanese and English is set up the same way as English XP (with the locale `en_US.UTF-8`).
+  It has not been tested at all, so `setup.sh` warns (and goes on).
+
+To switch from Japanese to English XP (or back), move the extracted files and the prefix away and run `setup.sh` again with
+the other ISO: `setup.sh` does not make them again while they exist. The Wine build is reused, and `setup.sh` updates the
+locale and the input method in `session.json`. Log off, and on the text console (Ctrl+Alt+F2) or over SSH:
+
+```sh
+cd ~/win4wine
+mv .local/assets .local/assets-ja
+mv .local/prefix .local/prefix-ja
+scripts/setup.sh --media /path/to/English-XP.iso --greeter
+```
+
+Once it works, you can delete the `-ja` folders.
 
 ## The ReactOS shell
 
