@@ -19,6 +19,8 @@ struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; 
     HICON icon; int icon_checked, icon_present; FILETIME icon_time; DWORD icon_size;
 };
 static struct client clients[MAX_CLIENTS];
+/* WM_TIMER of a frame whose caption is painted again after an activation change. */
+#define CAPTION_REPAINT_TIMER 0x574e
 static HWND previous[MAX_CLIENTS];
 static unsigned previous_count;
 static WCHAR previous_titles[MAX_CLIENTS][512];
@@ -173,6 +175,12 @@ static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         unsigned i;
         for (i = 0; i < MAX_CLIENTS; ++i)
             if (clients[i].xid == xid && clients[i].active) return DefWindowProcW(hwnd, msg, TRUE, lp);
+    }
+    if (msg == WM_TIMER && wp == CAPTION_REPAINT_TIMER)
+    {
+        KillTimer(hwnd, CAPTION_REPAINT_TIMER);
+        RedrawWindow(hwnd, NULL, NULL, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
+        return 0;
     }
     /* Border metrics written to frames.tsv follow theme and settings changes. */
     if (msg == WM_THEMECHANGED || msg == WM_SETTINGCHANGE || msg == WM_DISPLAYCHANGE) dirty = TRUE;
@@ -556,6 +564,12 @@ static void snapshot(void)
             c->active = active; /* before WM_NCACTIVATE, which proxy_proc checks */
             if (active) SetForegroundWindow(c->hwnd);
             SendMessageW(c->hwnd, WM_NCACTIVATE, active, 0);
+            /* Activations of other processes' windows around this one
+             * sometimes leave its caption painted in the previous state,
+             * though WM_NCACTIVATE's state is right (seen in the classic
+             * theme; a repaint shows it). Paint the caption again once
+             * they are over. */
+            SetTimer(c->hwnd, CAPTION_REPAINT_TIMER, 250, NULL);
         }
     }
     fclose(file);
