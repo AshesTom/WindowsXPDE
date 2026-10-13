@@ -9,6 +9,7 @@ import select
 import signal
 import struct
 from Xlib import X, XK, Xatom, Xutil, display, error, protocol
+from Xlib.ext import composite
 from icons import payload as icon_payload
 
 IN_CLOSE_WRITE, IN_MOVED_TO = 0x8, 0x80
@@ -43,7 +44,7 @@ class Inotify:
 
 
 class Manager:
-    def __init__(self, ipc):
+    def __init__(self, ipc, redirect=True):
         self.ipc = ipc.resolve()
         self.ipc.mkdir(mode=0o700, parents=True, exist_ok=True)
         stat = self.ipc.stat()
@@ -71,6 +72,15 @@ class Manager:
         self.d.sync()
         if self.bad_access:
             raise SystemExit('Another WM already owns this X display')
+        # Wine's windows keep their contents off screen (Composite), and the
+        # X server puts them on screen itself: a window moved or closed then
+        # uncovers them without asking their programs to paint again. Wine
+        # fills an exposed area black until its process gets to it, which
+        # showed while windows were dragged. Native clients paint their own
+        # exposures, and they and their frames change size often; a
+        # redirected window's every resize costs a new off-screen image,
+        # which made resizing a native client several times slower in a VM.
+        self.redirect = redirect and self.d.has_extension('Composite')
         # Windows without a cursor of their own, such as the menus of Linux
         # applications while they hold the pointer, show the root's: an
         # arrow, as window managers set, instead of the X server's cross.
@@ -189,6 +199,7 @@ class Manager:
             self.refresh(self.clients[w.id])
         client = self.clients[w.id]
         client['kind'] = self.kind(w)
+        self.update_redirect(client)
         if client['kind'] == 'proxy':
             if w.id not in self.frames:
                 w.unmap()
@@ -200,6 +211,12 @@ class Manager:
             self.focus(w)
         self.restack()
         self.workarea()
+
+    def update_redirect(self, c):
+        wanted = self.redirect and bool(c['hwnd']) and c['kind'] != 'proxy'
+        if wanted != c.get('redirected', False):
+            c['redirected'] = wanted
+            (composite.redirect_window if wanted else composite.unredirect_window)(c['w'], composite.RedirectAutomatic)
 
     def refresh(self, c, atom=None):
         """Cache the client properties that every bridge pass reads.
@@ -659,6 +676,48 @@ class Manager:
             self.restack()
         self.write_geometry()
 
+    def follow_frame(self, frame_id, values):
+        """Move a native client with its frame, in the same pass.
+
+        Dragging or sizing a frame moves the Wine window; the proxy then asks
+        for the client's new geometry, one round trip through Wine and the
+        IPC directory later. Meanwhile the frame's empty client area showed
+        beside the client. The client's rectangle follows from the frame's by
+        the measured border extents, so both move in the same flush; the
+        proxy's later commands for these rectangles are then stale. The
+        client moves first: where it already covers the frame's client
+        area, the frame's move exposes nothing that Wine must paint."""
+        native = self.clients.get(self.frames[frame_id])
+        if not native or native['hidden'] or native['restore'] is not None or not native['extents']:
+            return
+        left, right, top, bottom = native['extents']
+        x, y, width, height, _ = self.clients[frame_id]['geometry']
+        x, y = values.get('x', x), values.get('y', y)
+        width, height = values.get('width', width), values.get('height', height)
+        if width <= left + right or height <= top + bottom:
+            return
+        wanted = (x + left, y + top, width - left - right, height - top - bottom)
+        if native['geometry'][:4] != wanted:
+            self.configure(native, x=wanted[0], y=wanted[1], width=wanted[2], height=wanted[3])
+            native['followed'] = (native.get('followed') or [])[-31:] + [wanted]
+
+    def follow_native(self, native_id):
+        """Move a frame with its native client, the other way round.
+
+        A client that moves itself (GTK drags its header bar so without
+        _NET_WM_MOVERESIZE) waited for the proxy to move the frame. Wine
+        takes the frame's new position from the X server as from any WM."""
+        native = self.clients[native_id]
+        frame = next((self.clients.get(f) for f, n in self.frames.items() if n == native_id), None)
+        if not frame or native['hidden'] or native['restore'] is not None or not native['extents']:
+            return
+        left, right, top, bottom = native['extents']
+        x, y, width, height, _ = native['geometry']
+        wanted = (x - left, y - top, width + left + right, height + top + bottom)
+        if frame['geometry'][:4] != wanted:
+            self.configure(frame, x=wanted[0], y=wanted[1], width=wanted[2], height=wanted[3])
+            native['followed'] = (native.get('followed') or [])[-31:] + [native['geometry'][:4]]
+
     def write_geometry(self):
         """Publish native geometry from the cache, without X round trips."""
         geometries = []
@@ -710,7 +769,11 @@ class Manager:
             self.previous_snapshot = text
 
     def commands(self):
-        for command in sorted(self.ipc.glob('*.cmd')):
+        def order(path):
+            # PID-SEQUENCE.cmd: in the order each proxy wrote them (9 before 10).
+            pid, _, sequence = path.stem.partition('-')
+            return (int(pid), int(sequence)) if pid.isdigit() and sequence.isdigit() else (0, 0)
+        for command in sorted(self.ipc.glob('*.cmd'), key=order):
             try:
                 op, value, *args = command.read_text().split()
                 i = int(value, 16)
@@ -721,8 +784,13 @@ class Manager:
                 elif c and c['kind'] == 'normal' and not c['hwnd']:
                     if op == 'geometry' and len(args) == 4:
                         x, y, width, height = map(int, args)
-                        if width > 0 and height > 0:
+                        wanted = (x, y, width, height)
+                        # Rectangles that follow_frame has already applied
+                        # arrive late; a newer one may be in place by then.
+                        if width > 0 and height > 0 and c['geometry'][:4] != wanted and \
+                                wanted not in (c.get('followed') or ()):
                             self.configure(c, x=x, y=y, width=width, height=height)
+                            c['followed'] = None
                     elif op == 'restore':
                         self.maximize(c['w'], restore=True)
                     else:
@@ -731,6 +799,26 @@ class Manager:
                 pass
             finally:
                 command.unlink(missing_ok=True)
+
+    def changes_bridge(self, e):
+        """What the proxy's files may need after event E: 0 nothing, 1 the
+        native geometry only, 2 a whole pass.
+
+        Each step of a window drag brings a ConfigureRequest and a
+        ConfigureNotify. Only those of native clients, the taskbar and the
+        root change what the proxy reads, and mostly just geometry.tsv; a
+        whole pass for each of them made the WM a large part of a drag."""
+        if e.type in (X.MotionNotify, X.ButtonRelease):
+            return 0
+        # A native client's request is published at once, from the cache,
+        # without waiting for its notify.
+        if e.type in (X.ConfigureRequest, X.ConfigureNotify) and e.window.id != self.root.id:
+            c = self.clients.get(e.window.id)
+            if not c or c['kind'] == 'proxy' or c['hwnd'] and c['kind'] != 'dock':
+                return 0
+            # A maximized client is kept fitted to the work area by sync_frames.
+            return 1 if c['kind'] == 'normal' and c['restore'] is None else 2
+        return 2
 
     def event(self, e):
         if e.type == X.MapRequest:
@@ -748,7 +836,12 @@ class Manager:
                       if e.value_mask & bit}
             c = self.clients.get(e.window.id)
             if c:
+                moves = e.value_mask & (X.CWX | X.CWY | X.CWWidth | X.CWHeight)
+                if moves and e.window.id in self.frames:
+                    self.follow_frame(e.window.id, values)
                 self.configure(c, **values)
+                if moves and c['kind'] == 'normal' and not c['hwnd']:
+                    self.follow_native(e.window.id)
             else:
                 e.window.configure(**values)
             if e.value_mask & (X.CWSibling | X.CWStackMode):
@@ -777,6 +870,8 @@ class Manager:
                 self.refresh(c, e.atom)
                 if e.atom in (self.atom('_WIN4WINE_CLASS'), self.atom('_NET_WM_WINDOW_TYPE')):
                     c['kind'] = self.kind(e.window)
+                if e.atom in (self.atom('_WIN4WINE_CLASS'), self.atom('_WIN4WINE_HWND')):
+                    self.update_redirect(c)
                 if c['kind'] == 'proxy' and e.window.id not in self.frames:
                     e.window.unmap()
                 if c['kind'] == 'dock' or e.atom in (self.atom('_WIN4WINE_CLASS'), self.atom('_NET_WM_WINDOW_TYPE')):
@@ -875,25 +970,27 @@ class Manager:
         changes = Inotify(self.ipc)
         wake_read, wake_write = os.pipe2(os.O_NONBLOCK | os.O_CLOEXEC)
         signal.set_wakeup_fd(wake_write)
-        dirty = True
+        dirty = 2
         while self.running:
             while self.d.pending_events():
+                e = self.d.next_event()
                 try:
-                    self.event(self.d.next_event())
+                    self.event(e)
+                    dirty = max(dirty, self.changes_bridge(e))
                 except error.XError:
-                    pass  # A client may disappear between any two requests.
-                dirty = True
+                    dirty = 2  # A client may disappear between any two requests.
             if any(name.endswith('.cmd') or name == 'frames.tsv' for name in changes.names()):
-                dirty = True
+                dirty = 2
             if dirty:
-                dirty = False
                 try:
                     self.write_geometry()  # First: frames follow their clients.
-                    self.commands()
-                    self.snapshot()
-                    self.sync_frames()
+                    if dirty == 2:
+                        self.commands()
+                        self.snapshot()
+                        self.sync_frames()
                 except error.XError:
                     pass
+                dirty = 0
             self.d.flush()
             if self.d.pending_events():
                 continue  # Replies to this pass queued more events.
@@ -910,8 +1007,9 @@ class Manager:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--ipc', required=True, type=Path)
+    parser.add_argument('--no-composite', action='store_true', help="leave Wine's windows unredirected")
     args = parser.parse_args()
-    wm = Manager(args.ipc)
+    wm = Manager(args.ipc, redirect=not args.no_composite)
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: setattr(wm, 'running', False))
     wm.run()

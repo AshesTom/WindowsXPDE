@@ -46,9 +46,15 @@ X11 のウィンドウマネージャーです。枠を自分では描かず（r
 - Alt+Tab、Windows キー、Ctrl+Esc を受け取り、XP のシェルに渡します（下の「キー操作」）。
 - `Gtk/DecorationLayout` を `:` にする XSETTINGS を出し、GTK のヘッダーバーの閉じるボタンなどを隠します（ほかの settings
   daemon が無いときだけ）。
+- Wine の窓（proxy の枠を除く）を Composite で自動リダイレクトし、中身を X サーバーに覚えさせます（`session.json` の
+  `composite`、既定は `true`）。窓を動かしたり閉じたりして下の Wine の窓が見えたとき、X サーバーがその中身をそのまま出すので、
+  その窓のプロセスが描き直すまで黒く見えることがありません（Wine は自分の X の窓の背景を黒にしています）。Linux の窓は自分で
+  素早く描き直し、Linux の窓と枠は大きさがよく変わる（リダイレクトした窓は大きさが変わるたびに画像を作り直す）ので、
+  リダイレクトしません。影や透明などの効果はありません。
 
 WM は周期的には起きません。X のイベント、IPC ディレクトリの inotify、シグナルで起き、内容が変わったファイルだけを書きます。
-窓の位置や題名は X のイベントから覚えておき、X への問い合わせを減らしています。
+窓の位置や題名は X のイベントから覚えておき、X への問い合わせを減らしています。窓のドラッグでは 1 歩ごとに X のイベントが
+来ますが、Wine の窓の移動ではファイルの見直しをせず、Linux の窓の位置だけが変わったときは `geometry.tsv` だけを書き直します。
 
 Wine の窓には枠を付けず、代理も作りません。Wine の最大化の大きさは Wine 自身が決めます（パッチ 0025）。
 
@@ -74,7 +80,7 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 | `windows.tsv` | WM → proxy | Linux の窓の一覧。1 行に `XID(16進) TAB 最小化(0/1) TAB 有効(0/1) TAB 題名` |
 | `geometry.tsv` | WM → proxy | `XID x y 幅 高さ 最大化(0/1) 作業領域x 作業領域y 作業領域幅 作業領域高さ`（Linux の窓の中身の位置） |
 | `frames.tsv` | proxy → WM | `HWND XID 左 右 上 下 最大化 最小化 枠の幅x 枠の幅y`（枠の余白の大きさ） |
-| `PID-番号.cmd` | proxy → WM | `activate`・`minimize`・`close`・`maximize`・`restore` と XID、または `geometry XID x y 幅 高さ`、`switch XID` |
+| `PID-番号.cmd` | proxy → WM | `activate`・`minimize`・`close`・`maximize`・`restore` と XID、または `geometry XID x y 幅 高さ`、`switch XID`。WM はプロセスごとに番号の順に読みます |
 | `switch.tsv` | WM → proxy | Alt+Tab の状態。`番号 Tab の回数 状態`（状態は o=表示中、c=確定、x=取り消し） |
 | `shellkeys.tsv` | WM → proxy | Linux の窓の上で押された Windows キーと Ctrl+Esc。`番号 windows VK...` または `番号 ctrl-escape` |
 | `icon-XID.argb` | WM → proxy | Linux の窓のアイコン（下の「アイコン」） |
@@ -88,8 +94,13 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 2. proxy は、代理の窓の枠の余白（公開 API の GetWindowRect・GetClientRect で測った値）を `frames.tsv` に書きます。
 3. WM は `_WIN4WINE_HWND` と `frames.tsv` の HWND で、枠の X の窓と Linux の窓を組にし、枠を Linux の窓のすぐ下に重ねます。
    余白は `_NET_FRAME_EXTENTS` にも出します。
-4. 枠のタイトルバーや角を動かすと、Win32 の普通の処理で枠が動き、proxy が `geometry` コマンドで Linux の窓を動かします。
-   Linux の窓が動くと、WM が `geometry.tsv` を書き、proxy が枠を合わせます（Debian の VM で約 11 ms の遅れ）。
+4. 枠のタイトルバーや角を動かすと、Win32 の普通の処理（Wine の移動のループ）で枠が動きます。WM は、枠の移動の要求を受けた
+   その処理の中で、余白から求めた位置と大きさに Linux の窓も動かします（Linux の窓を先に動かすので、枠の中の空いた部分は
+   見えません）。proxy はループの間は `geometry` コマンドを書かず、終わったときに 1 度だけ書きます。WM がまだ合わせられない
+   とき（ドラッグの初めに最大化していた窓）の分です。WM が既に合わせた位置の、遅れて届いたコマンドは使いません。
+   Linux の窓が自分で動いたとき（GTK のヘッダーバーのドラッグなど）も、WM がその要求を受けた処理の中で枠を動かします。
+   Wine は X の窓の新しい位置を、ほかの WM が動かしたときと同じく受け取ります。そのあと WM が `geometry.tsv` を書き、
+   proxy が枠の位置を確かめます。
 
 - 初めて枠を付けるとき、位置の指定が無い窓は XP と同じ重ね配置の次の位置に置きます。位置の指定がある窓も、タイトルバーが
   作業領域の外に出ないように直します。

@@ -14,7 +14,7 @@
 #include <string.h>
 
 #define MAX_CLIENTS 2048
-struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; int x, y, width, height;
+struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; int moving; int x, y, width, height;
     RECT workarea;
     HICON icon; int icon_checked, icon_present; FILETIME icon_time; DWORD icon_size;
 };
@@ -63,6 +63,17 @@ static void command(const char *op, unsigned long xid)
     char data[80];
     snprintf(data, sizeof(data), "%s %lx\n", op, xid);
     write_command(data);
+}
+
+/* The X11 WM moves a native client with its frame itself (wm.py's
+ * follow_frame); labwc does not. */
+static BOOL wm_follows_frames;
+
+static struct client *find_client(unsigned long xid)
+{
+    unsigned i;
+    for (i = 0; i < MAX_CLIENTS; ++i) if (clients[i].xid == xid) return &clients[i];
+    return NULL;
 }
 
 static void geometry_command(HWND hwnd, unsigned long xid)
@@ -212,7 +223,17 @@ static LRESULT CALLBACK proxy_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if ((wp & 0xfff0) == SC_RESTORE)
             { command(IsIconic(hwnd) ? "activate" : "restore", xid); return 0; }
         }
-        if (msg == WM_WINDOWPOSCHANGED && !IsIconic(hwnd)) geometry_command(hwnd, xid);
+        /* While Wine's move loop drags the frame, the WM keeps the client
+         * with it; the final rectangle is still sent, for clients that the
+         * WM could not follow (one maximized when the drag began). */
+        struct client *c = find_client(xid);
+        if (msg == WM_ENTERSIZEMOVE && wm_follows_frames && c) c->moving = 1;
+        if (msg == WM_EXITSIZEMOVE && c && c->moving)
+        {
+            c->moving = 0;
+            if (!IsIconic(hwnd)) geometry_command(hwnd, xid);
+        }
+        if (msg == WM_WINDOWPOSCHANGED && !IsIconic(hwnd) && !(c && c->moving)) geometry_command(hwnd, xid);
         if (msg == WM_ACTIVATE && LOWORD(wp) != WA_INACTIVE && !IsIconic(hwnd)) command("activate", xid);
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
@@ -1721,6 +1742,7 @@ int wmain(int argc, WCHAR **argv)
     cls.lpszClassName = L"Win4WineSwitch";
     if (!RegisterClassW(&cls)) return 3;
     tray_start();
+    wm_follows_frames = !GetEnvironmentVariableW(L"WAYLAND_DISPLAY", NULL, 0);
     /* The WM tests this lock to know whether the proxy is running.
      * wineserver backs it with a POSIX lock that ends with this process. */
     swprintf(path, MAX_PATH + 32, L"%ls\\proxy.lock", directory);

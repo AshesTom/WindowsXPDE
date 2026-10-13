@@ -36,6 +36,9 @@
 #                  .local/wine-install of another Debian 13 machine, copied anywhere)
 #                  instead of building it here
 #   --jobs N       parallel jobs for the Wine build (default: the number of CPUs)
+#   --no-shadowfb  on a virtual machine whose graphics card X draws into directly
+#                  (QEMU's standard VGA, Hyper-V, VirtualBox's VBoxVGA/VBoxSVGA),
+#                  do not make X draw in memory first (see "Virtual machines" below)
 #
 # Run it as the user who will log in to the XP shell (not as root); it uses sudo
 # for packages and system files. It builds Wine with this repository's patches,
@@ -55,6 +58,7 @@ theme_given=no
 dpi=
 wayland=no
 prebuilt=
+shadowfb=yes
 while (($#)); do
     case $1 in
         --media) media=${2:?--media needs a path}; shift 2 ;;
@@ -66,6 +70,7 @@ while (($#)); do
         --theme) theme=${2:?--theme needs luna or classic}; theme_given=yes; shift 2 ;;
         --dpi) dpi=${2:?--dpi needs a number}; shift 2 ;;
         --wayland) wayland=yes; shift ;;
+        --no-shadowfb) shadowfb=no; shift ;;
         --wine-install) prebuilt=$(realpath -e -- "${2:?--wine-install needs a directory}"); shift 2 ;;
         -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
         *) printf 'Unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
@@ -345,6 +350,41 @@ elif [[ $shell == reactos ]]; then
     "$root/session/install.sh" --reactos
 else
     "$root/session/install.sh"
+fi
+
+step 'Virtual machines'
+# Without a GPU of its own, X's modesetting driver draws straight into the
+# graphics memory of these virtual cards, and every window moved is read back
+# from it, which is slow (most of the X server's work while dragging a window
+# in QEMU). Drawing in memory first (ShadowFB) leaves only writes to it.
+# Cards whose memory is the guest's own (virtio-gpu, VMware's) need nothing.
+drivers=()
+for card in /sys/class/drm/card*/device/driver; do
+    [[ -e $card ]] || continue
+    driver=$(basename "$(readlink -f "$card")")
+    case $driver in
+        bochs-drm|bochs|hyperv_drm|vboxvideo|cirrus|cirrus-qemu) drivers+=("$driver") ;;
+    esac
+done
+xorg_conf=/etc/X11/xorg.conf.d/20-win4wine-shadowfb.conf
+if [[ ${#drivers[@]} -eq 0 ]]; then
+    printf 'No virtual graphics card that needs it\n'
+elif [[ $shadowfb == no ]]; then
+    printf 'Left X as it is (--no-shadowfb)\n'
+else
+    sudo mkdir -p /etc/X11/xorg.conf.d
+    sudo tee "$xorg_conf" >/dev/null <<EOF
+# Written by win4wine's scripts/setup.sh: X draws in memory first on virtual
+# graphics cards whose memory is slow to read back (moving windows). Remove
+# this file to undo; it applies to every X session from the next start of X.
+Section "OutputClass"
+    Identifier "win4wine: shadow framebuffer on virtual graphics cards"
+    MatchDriver "$(IFS='|'; echo "${drivers[*]}")"
+    Driver "modesetting"
+    Option "ShadowFB" "true"
+EndSection
+EOF
+    printf 'Wrote %s (%s)\n' "$xorg_conf" "${drivers[*]}"
 fi
 
 step 'Login screen and cursors'
