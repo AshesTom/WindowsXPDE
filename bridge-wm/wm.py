@@ -291,6 +291,15 @@ class Manager:
             self.active = 0
             self.setprop(self.root, '_NET_ACTIVE_WINDOW', Xatom.WINDOW, [0])
 
+    def focused_client(self):
+        """The client that holds the X keyboard focus, or one of its windows does."""
+        focused = self.d.get_input_focus().focus
+        while hasattr(focused, 'id') and focused.id not in (X.NONE, X.PointerRoot, self.root.id):
+            if focused.id in self.clients:
+                return focused.id
+            focused = focused.query_tree().parent
+        return None
+
     def native_focus(self):
         """The native client that has the keyboard rather than Wine, if any."""
         focused = self.d.get_input_focus().focus
@@ -914,7 +923,10 @@ class Manager:
         elif e.type == X.KeyPress and e.detail == self.tab:
             self.switch_key(bool(e.state & X.ShiftMask))
         elif e.type == X.FocusIn and e.mode == X.NotifyNormal and e.detail not in (X.NotifyPointer, X.NotifyPointerRoot, X.NotifyDetailNone) and e.window.id in self.clients:
-            if self.clients[e.window.id]['kind'] == 'normal':
+            # A FocusIn can arrive after the focus has moved on (an Alt+Tab
+            # right after a window was focused); it must not take back the
+            # active window.
+            if self.clients[e.window.id]['kind'] == 'normal' and self.focused_client() == e.window.id:
                 self.active = e.window.id
                 self.setprop(self.root, '_NET_ACTIVE_WINDOW', Xatom.WINDOW, [self.active])
         elif e.type == X.ConfigureNotify:
