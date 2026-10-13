@@ -179,14 +179,22 @@ fi
 
 step 'Wine'
 wine=$local/wine-install/bin/wine
+# The patches of this checkout; a build records those it was made with.
+patches=$(python3 "$root/wine/patch-state.py" --digest "$root/wine/patches")
 if [[ -n $prebuilt ]]; then
     [[ -f $prebuilt/lib/wine/x86_64-windows/win4wine-controls.dll && -x $prebuilt/bin/wine ]] ||
         { printf '%s is not a Wine install built by wine/build.sh\n' "$prebuilt" >&2; exit 1; }
     wine=$prebuilt/bin/wine
     printf 'Using %s: %s\n' "$prebuilt" "$("$wine" --version)"
-elif [[ -x $wine && -f $local/wine-install/lib/wine/x86_64-windows/win4wine-controls.dll ]]; then
+    [[ $(cat "$prebuilt/win4wine-patches" 2>/dev/null) == "$patches" ]] ||
+        printf 'Warning: %s was not built with the patches of this checkout\n' "$prebuilt" >&2
+elif [[ -x $wine && -f $local/wine-install/lib/wine/x86_64-windows/win4wine-controls.dll &&
+        $(cat "$local/wine-install/win4wine-patches" 2>/dev/null) == "$patches" ]]; then
     printf 'Built: %s\n' "$("$wine" --version)"
 else
+    if [[ -x $wine ]]; then
+        printf 'The patches changed since the last build; rebuilding what they touch\n'
+    fi
     printf 'Building Wine with %s jobs (log: .local/wine-build.log); this takes a long time\n' "$jobs"
     JOBS=$jobs python3 "$root/scripts/progress.py" "$local/wine-build.log" Wine -- "$root/wine/build.sh" ||
         { tail -20 "$local/wine-build.log" >&2; printf 'Wine build failed; see .local/wine-build.log\n' >&2; exit 1; }
@@ -200,9 +208,11 @@ printf 'Built .local/bridge\n'
 labwc=$local/labwc-install/bin/labwc
 if [[ $wayland == yes ]]; then
     step 'Wayland compositor'
-    if [[ -x $labwc ]]; then
+    labwc_patches=$(python3 "$root/wine/patch-state.py" --digest "$root/wayland/patches/labwc" "$root/wayland/patches/wlroots")
+    if [[ -x $labwc && $(cat "$local/labwc-install/win4wine-patches" 2>/dev/null) == "$labwc_patches" ]]; then
         printf 'Built: %s\n' "$("$labwc" --version)"
     else
+        [[ ! -x $labwc ]] || printf 'The patches changed since the last build; rebuilding what they touch\n'
         printf 'Building labwc and wlroots (log: .local/labwc-build.log)\n'
         JOBS=$jobs python3 "$root/scripts/progress.py" "$local/labwc-build.log" labwc -- "$root/wayland/build.sh" ||
             { tail -20 "$local/labwc-build.log" >&2; printf 'labwc build failed; see .local/labwc-build.log\n' >&2; exit 1; }

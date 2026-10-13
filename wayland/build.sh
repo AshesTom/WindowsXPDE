@@ -19,8 +19,12 @@ fetch "$src" "$LABWC_URL" "$LABWC_TAG" "$LABWC_COMMIT"
 fetch "$src/subprojects/wlroots" "$WLROOTS_URL" "$WLROOTS_TAG" "$WLROOTS_COMMIT"
 fetch "$src/subprojects/libsfdo" "$LIBSFDO_URL" "$LIBSFDO_TAG" "$LIBSFDO_COMMIT"
 echo '>>> Patching'
-python3 "$root/wine/patch-state.py" "$src" "$root/wayland/patches/labwc" --apply
-python3 "$root/wine/patch-state.py" "$src/subprojects/wlroots" "$root/wayland/patches/wlroots" --apply
+# This checkout's own sources may be returned to upstream for a changed
+# series; a source given with LABWC_SOURCE keeps its edits.
+reset=(--reset)
+[[ -z ${LABWC_SOURCE:-} ]] || reset=()
+python3 "$root/wine/patch-state.py" "$src" "$root/wayland/patches/labwc" --apply "${reset[@]}"
+python3 "$root/wine/patch-state.py" "$src/subprojects/wlroots" "$root/wayland/patches/wlroots" --apply "${reset[@]}"
 if [[ ! -f $build/build.ninja ]]; then
     echo '>>> Configuring'
     meson setup "$build" "$src" --prefix="$install" --buildtype=release \
@@ -31,4 +35,7 @@ echo '>>> Compiling'
 ninja -C "$build" -j"${JOBS:-6}"
 echo '>>> Installing'
 ninja -C "$build" install
+# The patches this install was built with, for scripts/setup.sh
+python3 "$root/wine/patch-state.py" --digest "$root/wayland/patches/labwc" "$root/wayland/patches/wlroots" \
+    > "$install/win4wine-patches"
 "$install/bin/labwc" --version

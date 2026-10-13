@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Detect an ordered, overlapping patch series without changing local edits."""
 import argparse
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -62,15 +63,50 @@ def ensure_series(source, directory, apply=False):
     return [patch.name for patch in missing]
 
 
+def digest(directories):
+    """A digest of the series and patches in DIRECTORIES, to tell a build's patches."""
+    hasher = hashlib.sha256()
+    for directory in directories:
+        series = (directory / "series").read_text()
+        hasher.update(series.encode())
+        for line in series.splitlines():
+            if line.strip() and not line.lstrip().startswith("#"):
+                hasher.update(line.strip().encode() + b"\0" + (directory / line.strip()).read_bytes())
+    return hasher.hexdigest()
+
+
+def reset(source):
+    """Return a source tree to its checked-out upstream commit."""
+    for command in (["reset", "-q", "--hard"], ["clean", "-q", "-f", "-d"]):
+        subprocess.run(["git", "-C", str(source), *command], check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", type=Path)
-    parser.add_argument("patches", type=Path)
+    parser.add_argument("source", type=Path, nargs="?")
+    parser.add_argument("patches", type=Path, nargs="?")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--reset", action="store_true",
+                        help="if the series does not apply (an earlier series with other patches), "
+                             "return the source to its upstream commit and apply the whole series")
+    parser.add_argument("--digest", type=Path, nargs="+", metavar="PATCHES",
+                        help="print a digest of these patch directories and exit")
     args = parser.parse_args()
+    if args.digest:
+        print(digest(args.digest))
+        return
+    if not args.source or not args.patches:
+        parser.error("give the source and the patch directory")
     try:
-        missing = ensure_series(args.source, args.patches, args.apply)
-    except (OSError, RuntimeError) as error:
+        try:
+            missing = ensure_series(args.source, args.patches, args.apply)
+        except RuntimeError as error:
+            if not (args.apply and args.reset):
+                raise
+            print(f"The source has other patches ({error}); applying the series to its upstream commit")
+            reset(args.source)
+            missing = ensure_series(args.source, args.patches, args.apply)
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Patch series validation failed: {error}\n")
     for name in missing:
         print(f"{'Applied' if args.apply else 'Missing'} {name}")

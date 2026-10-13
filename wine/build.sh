@@ -11,7 +11,11 @@ if [[ ! -d $src/.git ]]; then
 fi
 [[ $(git -C "$src" rev-parse HEAD) == "$WINE_COMMIT" ]] || { echo 'Unexpected upstream commit' >&2; exit 1; }
 echo '>>> Patching'
-python3 "$root/wine/patch-state.py" "$src" "$root/wine/patches" --apply
+# This checkout's own source may be returned to upstream for a changed
+# series; a source given with WINE_SOURCE keeps its edits.
+reset=(--reset)
+[[ -z ${WINE_SOURCE:-} ]] || reset=()
+python3 "$root/wine/patch-state.py" "$src" "$root/wine/patches" --apply "${reset[@]}"
 mkdir -p "$build" "$install"
 cd "$build"
 # DirectX helper version copies are outside the XP desktop milestones.
@@ -41,4 +45,6 @@ for arch in i386 x86_64; do
     cp -p -- "$install/lib/wine/$arch-windows/comctl32_v6.dll" "$controls_tmp"
     mv -f -- "$controls_tmp" "$install/lib/wine/$arch-windows/win4wine-controls.dll"
 done
+# The patches this install was built with, for scripts/setup.sh
+python3 "$root/wine/patch-state.py" --digest "$root/wine/patches" > "$install/win4wine-patches"
 "$install/bin/wine" --version
