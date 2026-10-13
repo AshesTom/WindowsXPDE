@@ -6,9 +6,12 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 import registry
 import stage
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'extract'))
+import media
 
 
 def create(assets, dest, home, wine):
@@ -28,12 +31,17 @@ def create(assets, dest, home, wine):
     for name in ('browselc.dll', 'shdoclc.dll'):
         if not (assets / 'system32' / name).is_file():
             raise SystemExit(f'Missing {name}: re-extract your local XP media')
-    for name in ('fonts/msgothic.ttc', 'themes/Luna/luna.msstyles'):
+    # Japanese or English XP: the prefix takes the media's language.
+    language = media.language(assets)
+    for name in ('fonts/msgothic.ttc',) * (language == 'ja') + ('themes/Luna/luna.msstyles',):
         if not (assets / name).is_file():
-            raise SystemExit(f'Missing {name}: re-extract local media for the Japanese classic baseline')
+            raise SystemExit(f'Missing {name}: re-extract local media for the classic baseline')
     dest.parent.mkdir(parents=True, exist_ok=True)
     # The XP shell runs as a 32-bit process; 64-bit applications use Wine's own DLLs.
-    env = dict(os.environ, WINEPREFIX=str(dest), WINEARCH='win64',
+    # Wine names the prefix's folders and sets its code page from the Unix
+    # locale, which is the session's (session.json "locale").
+    locale = media.LOCALES[language]
+    env = dict(os.environ, WINEPREFIX=str(dest), WINEARCH='win64', LANG=locale, LC_ALL=locale,
                WINEDLLOVERRIDES='mscoree,mshtml=;uxtheme=b', WINEDEBUG=os.environ.get('WINEDEBUG', '-all'))
     def run(*args):
         subprocess.run([wine, *registry.shell_view(args)], env=env, check=True)
@@ -94,8 +102,8 @@ def create(assets, dest, home, wine):
         reg(r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides', dll, 'native')
         shutil.copyfile(native / (dll + '.dll'), system / (dll + '.dll'))
     reg(r'HKCU\Software\Wine\DllOverrides', 'win4wine-controls', 'builtin')
-    registry.install(run, exists)
-    registry.install_classic_fonts(run, exists)
+    registry.install(run, exists, language)
+    registry.install_classic_fonts(run, exists, language)
     # Let the font's GASP policy apply to synthetic bold/italic too. This is a
     # prefix-wide Wine setting; preserve any existing explicit preference.
     if not exists(r'HKCU\Software\Wine\Fonts', 'AntialiasFakeBoldOrItalic'):
@@ -116,7 +124,8 @@ def create(assets, dest, home, wine):
     update = (dest / '.update-timestamp').read_text().strip()
     (dest / '.xp-registry-version').write_text(f'{registry.VERSION} {update}\n')
     (dest / 'xp-shell.json').write_text(json.dumps({'assets': str(assets), 'home': str(home),
-                                                   'wine': wine, 'profile': 'shell'}, indent=2) + '\n')
+                                                   'wine': wine, 'profile': 'shell', 'language': language},
+                                                  indent=2) + '\n')
     # The running wineserver keeps the system DLLs it mapped at its start as
     # KnownDlls: Wine's own shell32 and shlwapi, not the XP ones copied above.
     # Let it end, so the next program (the Start menu setting) gets XP's.

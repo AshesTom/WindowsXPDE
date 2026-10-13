@@ -15,7 +15,7 @@ static BOOL initialize_classic_fonts(void)
     DPI_AWARENESS_CONTEXT previous;
     HKEY key;
     BOOL result;
-    if(RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\Win4Wine\\ThemeProfiles\\JapaneseXPClassic",0,KEY_READ,&key))return FALSE;
+    if(RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\Win4Wine\\ThemeProfiles\\XPClassic",0,KEY_READ,&key))return FALSE;
     for(unsigned i=0;i<6;i++)
     {
         DWORD type,bytes=sizeof(fonts[i]);
