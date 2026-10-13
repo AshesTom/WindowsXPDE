@@ -1,0 +1,118 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] win32u: report window drags to the bridge, which snaps windows
+
+Purpose: window snapping (opt-in, session.json "window_snap"; bridge-wm's
+proxy does it): a caption dragged to an edge of the screen snaps the window
+to half of it or maximizes it, and a snapped window dragged away gets its
+size back, as on Windows 7.
+Windows behavior: the move and size loop sends EVENT_SYSTEM_MOVESIZESTART
+and EVENT_SYSTEM_MOVESIZEEND. XP itself has no snapping.
+Wine before: the loop sent neither, and another process could not tell a
+drag of a caption from a resize or a click, nor change a dragged window's
+size: the loop moves it with SWP_NOSIZE from the rectangle it started with.
+Change: for top-level windows, the loop sends the two WinEvents and keeps
+the hit test in the "Win4WineSizeMove" property while it runs, then the hit
+test with 0x1000 (ended), 0x100 (moved) and 0x200 (cancelled). At the first
+mouse move of a caption drag, a window with "Win4WineSnapRestore" (width in
+the low word, height in the high word; the proxy sets it when it snaps the
+window) gets that size, the pointer keeping its place along the caption,
+and the property is removed.
+Evidence: tests/size-move-snap.c (a click: 2, then 1002; a drag: 2, then
+1102, the snapped 400x300 window became 200x150 under the pointer; before:
+no events and the size kept). In the test VM with window_snap, Notepad and
+Mousepad's frame snap by dragging to the left, right and top edges, under
+the XP shell (Luna) and the ReactOS shell.
+Scope: only with WIN4WINE_EXTERNAL_SHELL. The Wayland session's labwc moves
+Wine's windows itself (_NET_WM_MOVERESIZE) and snaps them with its own
+snapping.
+---
+ dlls/win32u/defwnd.c | 48 +++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 47 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/win32u/defwnd.c b/dlls/win32u/defwnd.c
+index f4bd4f2..3af7078 100644
+--- a/dlls/win32u/defwnd.c
++++ b/dlls/win32u/defwnd.c
+@@ -668,6 +668,35 @@ static BOOL on_bottom_border( int hit )
+     return hit == HTBOTTOM || hit == HTBOTTOMLEFT || hit == HTBOTTOMRIGHT;
+ }
+ 
++/* win4wine: with WIN4WINE_EXTERNAL_SHELL, the bridge's proxy snaps windows
++ * to half of the screen (an opt-in, like Windows 7's Aero Snap). It reads
++ * "Win4WineSizeMove" (the hit test while a move or size runs; after it, the
++ * hit test with SIZE_MOVE_ENDED, SIZE_MOVE_MOVED and SIZE_MOVE_CANCELLED)
++ * when EVENT_SYSTEM_MOVESIZESTART and EVENT_SYSTEM_MOVESIZEEND arrive, as on
++ * Windows. A window it snapped has "Win4WineSnapRestore" (width in the low
++ * word, height in the high word): dragging its caption away gives that size
++ * back, the pointer staying at the same place along the caption. */
++#define SIZE_MOVE_ENDED     0x1000
++#define SIZE_MOVE_MOVED     0x0100
++#define SIZE_MOVE_CANCELLED 0x0200
++static const WCHAR size_moveW[] = {'W','i','n','4','W','i','n','e','S','i','z','e','M','o','v','e',0};
++static const WCHAR snap_restoreW[] =
++    {'W','i','n','4','W','i','n','e','S','n','a','p','R','e','s','t','o','r','e',0};
++
++static void unsnap_moving_window( HWND hwnd, RECT *sizing_rect, POINT capture_point )
++{
++    UINT_PTR size = (UINT_PTR)NtUserRemoveProp( hwnd, snap_restoreW );
++    int width = LOWORD( size ), height = HIWORD( size );
++    int old_width = sizing_rect->right - sizing_rect->left;
++
++    if (!width || !height || old_width <= 0) return;
++    sizing_rect->left = capture_point.x - (LONGLONG)(capture_point.x - sizing_rect->left) * width / old_width;
++    sizing_rect->right = sizing_rect->left + width;
++    sizing_rect->bottom = sizing_rect->top + height;
++    NtUserSetWindowPos( hwnd, 0, sizing_rect->left, sizing_rect->top, width, height,
++                        SWP_NOACTIVATE | SWP_NOZORDER );
++}
++
+ /***********************************************************************
+  *           sys_command_size_move
+  *
+@@ -676,7 +705,7 @@ static BOOL on_bottom_border( int hit )
+ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
+ {
+     DWORD msg_pos = NtUserGetThreadInfo()->message_pos;
+-    BOOL thickframe, drag_full_windows = TRUE, moved = FALSE;
++    BOOL thickframe, drag_full_windows = TRUE, moved = FALSE, snap;
+     RECT sizing_rect, mouse_rect, orig_rect;
+     UINT hittest = wparam & 0x0f;
+     UINT syscommand = wparam & 0xfff0;
+@@ -780,6 +809,13 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
+     send_message( hwnd, WM_ENTERSIZEMOVE, 0, 0 );
+     set_capture_window( hwnd, GUI_INMOVESIZE, NULL );
+ 
++    snap = !parent && win4wine_external_shell();
++    if (snap)
++    {
++        NtUserSetProp( hwnd, size_moveW, UlongToHandle( hittest ) );
++        NtUserNotifyWinEvent( EVENT_SYSTEM_MOVESIZESTART, hwnd, OBJID_WINDOW, CHILDID_SELF );
++    }
++
+     for (;;)
+     {
+         int dx = 0, dy = 0;
+@@ -849,6 +885,8 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
+             if (!moved)
+             {
+                 moved = TRUE;
++                if (snap && hittest == HTCAPTION && msg.message == WM_MOUSEMOVE)
++                    unsnap_moving_window( hwnd, &sizing_rect, capture_point );
+                 if (!drag_full_windows)
+                     draw_moving_frame( parent, hdc, &sizing_rect, thickframe );
+             }
+@@ -929,6 +967,14 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
+         }
+     }
+ 
++    if (snap)
++    {
++        BOOL cancelled = msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE;
++        NtUserSetProp( hwnd, size_moveW, UlongToHandle( hittest | SIZE_MOVE_ENDED |
++                       (moved ? SIZE_MOVE_MOVED : 0) | (cancelled ? SIZE_MOVE_CANCELLED : 0) ) );
++        NtUserNotifyWinEvent( EVENT_SYSTEM_MOVESIZEEND, hwnd, OBJID_WINDOW, CHILDID_SELF );
++    }
++
+     if (is_iconic(hwnd) && !moved && (style & WS_SYSMENU))
+     {
+         /* Single click brings up the system menu when iconized */
