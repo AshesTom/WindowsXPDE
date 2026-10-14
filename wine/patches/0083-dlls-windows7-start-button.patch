@@ -1,8 +1,9 @@
 From: Codex <codex@localhost>
 Subject: [PATCH] win32u, winex11, comctl32: draw Windows 7's Start button
 
-Purpose: draw Windows 7's Start button over the taskbar without a dark
-fringe, with its hover glow, and without black flashes when it grows.
+Purpose: draw Windows 7's Start button over the taskbar, and the user
+picture over the Start menu, without a dark fringe, with the button's
+hover glow, and without black flashes when the button grows.
 Windows 7 behavior: the Start button is a layered window owned by the
 taskbar (Shell_TrayWnd), drawn with UpdateLayeredWindow from a
 premultiplied 32 bpp image of 54x54 pixels. At rest the window is 54x40
@@ -10,7 +11,10 @@ over the taskbar and shows rows 7 to 46 of the image; while the mouse is
 over it, the window grows to 54x54 (7 pixels above the taskbar and 7
 below the screen) and the glow fades in and out. Its edge and glow are
 partly transparent. On Windows, drawing on the DC of a window updated with
-UpdateLayeredWindow does not change what is shown.
+UpdateLayeredWindow does not change what is shown. The Start menu's user
+picture ("Desktop User Picture", 64x64) is a layered window of the same
+kind owned by the Start menu (DV2ControlHost), with a translucent frame
+and shadow.
 Wine before: without a compositing manager, UpdateLayeredWindow copied
 the image over black and only left out the pixels with alpha 0, so the
 partly transparent pixels showed as a dark, jagged fringe. The button is
@@ -22,28 +26,33 @@ image; apply_window_pos flushed the new image into the old geometry and
 left nothing to flush afterwards; and the image goes through gdi_display
 while the geometry goes through the window's display.
 Change: only with WIN4WINE_SHELL=win7, for a layered window that the
-taskbar owns. win32u: the taskbar paints its client area into a bitmap
-(WM_PRINTCLIENT) and the partly transparent pixels over it are blended
-with it; over other parts of the screen, where what is underneath is not
-known, pixels with alpha below 128 are left out and the others are shown
-unpremultiplied. UpdateLayeredWindow draws the new image first, then
-applies the new geometry, and marks the image to be flushed after that.
+taskbar or the Start menu owns. win32u: the partly transparent pixels are
+blended with what the owner shows under them (a copy of the owner's
+window surface, where its children draw too); where that is not known
+(outside the owner, or where the owner has not drawn yet, as for the
+picture made before the menu is first shown), pixels with alpha below 128
+are left out and the others are shown unpremultiplied.
+UpdateLayeredWindow draws the new image first, then applies the new
+geometry, and marks the image to be flushed after that.
 winex11: the window is not managed (no window manager round trip) and the
 display is synchronized after a size change, before the image is put.
 comctl32: the Start button class does not draw on a layered window.
 Evidence: Windows 7 SP1 x64 explorer.exe; the edge matches the taskbar's
 background at rest and with the glow; in 8 hover cycles captured with 6
 screenshots each (96 frames) no frame shows black, and the glow fades in
-and out. bridge-wm keeps this unmanaged window above the taskbar.
+and out. The user picture shows its frame without a dark border (its
+shadow is left out). bridge-wm keeps these unmanaged windows above the
+taskbar and the Start menu.
 Scope: only with WIN4WINE_SHELL=win7 and WIN4WINE_EXTERNAL_SHELL, and only
-for layered windows that the taskbar owns. XP's Start button is a child
+for layered windows that the taskbar or the Start menu owns (the window
+manager change only for the taskbar's). XP's Start button is a child
 of the taskbar and is not layered.
 ---
- dlls/comctl32_v6/button.c |  24 ++++++++-
- dlls/win32u/window.c      | 135 ++++++++++++++++++++++++++++++++++++++++++++--
- dlls/winex11.drv/window.c |  24 +++++++++
+ dlls/comctl32_v6/button.c |  24 +++++++-
+ dlls/win32u/window.c      | 146 ++++++++++++++++++++++++++++++++++++++++++++--
+ dlls/winex11.drv/window.c |  24 ++++++++
  dlls/winex11.drv/x11drv.h |   1 +
- 4 files changed, 179 insertions(+), 5 deletions(-)
+ 4 files changed, 190 insertions(+), 5 deletions(-)
 
 diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
 index 24da589..97e0b5e 100644
@@ -105,21 +114,22 @@ index 24da589..97e0b5e 100644
              HDC hdc = GetDC(hWnd);
              HBRUSH hbrush;
 diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
-index 7333a83..243d73c 100644
+index 7333a83..3adf3fb 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
-@@ -2646,6 +2646,100 @@ BOOL WINAPI NtUserSetLayeredWindowAttributes( HWND hwnd, COLORREF key, BYTE alph
+@@ -2646,6 +2646,111 @@ BOOL WINAPI NtUserSetLayeredWindowAttributes( HWND hwnd, COLORREF key, BYTE alph
      return ret;
  }
  
-+/* Windows 7's Start button (WIN4WINE_SHELL is win7) is a layered window with
-+ * per-pixel alpha, owned by the taskbar and drawn over it. Without a compositing
-+ * manager its surface shows the premultiplied colours over black, so the partly
-+ * transparent edge of the button is dark. Get the taskbar's background under the
-+ * window (WM_PRINTCLIENT) to blend those pixels with. */
++/* Windows 7's Start button and Start menu user picture (WIN4WINE_SHELL is win7) are
++ * layered windows with per-pixel alpha, owned by the taskbar or the Start menu and
++ * drawn over it. Without a compositing manager their surface shows the premultiplied
++ * colours over black, so the partly transparent edges are dark. Blend those pixels
++ * with what the owner shows under the window. */
 +static HWND get_tray_owner( HWND hwnd )
 +{
 +    static const WCHAR trayW[] = {'S','h','e','l','l','_','T','r','a','y','W','n','d'};
++    static const WCHAR menuW[] = {'D','V','2','C','o','n','t','r','o','l','H','o','s','t'};
 +    const char *shell = getenv( "WIN4WINE_SHELL" );
 +    WCHAR nameW[MAX_ATOM_LEN + 1];
 +    UNICODE_STRING name = RTL_CONSTANT_STRING(nameW);
@@ -128,39 +138,48 @@ index 7333a83..243d73c 100644
 +    if (!win4wine_external_shell() || !shell || strcasecmp( shell, "win7" )) return 0;
 +    if (!(owner = get_window_relative( hwnd, GW_OWNER ))) return 0;
 +    name.Length = NtUserGetClassName( owner, FALSE, &name ) * sizeof(WCHAR);
-+    if (name.Length != sizeof(trayW) || memcmp( name.Buffer, trayW, sizeof(trayW) )) return 0;
-+    return owner;
++    /* the taskbar (Start button) or the Start menu (user picture) */
++    if (name.Length == sizeof(trayW) && !memcmp( name.Buffer, trayW, sizeof(trayW) )) return owner;
++    if (name.Length == sizeof(menuW) && !memcmp( name.Buffer, menuW, sizeof(menuW) )) return owner;
++    return 0;
 +}
 +
-+static HBITMAP get_tray_background( HWND owner, POINT *offset, SIZE *size, DWORD **bits )
++/* copy what the owner shows: its surface, where its children draw too; offset is the
++ * screen position of the copy */
++static DWORD *get_tray_background( HWND owner, POINT *offset, SIZE *size )
 +{
-+    BITMAPINFO info = {{ sizeof(info.bmiHeader) }};
-+    RECT client;
-+    HBITMAP bitmap;
-+    HDC hdc;
++    char buffer[FIELD_OFFSET( BITMAPINFO, bmiColors[256] )];
++    BITMAPINFO *info = (BITMAPINFO *)buffer;
++    struct window_surface *surface = NULL;
++    struct window_rects rects;
++    DWORD *bits = NULL, *color;
++    int y, height;
++    WND *win;
 +
-+    if (!get_client_rect( owner, &client, get_thread_dpi() ) || IsRectEmpty( &client )) return 0;
++    if (!(win = get_win_ptr( owner )) || win == WND_DESKTOP || win == WND_OTHER_PROCESS) return NULL;
++    if ((surface = win->surface)) window_surface_add_ref( surface );
++    rects = win->rects;
++    release_win_ptr( win );
++    if (!surface) return NULL;
++    if (surface == &dummy_surface) goto done;
 +
-+    /* the taskbar's client area; offset is its origin in screen coordinates */
-+    offset->x = offset->y = 0;
-+    map_window_points( owner, 0, offset, 1, get_thread_dpi() );
-+    size->cx = client.right;
-+    size->cy = client.bottom;
-+    info.bmiHeader.biWidth = size->cx;
-+    info.bmiHeader.biHeight = -size->cy;
-+    info.bmiHeader.biPlanes = 1;
-+    info.bmiHeader.biBitCount = 32;
-+    info.bmiHeader.biCompression = BI_RGB;
-+    if (!(hdc = NtGdiCreateCompatibleDC( 0 ))) return 0;
-+    if (!(bitmap = NtGdiCreateDIBSection( hdc, NULL, 0, &info, DIB_RGB_COLORS, 0, 0, 0, (void **)bits )))
++    window_surface_lock( surface );
++    if ((color = window_surface_get_color( surface, info )) && info->bmiHeader.biBitCount == 32)
 +    {
-+        NtGdiDeleteObjectApp( hdc );
-+        return 0;
++        size->cx = info->bmiHeader.biWidth;
++        size->cy = height = abs( info->bmiHeader.biHeight );
++        offset->x = rects.visible.left + surface->rect.left;
++        offset->y = rects.visible.top + surface->rect.top;
++        if ((bits = malloc( size->cx * size->cy * sizeof(*bits) )))
++            for (y = 0; y < height; y++)
++                memcpy( bits + y * size->cx,
++                        color + (info->bmiHeader.biHeight < 0 ? y : height - 1 - y) * size->cx,
++                        size->cx * sizeof(*bits) );
 +    }
-+    NtGdiSelectBitmap( hdc, bitmap );
-+    send_message( owner, WM_PRINTCLIENT, (WPARAM)hdc, PRF_CLIENT | PRF_ERASEBKGND );
-+    NtGdiDeleteObjectApp( hdc );
-+    return bitmap;
++    window_surface_unlock( surface );
++done:
++    window_surface_release( surface );
++    return bits;
 +}
 +
 +/* blend the partly transparent pixels of a premultiplied surface with the background;
@@ -186,10 +205,11 @@ index 7333a83..243d73c 100644
 +            pixel = row[x];
 +            alpha = pixel >> 24;
 +            if (!alpha || alpha == 0xff) continue;
-+            if (by < 0 || by >= size.cy || bx < 0 || bx >= size.cx)
++            if (!background || by < 0 || by >= size.cy || bx < 0 || bx >= size.cx || !background[by * size.cx + bx])
 +            {
-+                /* Outside the taskbar what is underneath is unknown: leave out the
-+                 * mostly transparent pixels and show the others unpremultiplied. */
++                /* Outside the owner, or where it has not drawn yet, what is underneath
++                 * is unknown: leave out the mostly transparent pixels and show the
++                 * others unpremultiplied. */
 +                if (alpha < 0x80) row[x] = 0;
 +                else row[x] = (pixel & 0xff000000) |
 +                              min( 255, ((pixel >> 16) & 0xff) * 255 / alpha ) << 16 |
@@ -209,7 +229,7 @@ index 7333a83..243d73c 100644
  /*****************************************************************************
   *           UpdateLayeredWindow (win32u.@)
   */
-@@ -2659,6 +2753,8 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2659,6 +2764,8 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      struct window_surface *surface;
      RECT surface_rect;
      SIZE offset;
@@ -218,7 +238,7 @@ index 7333a83..243d73c 100644
      BOOL ret = FALSE;
  
      if (flags & ~(ULW_COLORKEY | ULW_ALPHA | ULW_OPAQUE | ULW_EX_NORESIZE) ||
-@@ -2706,7 +2802,12 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2706,7 +2813,12 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      TRACE( "window %p new_rects %s\n", hwnd, debugstr_window_rects( &new_rects ) );
  
      surface = get_window_surface( hwnd, swp_flags, TRUE, &new_rects, &surface_rect );
@@ -232,12 +252,11 @@ index 7333a83..243d73c 100644
      if (!surface) return FALSE;
  
      if (!hdc_src || surface == &dummy_surface)
-@@ -2718,16 +2819,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2718,16 +2830,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      {
          BLENDFUNCTION src_blend = { AC_SRC_OVER, 0, 255, 0 };
          RECT rect = new_rects.window, src_rect;
-+        HBITMAP background;
-+        DWORD *background_bits = NULL;
++        DWORD *background;
 +        POINT background_offset;
 +        SIZE background_size;
          HDC hdc = NULL;
@@ -245,12 +264,13 @@ index 7333a83..243d73c 100644
          OffsetRect( &rect, -rect.left, -rect.top );
          intersect_rect( &rect, &rect, &surface_rect );
 +        if (dirty) intersect_rect( &rect, &rect, dirty );
-+        background = tray ? get_tray_background( tray, &background_offset, &background_size, &background_bits ) : 0;
++        background = tray ? get_tray_background( tray, &background_offset, &background_size ) : NULL;
++        if (!background) background_offset.x = background_offset.y = background_size.cx = background_size.cy = 0;
  
 -        if (!(hdc = NtGdiCreateCompatibleDC( 0 ))) goto done;
 +        if (!(hdc = NtGdiCreateCompatibleDC( 0 )))
 +        {
-+            if (background) NtGdiDeleteObjectApp( background );
++            free( background );
 +            if (deferred) apply_window_pos( hwnd, 0, swp_flags, surface, &new_rects, NULL );
 +            goto done;
 +        }
@@ -261,7 +281,7 @@ index 7333a83..243d73c 100644
          NtGdiPatBlt( hdc, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, BLACKNESS );
  
          src_rect = rect;
-@@ -2737,10 +2848,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2737,10 +2859,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
          ret = NtGdiAlphaBlend( hdc, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
                                 hdc_src, src_rect.left, src_rect.top, src_rect.right - src_rect.left, src_rect.bottom - src_rect.top,
                                 *(DWORD *)&src_blend, 0 );
@@ -271,11 +291,11 @@ index 7333a83..243d73c 100644
 +        if (ret && !deferred) add_bounds_rect( &surface->bounds, &rect );
  
          NtGdiDeleteObjectApp( hdc );
-+        if (ret && background)
++        if (ret && tray)
 +            blend_tray_background( surface, &rect, &new_rects.window, background_offset, background_size,
-+                                   background_bits );
++                                   background );
          window_surface_unlock( surface );
-+        if (background) NtGdiDeleteObjectApp( background );
++        free( background );
 +        if (deferred)
 +        {
 +            apply_window_pos( hwnd, 0, swp_flags, surface, &new_rects, NULL );

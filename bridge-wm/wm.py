@@ -81,7 +81,7 @@ class Manager:
         # redirected window's every resize costs a new off-screen image,
         # which made resizing a native client several times slower in a VM.
         self.redirect = redirect and self.d.has_extension('Composite')
-        self.start_buttons = {}  # override-redirect Windows 7 Start buttons, kept above the taskbar
+        self.overlays = {}  # override-redirect Windows 7 shell windows kept above the taskbar and Start menu
         # Windows without a cursor of their own, such as the menus of Linux
         # applications while they hold the pointer, show the root's: an
         # arrow, as window managers set, instead of the X server's cross.
@@ -358,6 +358,16 @@ class Manager:
         temporary.write_text(f'{self.shell_keys} {kind}' + ''.join(f' {k:x}' for k in keys) + '\n')
         temporary.replace(self.ipc / 'shellkeys.tsv')
 
+    def raise_overlays(self):
+        # Windows 7's Start button over the taskbar and the user picture over the
+        # Start menu are unmanaged (override-redirect) windows of their own;
+        # raising the taskbar or the menu must not cover them.
+        for w in list(self.overlays.values()):
+            try:
+                w.configure(stack_mode=X.Above)
+            except error.XError:
+                self.overlays.pop(w.id, None)
+
     def focus(self, w):
         # Wine activation targets the proxy's XID; the native client owns X
         # keyboard focus and the single EWMH task identity.
@@ -372,6 +382,7 @@ class Manager:
             # without becoming the active application task or an Alt+Tab entry.
             w.map()
             w.configure(stack_mode=X.Above)
+            self.raise_overlays()
             if self.atom('WM_TAKE_FOCUS') in self.prop(w, 'WM_PROTOCOLS'):
                 self.message(w, 'WM_PROTOCOLS', [self.atom('WM_TAKE_FOCUS'), X.CurrentTime, 0, 0, 0])
             w.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
@@ -456,13 +467,6 @@ class Manager:
         for c in self.clients.values():
             if c['kind'] == 'dock' and not c['hidden']:
                 c['w'].configure(stack_mode=X.Above)
-        # Windows 7's Start button is an unmanaged (override-redirect) window of
-        # its own over the taskbar; raising the taskbar must not cover it.
-        for w in list(self.start_buttons.values()):
-            try:
-                w.configure(stack_mode=X.Above)
-            except error.XError:
-                self.start_buttons.pop(w.id, None)
         # Win32 topmost windows (EWMH above), such as XP's dimmed shut down
         # screen, cover the topmost taskbar; keep their transients above them.
         above = self.atom('_NET_WM_STATE_ABOVE')
@@ -478,6 +482,7 @@ class Manager:
         for c in self.clients.values():
             if c['kind'] == 'popup' and not c['hidden']:
                 c['w'].configure(stack_mode=X.Above)
+        self.raise_overlays()
         ids = [i for i, c in self.clients.items() if c['kind'] != 'proxy']
         self.setprop(self.root, '_NET_CLIENT_LIST', Xatom.WINDOW, ids)
         stack = [self.frames.get(w.id, w.id) for w in self.root.query_tree().children if w.id in ids or w.id in self.frames]
@@ -841,13 +846,13 @@ class Manager:
         if e.type == X.MapRequest:
             self.manage(e.window)
         elif e.type == X.MapNotify:
-            if e.override and e.window.id not in self.start_buttons:
+            if e.override and e.window.id not in self.overlays:
                 try:
                     cls = bytes(self.prop(e.window, '_WIN4WINE_CLASS')).strip(b'\0').lower()
                 except error.XError:
                     cls = b''
-                if cls == b'win4winestartbutton':
-                    self.start_buttons[e.window.id] = e.window
+                if cls in (b'win4winestartbutton', b'desktop user picture'):
+                    self.overlays[e.window.id] = e.window
                     self.restack()
             c = self.clients.get(e.window.id)
             if c and (c['kind'] == 'popup' or c['kind'] == 'normal' and self.active == e.window.id):
@@ -874,7 +879,7 @@ class Manager:
             if c and c['kind'] == 'dock':
                 self.workarea()
         elif e.type == X.DestroyNotify:
-            self.start_buttons.pop(e.window.id, None)
+            self.overlays.pop(e.window.id, None)
             self.unmanage(e.window.id)
         elif e.type == X.UnmapNotify:
             c = self.clients.get(e.window.id)
