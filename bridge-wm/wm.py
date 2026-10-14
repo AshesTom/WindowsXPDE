@@ -207,6 +207,21 @@ class Manager:
                 w.unmap()
             return
         client['hidden'] = False
+        if client['kind'] == 'normal' and client['owner'] and not client['hwnd'] and not client.get('placed'):
+            # An owned Linux window has no frame; keep it inside the work area
+            # (GTK's file chooser asks for a fixed size, larger than small screens),
+            # centred on its owner unless it placed itself (GTK 4 does not).
+            client['placed'] = True
+            x, y, width, height = client['geometry'][:4]
+            width, height = self.fit(client, 0, 0)
+            owner = self.clients.get(client['owner'])
+            if owner and not self.positioned(client):
+                ox, oy, owidth, oheight = owner['geometry'][:4]
+                x, y = ox + (owidth-width) // 2, oy + (oheight-height) // 2
+            ax, ay, awidth, aheight = self.area
+            x, y = max(ax, min(x, ax+awidth-width)), max(ay, min(y, ay+aheight-height))
+            if (x, y, width, height) != client['geometry'][:4]:
+                self.configure(client, x=x, y=y, width=width, height=height)
         self.setprop(w, 'WM_STATE', self.atom('WM_STATE'), [1, 0])
         w.map()
         if client['kind'] in ('normal', 'popup'):
@@ -635,6 +650,17 @@ class Manager:
             return False
         return bool(hints.flags & Xutil.USPosition) or c['geometry'][:2] != (0, 0)
 
+    def fit(self, c, frame_width, frame_height):
+        """The client's size, shrunk to fit the work area with its frame (not below its minimum size)."""
+        width, height = c['geometry'][2:4]
+        try:
+            hints = c['w'].get_wm_normal_hints()
+        except error.XError:
+            hints = None
+        min_width, min_height = (hints.min_width, hints.min_height) if hints and hints.flags & Xutil.PMinSize else (1, 1)
+        return (min(width, max(self.area[2]-frame_width, min_width, 1)),
+                min(height, max(self.area[3]-frame_height, min_height, 1)))
+
     def cascade(self, left, top):
         """Next XP default-window slot, as native client coordinates.
 
@@ -674,16 +700,23 @@ class Manager:
                 if metrics:
                     left, right, top, bottom, maximized = metrics
                     if not native['framed']:
-                        nx, ny = native['geometry'][:2]
-                        if self.positioned(native):
+                        nx, ny, nwidth, nheight = native['geometry'][:4]
+                        width, height = self.fit(native, left+right, top+bottom)
+                        if (width, height) != (nwidth, nheight):
+                            # Too large for the work area with its frame:
+                            # shrink it, centred, as other window managers do.
+                            ax, ay, awidth, aheight = self.area
+                            x = ax + left + max(0, (awidth-left-right-width) // 2)
+                            y = ay + top + max(0, (aheight-top-bottom-height) // 2)
+                        elif self.positioned(native):
                             # Keep an explicit position, but keep the first
                             # caption visible above content placed at 0,0.
                             x = max(nx, self.area[0]+left)
                             y = max(ny, self.area[1]+top)
                         else:
                             x, y = self.cascade(left, top)
-                        if (x, y) != (nx, ny):
-                            self.configure(native, x=x, y=y)
+                        if (x, y, width, height) != (nx, ny, nwidth, nheight):
+                            self.configure(native, x=x, y=y, width=width, height=height)
                         native['framed'] = True
                     if native['extents'] != [left, right, top, bottom]:
                         native['extents'] = [left, right, top, bottom]

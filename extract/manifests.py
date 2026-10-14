@@ -87,6 +87,21 @@ def value_line(name, kind, raw):
     raise ValueError(kind)
 
 
+def icon_reference(raw, icons):
+    """RAW with an icon given by index ("shell32.dll,3") given by resource ID instead ("shell32.dll,-4").
+
+    ICONS maps a DLL's name to its icon groups' IDs in order. Windows and Wine
+    read an index as the position among the DLL's icon groups; Wine's own
+    shell32, which 32-bit programs load, has named icon groups before its
+    numbered ones, so Windows 7's indexes would pick other icons there. The
+    IDs are the same in both."""
+    m = re.match(r'(?i)^(.*?)([^\\]+\.dll),(\d+)$', raw)
+    ids = icons.get(m.group(2).lower()) if m else None
+    if not ids or int(m.group(3)) >= len(ids) or ids[int(m.group(3))] is None:
+        return raw
+    return f'{m.group(1)}{m.group(2)},-{ids[int(m.group(3))]}'
+
+
 def entries(path):
     """(key, [(name, type, value)]) of a manifest: its registry keys, then its settings' defaults."""
     root = ET.parse(path).getroot()
@@ -105,8 +120,10 @@ def entries(path):
     return keys + list(settings.items()), strings
 
 
-def convert(paths):
-    """The .reg text of the manifests PATHS, and what was left out."""
+def convert(paths, icons=None):
+    """The .reg text of the manifests PATHS, and what was left out.
+
+    ICONS (a DLL's name -> its icon groups' IDs) turns icon indexes into IDs."""
     out = ['Windows Registry Editor Version 5.00', '']
     missing = set()
     for path in paths:
@@ -137,7 +154,10 @@ def convert(paths):
             lines = []
             for vname, kind, raw in values:
                 try:
-                    lines.append(value_line(vname, kind, resolve(raw)))
+                    value = resolve(raw)
+                    if icons and kind in ('REG_SZ', 'REG_EXPAND_SZ'):
+                        value = icon_reference(value, icons)
+                    lines.append(value_line(vname, kind, value))
                 except KeyError as e:
                     missing.add(f'variable {e}')
                 except ValueError:

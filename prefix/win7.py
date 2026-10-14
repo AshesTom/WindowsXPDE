@@ -38,7 +38,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 5
+VERSION = 6
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -147,6 +147,11 @@ class Prefix:
                 self.reg(nt + r'\FontSubstitutes', name, 'Meiryo UI')
         for clsid, name in NAMES:
             self.reg(rf'HKCR\CLSID\{clsid}', 'LocalizedString', name, 'REG_EXPAND_SZ')
+        # The open dialog that shell32's Browse buttons (the Run dialog's) create:
+        # Windows 7's comdlg32 component registers it, and Wine's comdlg32
+        # implements it; the component's files are Wine's, so it is not extracted.
+        self.reg(r'HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer', 'FileOpenDialog',
+                 '{DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7}')
         # Linux tray icons and the input method's mode stay in the notification
         # area (Windows 7's "always show all icons and notifications").
         self.reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer', 'EnableAutoTray', 0, 'REG_DWORD')
@@ -197,6 +202,9 @@ def create(assets, dest, home, wine):
         for name in RESOURCES:
             prefix.copy(assets / f'system32/{name}.dll', assets / f'system32/{ui}/{name}.dll.mui',
                         prefix.system / f'{name}.dll')
+        # The 32-bit imageres.dll, whose icons 32-bit programs show for file types.
+        if (assets / 'syswow64/imageres.dll').is_file():
+            shutil.copyfile(assets / 'syswow64/imageres.dll', c / 'windows/syswow64/imageres.dll')
         prefix.copy(assets / 'sxs/comctl32.dll', assets / f'sxs/{ui}/comctl32.dll.mui', c / 'w7/comctl32.dll')
         for font in (assets / 'fonts').iterdir():
             shutil.copyfile(font, c / 'windows/Fonts' / font.name)

@@ -26,6 +26,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | `explorerframe`、`shell32`、`shlwapi`、`propsys`、`shdocvw`、`dui70`、`duser`、`profapi`、`sndvolsso`、`winbrand`、`shacct`、`thumbcache`、`authui`、`linkinfo` | w7-explorer.exe（と、サムネイルを作る dllhost.exe）だけが使う DLL |
 | `actxprxy` | Windows 7 のインターフェースの proxy。`w7actxprxy.dll` の名前で置きます（Wine の actxprxy.dll は Wine の DLL の proxy に残します） |
 | `imageres`、`sud`、`DeviceCenter` | 文字列とアイコンだけを読む DLL（override なし） |
+| `SysWOW64\imageres.dll` | 32bit のプログラムが読むファイルの種類のアイコン |
 | Common Controls 6（amd64） | w7-explorer.exe が使う comctl32。`C:\w7\comctl32.dll` として、シェルの横に置きます |
 | Segoe UI、メイリオ（日本語のとき） | Windows 7 の UI のフォント |
 | `Resources\Themes\Aero` | Aero のテーマ（形式 4 の msstyles。Wine の 0079 で読みます） |
@@ -41,6 +42,12 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 Windows 7 は、部品（component）ごとのマニフェスト（`WinSxS\Manifests`）にファイルとレジストリの値を書いています。
 `extract/manifests.py` が、上のファイルの部品のマニフェストから、レジストリのキーと値、設定の既定値（configuration の schema）を
 `.reg` にします。インストール済みの Windows のレジストリを丸ごと移すことはしません。使うファイルの部品が登録するものだけを入れます。
+アイコンを番号（`shell32.dll,3`）で指す値は、リソースの ID（`shell32.dll,-4`）に直します。32bit のプログラムが読む Wine の shell32 は、
+アイコンの並びが Windows 7 のものと違うためです（ID は同じです）。32bit のプログラムのために、ファイルの種類のアイコンを持つ
+32bit の `imageres.dll` も `SysWOW64` に置きます。
+
+Windows 7 の comdlg32 の部品が登録する `FileOpenDialog`（シェルの「参照」が開くダイアログ）は、prefix/win7.py が Wine の comdlg32 の
+ダイアログに向けます（部品のファイルは Wine のものなので、取り出しません）。
 
 ## prefix（`prefix/win7.py`）
 
@@ -71,11 +78,14 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - 日本語入力は XP のシェルと同じ fcitx5 + Mozc です。入力モード（「あ」など）は通知領域に出て、Wine のアプリでは窓の中で
   変換します。
 - Windows のアプリがスタートメニューに作るショートカットは、「すべてのプログラム」に並びます。
+- ファイルを開く・保存するダイアログ: Windows のアプリ（64bit・32bit）は Wine のダイアログ、Linux のアプリ（GTK 3・GTK 4・Qt）は
+  それぞれのダイアログです。どちらも「ドキュメント」（`H:`）は Linux のホームで、日本語の名前のファイルも開け、保存できます。
+  シェルの「ファイル名を指定して実行」の「参照」は、Windows 7 の shell32 で Wine のダイアログを開きます（Wine の 0095）。
 - Windows キー、Ctrl+Esc（Linux の窓からも）、Win+R、Win+E、Alt+Tab（XP の形）が使えます。
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
-Windows 7 のシェルのために足した Wine のパッチは 0078〜0093 です（[patches.md](patches.md)）。
+Windows 7 のシェルのために足した Wine のパッチは 0078〜0095 です（[patches.md](patches.md)）。
 
 ## 制限
 

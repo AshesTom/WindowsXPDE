@@ -20,6 +20,9 @@ import sys
 import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import manifests  # noqa: E402
+import media  # noqa: E402
+
+RT_GROUP_ICON = 14
 
 # The image's language -> our language (the session's and the prefix's).
 LANGUAGES = {'ja-JP': 'ja', 'en-US': 'en'}
@@ -115,6 +118,8 @@ def select(paths, lang_dir, lang):
             wanted[real] = 'themes/' + real[len('Windows/Resources/Themes/'):]
         elif path.startswith('programdata/microsoft/user account pictures/'):
             wanted[real] = 'pictures/' + real[len('ProgramData/Microsoft/User Account Pictures/'):]
+    # The icons that file types and folders name in imageres.dll, for 32-bit programs.
+    want('Windows/SysWOW64/imageres.dll', 'syswow64/imageres.dll')
     want('Windows/Resources/Themes/aero.theme', 'themes/aero.theme')
     want('Windows/Web/Wallpaper/Windows/img0.jpg', 'web/img0.jpg')
     for folder in START_MENU:
@@ -171,7 +176,8 @@ def extract(iso, output):
             dest.write_bytes(data)
             manifest.append({'name': target, 'source': f'{index}/{source}',
                              'sha256': hashlib.sha256(data).hexdigest()})
-        text, missing = manifests.convert(manifest_paths)
+        icons = {'shell32.dll': media.resource_ids(output / 'system32/shell32.dll', RT_GROUP_ICON)}
+        text, missing = manifests.convert(manifest_paths, icons)
         (output / 'registry.reg').write_text(text, encoding='utf-16')
         for item in missing:
             print('Registry entry left out:', item, file=sys.stderr)
