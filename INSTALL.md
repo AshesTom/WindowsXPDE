@@ -143,7 +143,7 @@ scripts/setup.sh --shell reactos --lang ja
 ## 見た目と文字の大きさを変える
 
 「画面のプロパティ」（デスクトップの右クリック → プロパティ）は、XP のシェルでも ReactOS のシェルでも開けません（その部品を
-入れていないため。XP ではエラーになり、ReactOS では何も出ません）。テーマ（見た目）と DPI（文字や画面の部品の大きさ）は `setup.sh` で変えます。セッションの Wine が動いている間は
+入れていないため。XP ではエラーになり、ReactOS では何も出ません）。テーマ（見た目）、DPI（文字や画面の部品の大きさ）、フォントのスムージング（ClearType）は `setup.sh` で変えます。セッションの Wine が動いている間は
 変えられないので、ログオフしてから次のようにします。
 
 1. スタート → ログオフ で、ログイン画面に戻ります。
@@ -154,6 +154,7 @@ scripts/setup.sh --shell reactos --lang ja
    cd ~/win4wine
    scripts/setup.sh --media /path/to/WindowsXPSP3.iso --theme classic   # XP の「Windows クラシック」。戻すときは --theme luna
    scripts/setup.sh --media /path/to/WindowsXPSP3.iso --dpi 120          # 文字の大きさ。96 が標準（XP の「通常のサイズ」）
+   scripts/setup.sh --media /path/to/WindowsXPSP3.iso --font-smoothing cleartype   # ClearType。戻すときは --font-smoothing standard
    scripts/setup.sh --shell reactos --theme lautus                      # ReactOS のシェル: classic、lautus、lunar、mizu
    ```
 
@@ -163,6 +164,9 @@ scripts/setup.sh --shell reactos --lang ja
 - 済んでいる段階は飛ばすので、2 回目からはすぐ終わります（Wine のパッチが変わっていれば、その分を作り直します）。
 - DPI を上げると、XP と同じく文字と寸法が大きくなり、アイコンは 32×32 のままです。Linux のアプリも同じ DPI で文字が大きくなります
   （GTK は 192 以上で部品も 2 倍になります）。
+- `--font-smoothing cleartype` は、XP の「画面のフォントの縁を滑らかにする」で「ClearType」を選んだのと同じです（既定は XP と同じ「標準」）。
+  XP と同じく、MS UI Gothic の小さい文字（メニューなど、22 ピクセルまで）はビットマップのままで、Tahoma や Arial などの文字と大きい文字が
+  ClearType になります。Linux のアプリの文字も、液晶の RGB の並びに合わせて描かれます（X11 のセッション）。
 
 Wayland のセッションでは、Linux のアプリは出力ごとの倍率（`outputs` の `scale`）で描かれ、XP のシェルは DPI で描かれて、
 どの出力でもぼけません。DPI は主に使う出力の倍率に合わせてください（倍率 1.5 なら 144）。詳しくは [docs/wayland.md](docs/wayland.md) にあります。

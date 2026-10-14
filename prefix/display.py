@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Set classic/Luna, the Start menu and the DPI of a dedicated prefix; only what is given changes.
+"""Set classic/Luna, the Start menu, the DPI and the font smoothing of a dedicated prefix; only what is given changes.
 
 Restart the session afterwards."""
 import argparse
@@ -20,12 +20,15 @@ def dpi(value):
 parser.add_argument('--dpi', type=dpi, help='96, 120, 144, 192 or any value from 19 to 480')
 parser.add_argument('--font-rendering', choices=('xp', 'wine'),
                     help='Prefix-wide Wine synthetic bold/italic antialiasing policy')
+parser.add_argument('--font-smoothing', choices=('standard', 'cleartype'),
+                    help="XP's screen font smoothing (Display Properties, Effects): standard, "
+                         'the default, or ClearType')
 args = parser.parse_args()
 prefix = Path(os.environ['WINEPREFIX']).resolve(strict=True)
 reactos = (prefix / 'reactos-shell.json').is_file()
 if not reactos and not (prefix / 'xp-shell.json').is_file():
     raise SystemExit('Not a dedicated XP prefix')
-if reactos and (args.theme or args.menu):
+if reactos and (args.theme or args.menu or args.font_smoothing):
     raise SystemExit("The ReactOS shell has the classic look and Start menu only; give --dpi alone")
 if args.theme == 'luna' and not (prefix / 'drive_c/windows/Resources/Themes/Luna/luna.msstyles').is_file():
     raise SystemExit('Luna must be extracted from your local XP media first')
@@ -51,6 +54,14 @@ if args.menu:
     subprocess.run([wine, str(helper), args.menu], env=menu_env, check=True)
 if args.dpi:
     reg(r'HKCU\Control Panel\Desktop', 'LogPixels', args.dpi, 'REG_DWORD')
+if args.font_smoothing:
+    # What XP's Display Properties write (SPI_SETFONTSMOOTHING and
+    # SPI_SETFONTSMOOTHINGTYPE): ClearType with XP's RGB order. The shell's
+    # session reads them when it starts (Wine patch 0077, session/dpi.py).
+    desktop = r'HKCU\Control Panel\Desktop'
+    reg(desktop, 'FontSmoothing', '2')
+    reg(desktop, 'FontSmoothingType', 2 if args.font_smoothing == 'cleartype' else 1, 'REG_DWORD')
+    reg(desktop, 'FontSmoothingOrientation', 1, 'REG_DWORD')
 if args.theme:
     subprocess.run([wine, str(theme_helper), args.theme],
                    env=dict(env, WIN4WINE_EXTERNAL_SHELL='1'), check=True)

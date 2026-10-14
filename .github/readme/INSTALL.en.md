@@ -145,7 +145,7 @@ Restart the display manager (or reboot).
 ## Changing the look and the text size
 
 Display Properties (right-click the desktop → Properties) do not open in the XP shell or the ReactOS shell (their parts are
-not installed: XP shows an error, ReactOS nothing). The theme (the look) and the DPI (the size of text and screen elements) are changed with `setup.sh`, while the
+not installed: XP shows an error, ReactOS nothing). The theme (the look), the DPI (the size of text and screen elements) and the font smoothing (ClearType) are changed with `setup.sh`, while the
 session's Wine is not running: log off first.
 
 1. Start → Log Off, back to the login screen.
@@ -156,6 +156,7 @@ session's Wine is not running: log off first.
    cd ~/win4wine
    scripts/setup.sh --media /path/to/WindowsXPSP3.iso --theme classic   # XP's "Windows Classic"; --theme luna goes back
    scripts/setup.sh --media /path/to/WindowsXPSP3.iso --dpi 120          # text size; 96 is normal (XP's "Normal size")
+   scripts/setup.sh --media /path/to/WindowsXPSP3.iso --font-smoothing cleartype   # ClearType; --font-smoothing standard goes back
    scripts/setup.sh --shell reactos --theme lautus                      # the ReactOS shell: classic, lautus, lunar or mizu
    ```
 
@@ -165,6 +166,10 @@ session's Wine is not running: log off first.
 - Steps already done are skipped, so later runs are quick (Wine is rebuilt only where its patches changed).
 - A higher DPI makes text and metrics larger while icons stay 32×32, as on XP. Linux applications get the same DPI for their
   text (GTK also doubles its widgets from 192).
+- `--font-smoothing cleartype` is what choosing ClearType under XP's "Use the following method to smooth edges of screen fonts"
+  does (the default is XP's Standard). As on XP, MS UI Gothic's small text (menus and the like, up to 22 pixels) stays a bitmap,
+  while Tahoma, Arial and other text and large text become ClearType. Linux applications draw their text in the screen's RGB
+  subpixel order too (in the X11 session).
 
 In the Wayland session Linux applications draw at each output's scale (`scale` in `outputs`) and the XP shell at its DPI,
 crisp on every output; set the DPI to the scale of the output you mostly use (144 for 1.5). See [docs/wayland.md](../../docs/wayland.md) (Japanese).

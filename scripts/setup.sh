@@ -2,7 +2,8 @@
 # Set up the XP shell session on this Debian 13 machine, from a fresh install.
 #
 #   scripts/setup.sh --media PATH [--greeter | --no-greeter] [--theme luna|classic]
-#                    [--dpi N] [--wayland] [--wine-install DIR | --jobs N]
+#                    [--dpi N] [--font-smoothing standard|cleartype] [--wayland]
+#                    [--wine-install DIR | --jobs N]
 #   scripts/setup.sh --shell reactos [--lang ja|en] [--theme T] [--greeter] [--dpi N]
 #                    [--wayland] [--wine-install DIR | --jobs N]
 #
@@ -28,6 +29,11 @@
 #   --dpi N        the screen's DPI as XP sets it (LogPixels): 96 (normal), 120 (large)
 #                  or any value from 19 to 480; for the XP shell, the Linux
 #                  applications in its session and the Welcome screen
+#   --font-smoothing S
+#                  XP's screen font smoothing (Display Properties, Effects): standard
+#                  (XP's default) or cleartype; for the XP shell and the Linux
+#                  applications in its session. Given explicitly, it is applied to an
+#                  existing prefix too
 #   --wayland      also build win4wine's labwc (wayland/build.sh) and register the
 #                  "XP Shell (Wine, Wayland)" session: per-monitor and fractional
 #                  scales (session.json "outputs"), Wayland applications with XP frames
@@ -56,6 +62,7 @@ jobs=$(nproc)
 theme=luna
 theme_given=no
 dpi=
+smoothing=
 wayland=no
 prebuilt=
 shadowfb=yes
@@ -69,6 +76,7 @@ while (($#)); do
         --jobs) jobs=${2:?--jobs needs a number}; shift 2 ;;
         --theme) theme=${2:?--theme needs luna or classic}; theme_given=yes; shift 2 ;;
         --dpi) dpi=${2:?--dpi needs a number}; shift 2 ;;
+        --font-smoothing) smoothing=${2:?--font-smoothing needs standard or cleartype}; shift 2 ;;
         --wayland) wayland=yes; shift ;;
         --no-shadowfb) shadowfb=no; shift ;;
         --wine-install) prebuilt=$(realpath -e -- "${2:?--wine-install needs a directory}"); shift 2 ;;
@@ -80,6 +88,7 @@ done
 if [[ $shell == reactos ]]; then
     [[ -z $media ]] || { printf -- '--media is for the XP shell; the ReactOS shell needs no media\n' >&2; exit 2; }
     [[ $theme_given == yes ]] || theme=classic
+    [[ -z $smoothing ]] || { printf -- '--font-smoothing is for the XP shell\n' >&2; exit 2; }
     [[ $theme =~ ^(classic|lautus|lunar|mizu)$ ]] ||
         { printf -- '--theme for the ReactOS shell is classic, lautus, lunar or mizu\n' >&2; exit 2; }
     # An existing prefix keeps the language it was made in.
@@ -107,6 +116,8 @@ fi
 [[ $shell == reactos || $theme == luna || $theme == classic ]] || { printf -- '--theme is luna or classic\n' >&2; exit 2; }
 [[ -z $dpi || ( $dpi =~ ^[0-9]+$ && $dpi -ge 19 && $dpi -le 480 ) ]] ||
     { printf -- '--dpi is a number from 19 to 480\n' >&2; exit 2; }
+[[ -z $smoothing || $smoothing == standard || $smoothing == cleartype ]] ||
+    { printf -- '--font-smoothing is standard or cleartype\n' >&2; exit 2; }
 [[ -z $media ]] || media=$(realpath -e -- "$media")
 [[ $EUID -ne 0 ]] || { printf 'Run this as the user who will log in, not as root\n' >&2; exit 2; }
 [[ $root != *[[:space:]]* ]] || { printf 'The checkout path must not contain spaces: %s\n' "$root" >&2; exit 2; }
@@ -272,6 +283,13 @@ if [[ $shell == xp ]]; then
             { tail -20 "$local/prefix.log" >&2; printf 'Setting the DPI failed; see .local/prefix.log\n' >&2; exit 1; }
         WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
         printf 'DPI: %s\n' "$dpi"
+    fi
+    if [[ -n $smoothing ]]; then
+        WINEPREFIX=$prefix WINE=$wine python3 "$root/prefix/display.py" --font-smoothing "$smoothing" \
+            >> "$local/prefix.log" 2>&1 ||
+            { tail -20 "$local/prefix.log" >&2; printf 'Setting the font smoothing failed; see .local/prefix.log\n' >&2; exit 1; }
+        WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
+        printf 'Font smoothing: %s\n' "$smoothing"
     fi
 else
     step 'ReactOS files'

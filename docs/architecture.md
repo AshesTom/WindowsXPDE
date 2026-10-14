@@ -185,6 +185,16 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
   192 以上では GTK の `GDK_SCALE` も設定します。
 - ようこそ画面の DPI は `/etc/win4wine/greeter.json` の `dpi` で決めます（XP でもマシン全体の設定です）。
 
+## フォントのスムージング（ClearType）
+
+- XP の「画面のフォントの縁を滑らかにする」の「標準」と「ClearType」を、prefix の `HKCU\Control Panel\Desktop` の
+  `FontSmoothing` と `FontSmoothingType`（1 か 2）で決めます（`prefix/display.py --font-smoothing`）。既定は XP と同じく「標準」です。
+- ClearType では、XP のシェルと Wine のアプリの文字をパッチ 0077 が XP と同じ方式で描きます。
+  MS UI Gothic などの埋め込みビットマップのある大きさ（22 ピクセルまで）は、XP と同じく ClearType になりません。
+- supervisor は Linux のアプリにも RGB のサブピクセルで描くように伝えます（`session/dpi.py`。`Xft.rgba`、fontconfig の `rgba`）。
+  Wayland のアプリ（GTK など）は自分の設定（GNOME の `font-rgba-order` など）に従います。
+- ようこそ画面は変わりません。
+
 ## Wayland のセッション（`wayland/`）
 
 - `wayland/session.sh` が IPC のディレクトリを作り（`WIN4WINE_IPC`）、パッチを当てた labwc を起動して、その中で supervisor を
