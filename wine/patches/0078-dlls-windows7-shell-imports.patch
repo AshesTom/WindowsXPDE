@@ -22,29 +22,35 @@ window, no elevation and no remote session; CalculatePopupWindowPosition
 places the popup at the anchor inside the monitor's work area, flipping it
 when it does not fit; GetDurationFormat gives hours:minutes:seconds;
 LoadStringByReference loads "@dll,-id" strings with RegLoadMUIString's
-loader; the 64-bit NDR64 names are the classic functions. Functions
-without a public signature (WinSqmAddToStreamEx, PaintMonitor,
-WerpNotifyUseStringResource, NdrStubCall3, CreateBitmapFromDxSurface) are
+loader; the 64-bit NDR64 names are the classic functions. On 64-bit,
+WerpNotifyUseStringResource returns 0 without reading its arguments (the
+caller passes them in registers and removes them itself); there is no
+error reporting. Other functions without a public signature
+(WinSqmAddToStreamEx, PaintMonitor, NdrStubCall3,
+CreateBitmapFromDxSurface, and WerpNotifyUseStringResource on 32-bit) are
 stubs. Signatures follow ReactOS's specs and the public documentation.
 Evidence: Windows 7 SP1 x64 explorer.exe and its DLLs load (their import
-tables are satisfied).
+tables are satisfied). shell32 and comctl32 call
+WerpNotifyUseStringResource on a shell thread; as a stub the thread ended
+in nested exceptions, with the function the thread goes on (it shows its
+message box).
 Scope: new exports only; nothing that Wine already exported changes.
 ---
  dlls/gdi32/gdi32.spec           |  2 +-
- dlls/kernel32/kernel32.spec     |  8 +++---
- dlls/kernel32/process.c         | 51 ++++++++++++++++++++++++++++++++++
+ dlls/kernel32/kernel32.spec     |  9 +++---
+ dlls/kernel32/process.c         | 64 +++++++++++++++++++++++++++++++++++++++++
  dlls/kernelbase/kernelbase.spec |  2 +-
- dlls/kernelbase/registry.c      | 61 +++++++++++++++++++++++++++++++++++++++++
+ dlls/kernelbase/registry.c      | 61 +++++++++++++++++++++++++++++++++++++++
  dlls/ntdll/env.c                | 18 ++++++++++++
- dlls/ntdll/misc.c               | 22 +++++++++++++++
+ dlls/ntdll/misc.c               | 22 ++++++++++++++
  dlls/ntdll/ntdll.spec           |  6 ++++
  dlls/oleaut32/oleaut32.spec     |  9 ++++++
  dlls/rpcrt4/rpcrt4.spec         |  1 +
- dlls/user32/misc.c              | 50 +++++++++++++++++++++++++++++++++
+ dlls/user32/misc.c              | 50 ++++++++++++++++++++++++++++++++
  dlls/user32/user32.spec         | 10 +++----
  dlls/winsta/main.c              |  8 ++++++
  dlls/winsta/winsta.spec         |  1 +
- 14 files changed, 238 insertions(+), 11 deletions(-)
+ 14 files changed, 252 insertions(+), 11 deletions(-)
 
 diff --git a/dlls/gdi32/gdi32.spec b/dlls/gdi32/gdi32.spec
 index 207549f..ed4e040 100644
@@ -60,7 +66,7 @@ index 207549f..ed4e040 100644
  @ stdcall CreateBitmapIndirect(ptr)
  @ stdcall CreateBrushIndirect(ptr)
 diff --git a/dlls/kernel32/kernel32.spec b/dlls/kernel32/kernel32.spec
-index 5c2501c..de50158 100644
+index 5c2501c..01742e3 100644
 --- a/dlls/kernel32/kernel32.spec
 +++ b/dlls/kernel32/kernel32.spec
 @@ -215,8 +215,8 @@
@@ -83,20 +89,21 @@ index 5c2501c..de50158 100644
  # @ stub GetDurationFormatEx
  @ stdcall -import GetDynamicTimeZoneInformation(ptr)
  @ stdcall -import GetDynamicTimeZoneInformationEffectiveYears(ptr ptr ptr)
-@@ -1646,7 +1646,7 @@
+@@ -1646,7 +1646,8 @@
  # @ stub WerpInitiateRemoteRecovery
  # @ stub WerpNotifyLoadStringResource
  # @ stub WerpNotifyLoadStringResourceEx
 -# @ stub WerpNotifyUseStringResource
-+@ stub WerpNotifyUseStringResource
++@ stdcall -arch=win64 WerpNotifyUseStringResource()
++@ stub -arch=win32 WerpNotifyUseStringResource
  # @ stub WerpStringLookup
  @ stdcall -import WideCharToMultiByte(long long wstr long ptr long ptr ptr)
  @ stdcall WinExec(str long)
 diff --git a/dlls/kernel32/process.c b/dlls/kernel32/process.c
-index 23ec8ce..5e7dca5 100644
+index 23ec8ce..05da9cd 100644
 --- a/dlls/kernel32/process.c
 +++ b/dlls/kernel32/process.c
-@@ -991,3 +991,54 @@ BOOL WINAPI UmsThreadYield(void *param)
+@@ -991,3 +991,67 @@ BOOL WINAPI UmsThreadYield(void *param)
      SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
      return FALSE;
  }
@@ -150,6 +157,19 @@ index 23ec8ce..5e7dca5 100644
 +    }
 +    memcpy( buffer, text, len * sizeof(WCHAR) );
 +    return len;
++}
++
++/***********************************************************************
++ *           WerpNotifyUseStringResource   (KERNEL32.@)
++ *
++ * Windows 7's shell32 and comctl32 call it; there is no Windows Error
++ * Reporting here. Its arguments have no public description: on 64-bit the
++ * caller passes them in registers and removes them itself, so returning
++ * without reading them is safe.
++ */
++DWORD WINAPI WerpNotifyUseStringResource(void)
++{
++    return 0;
 +}
 diff --git a/dlls/kernelbase/kernelbase.spec b/dlls/kernelbase/kernelbase.spec
 index 28c5376..34402c1 100644

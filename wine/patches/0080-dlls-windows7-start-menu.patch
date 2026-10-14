@@ -1,0 +1,286 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] user32, samlib: what Windows 7's Start menu needs
+
+Purpose: let Windows 7's Start menu open.
+Windows 7 behavior: the taskbar builds the Start menu ("DV2ControlHost",
+title "スタート メニュー") with its panes. The search pane ("Desktop OpenBox
+Host") creates the "Search Box" window and then looks up
+user32.RegisterMessagePumpHook with GetProcAddress; when it is missing,
+the pane's WM_CREATE returns -1 and the whole menu is destroyed, so the
+Start button does nothing. shacct.dll, which delay-loads samlib, calls
+SamConnect on the taskbar thread.
+Wine before: user32 had no RegisterMessagePumpHook or
+UnregisterMessagePumpHook, and samlib only had stubs ("unimplemented
+function samlib.dll.SamConnect", an exception the caller catches).
+Change: RegisterMessagePumpHook calls the hook with the addresses of
+user32's own message functions (GetMessage/PeekMessage, a wait, the queue
+status and MsgWaitForMultipleObjectsEx), keeps the addresses the hook
+returns and counts registrations; UnregisterMessagePumpHook calls the hook
+with TRUE when the count reaches zero. As in ReactOS, the message
+functions are not routed through the hook. SamConnect returns
+STATUS_ACCESS_DENIED (there is no SAM), SamCloseHandle and SamFreeMemory
+succeed. Signatures and the structure follow ReactOS's user32 and samlib.
+Evidence: with the change the Start button opens the Start menu with the
+programs list, "すべてのプログラム", the search box, the right column and the
+shut down button; SamConnect is called twice and the caller goes on.
+Scope: new exports only. XP's and ReactOS's shell modules do not refer to
+these functions.
+---
+ dlls/samlib/Makefile.in |   3 ++
+ dlls/samlib/main.c      |  59 +++++++++++++++++++++++
+ dlls/samlib/samlib.spec |   6 +--
+ dlls/user32/message.c   | 121 ++++++++++++++++++++++++++++++++++++++++++++++++
+ dlls/user32/user32.spec |   4 +-
+ 5 files changed, 188 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/samlib/Makefile.in b/dlls/samlib/Makefile.in
+index 6b4a15f..585f7f2 100644
+--- a/dlls/samlib/Makefile.in
++++ b/dlls/samlib/Makefile.in
+@@ -1,3 +1,6 @@
+ MODULE    = samlib.dll
+ 
+ EXTRADLLFLAGS = -Wb,--prefer-native
++
++SOURCES = \
++	main.c
+diff --git a/dlls/samlib/main.c b/dlls/samlib/main.c
+new file mode 100644
+index 0000000..baf0392
+--- /dev/null
++++ b/dlls/samlib/main.c
+@@ -0,0 +1,59 @@
++/*
++ * Security Accounts Manager client
++ *
++ * There is no SAM here: connecting fails, so callers take their error path
++ * instead of hitting unimplemented functions (Windows 7's shacct.dll).
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#include <stdarg.h>
++
++#include "ntstatus.h"
++#define WIN32_NO_STATUS
++#include "windef.h"
++#include "winbase.h"
++#include "winternl.h"
++#include "wine/debug.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(samlib);
++
++/***********************************************************************
++ *           SamConnect   (SAMLIB.@)
++ */
++NTSTATUS WINAPI SamConnect( UNICODE_STRING *server, HANDLE *handle, ACCESS_MASK access, OBJECT_ATTRIBUTES *attr )
++{
++    FIXME( "%s %p %#lx %p: no SAM\n", server ? debugstr_wn(server->Buffer, server->Length / sizeof(WCHAR)) : "(null)", handle, access, attr );
++    if (handle) *handle = NULL;
++    return STATUS_ACCESS_DENIED;
++}
++
++/***********************************************************************
++ *           SamCloseHandle   (SAMLIB.@)
++ */
++NTSTATUS WINAPI SamCloseHandle( HANDLE handle )
++{
++    TRACE( "%p\n", handle );
++    return handle ? STATUS_INVALID_HANDLE : STATUS_SUCCESS;
++}
++
++/***********************************************************************
++ *           SamFreeMemory   (SAMLIB.@)
++ */
++NTSTATUS WINAPI SamFreeMemory( void *buffer )
++{
++    TRACE( "%p\n", buffer );
++    return STATUS_SUCCESS;
++}
+diff --git a/dlls/samlib/samlib.spec b/dlls/samlib/samlib.spec
+index 88f1600..c24bf20 100644
+--- a/dlls/samlib/samlib.spec
++++ b/dlls/samlib/samlib.spec
+@@ -4,8 +4,8 @@
+ @ stub SamChangePasswordUser2
+ @ stub SamChangePasswordUser3
+ @ stub SamChangePasswordUser
+-@ stub SamCloseHandle
+-@ stub SamConnect
++@ stdcall SamCloseHandle(ptr)
++@ stdcall SamConnect(ptr ptr long ptr)
+ @ stub SamConnectWithCreds
+ @ stub SamCreateAliasInDomain
+ @ stub SamCreateGroupInDomain
+@@ -18,7 +18,7 @@
+ @ stub SamEnumerateDomainsInSamServer
+ @ stub SamEnumerateGroupsInDomain
+ @ stub SamEnumerateUsersInDomain
+-@ stub SamFreeMemory
++@ stdcall SamFreeMemory(ptr)
+ @ stub SamGetAliasMembership
+ @ stub SamGetCompatibilityMode
+ @ stub SamGetDisplayEnumerationIndex
+diff --git a/dlls/user32/message.c b/dlls/user32/message.c
+index 205d3e0..f77916c 100644
+--- a/dlls/user32/message.c
++++ b/dlls/user32/message.c
+@@ -1258,3 +1258,124 @@ BOOL WINAPI ChangeWindowMessageFilterEx( HWND hwnd, UINT message, DWORD action,
+     FIXME( "%p %x %ld %p\n", hwnd, message, action, changefilter );
+     return TRUE;
+ }
++
++
++/* Message pump hooks (Windows 7's DirectUser registers one). The hook receives the
++ * functions user32 would use and may return its own; as in ReactOS, the hook is
++ * only registered here and the message functions are not routed through it. */
++
++typedef struct
++{
++    DWORD cbSize;
++    BOOL  (WINAPI *internal_get_message)( MSG *msg, HWND hwnd, UINT first, UINT last, UINT flags, BOOL get );
++    BOOL  (WINAPI *wait_message_ex)( DWORD mask, UINT timeout );
++    DWORD (WINAPI *get_queue_status)( UINT flags );
++    DWORD (WINAPI *msg_wait_for_multiple_objects_ex)( DWORD count, const HANDLE *handles, DWORD timeout,
++                                                     DWORD mask, DWORD flags );
++} USER_MESSAGE_PUMP_ADDRESSES;
++
++typedef BOOL (WINAPI *MESSAGEPUMPHOOKPROC)( BOOL unregistering, USER_MESSAGE_PUMP_ADDRESSES *addresses );
++
++static BOOL WINAPI real_internal_get_message( MSG *msg, HWND hwnd, UINT first, UINT last, UINT flags, BOOL get )
++{
++    if (get) return GetMessageW( msg, hwnd, first, last );
++    return PeekMessageW( msg, hwnd, first, last, flags );
++}
++
++static BOOL WINAPI real_wait_message_ex( DWORD mask, UINT timeout )
++{
++    return NtUserMsgWaitForMultipleObjectsEx( 0, NULL, timeout, mask, 0 ) != WAIT_FAILED;
++}
++
++static DWORD WINAPI real_get_queue_status( UINT flags )
++{
++    return NtUserGetQueueStatus( flags );
++}
++
++static DWORD WINAPI real_msg_wait_for_multiple_objects_ex( DWORD count, const HANDLE *handles, DWORD timeout,
++                                                           DWORD mask, DWORD flags )
++{
++    return NtUserMsgWaitForMultipleObjectsEx( count, handles, timeout, mask, flags );
++}
++
++static CRITICAL_SECTION pump_hook_section;
++static CRITICAL_SECTION_DEBUG pump_hook_section_debug =
++{
++    0, 0, &pump_hook_section,
++    { &pump_hook_section_debug.ProcessLocksList, &pump_hook_section_debug.ProcessLocksList },
++      0, 0, { (DWORD_PTR)(__FILE__ ": pump_hook_section") }
++};
++static CRITICAL_SECTION pump_hook_section = { &pump_hook_section_debug, -1, 0, 0, 0, 0 };
++static MESSAGEPUMPHOOKPROC pump_hook;
++static USER_MESSAGE_PUMP_ADDRESSES pump_addresses;
++static unsigned int pump_hook_count;
++
++static void reset_pump_addresses( USER_MESSAGE_PUMP_ADDRESSES *addresses )
++{
++    addresses->cbSize = sizeof(*addresses);
++    addresses->internal_get_message = real_internal_get_message;
++    addresses->wait_message_ex = real_wait_message_ex;
++    addresses->get_queue_status = real_get_queue_status;
++    addresses->msg_wait_for_multiple_objects_ex = real_msg_wait_for_multiple_objects_ex;
++}
++
++/***********************************************************************
++ *		RegisterMessagePumpHook (USER32.@)
++ */
++BOOL WINAPI RegisterMessagePumpHook( MESSAGEPUMPHOOKPROC hook )
++{
++    BOOL ret = FALSE;
++
++    TRACE( "%p\n", hook );
++
++    if (!hook)
++    {
++        SetLastError( ERROR_INVALID_PARAMETER );
++        return FALSE;
++    }
++    EnterCriticalSection( &pump_hook_section );
++    if (!pump_hook_count)
++    {
++        USER_MESSAGE_PUMP_ADDRESSES addresses;
++
++        reset_pump_addresses( &addresses );
++        if (hook( FALSE, &addresses ) && addresses.cbSize)
++        {
++            memcpy( &pump_addresses, &addresses, min( addresses.cbSize, sizeof(pump_addresses) ));
++            pump_hook = hook;
++            pump_hook_count = 1;
++            ret = TRUE;
++        }
++    }
++    else if (pump_hook == hook)
++    {
++        pump_hook_count++;
++        ret = TRUE;
++    }
++    LeaveCriticalSection( &pump_hook_section );
++    return ret;
++}
++
++/***********************************************************************
++ *		UnregisterMessagePumpHook (USER32.@)
++ */
++BOOL WINAPI UnregisterMessagePumpHook(void)
++{
++    BOOL ret = FALSE;
++
++    TRACE( "\n" );
++
++    EnterCriticalSection( &pump_hook_section );
++    if (pump_hook_count)
++    {
++        if (!--pump_hook_count)
++        {
++            pump_hook( TRUE, NULL );
++            reset_pump_addresses( &pump_addresses );
++            pump_hook = NULL;
++        }
++        ret = TRUE;
++    }
++    LeaveCriticalSection( &pump_hook_section );
++    return ret;
++}
+diff --git a/dlls/user32/user32.spec b/dlls/user32/user32.spec
+index 5fe5b3f..be70e5f 100644
+--- a/dlls/user32/user32.spec
++++ b/dlls/user32/user32.spec
+@@ -964,7 +964,7 @@
+ # @ stub RegisterGhostWindow
+ @ stdcall RegisterHotKey(long long long long) NtUserRegisterHotKey
+ @ stdcall RegisterLogonProcess(long long)
+-# @ stub RegisterMessagePumpHook
++@ stdcall RegisterMessagePumpHook(ptr)
+ @ stub RegisterNetworkCapabilities
+ @ stdcall RegisterPointerDeviceNotifications(long long)
+ # @ stub RegisterPointerInputTarget
+@@ -1178,7 +1178,7 @@
+ @ stdcall UnregisterClassW(wstr long)
+ @ stdcall UnregisterDeviceNotification(long)
+ @ stdcall UnregisterHotKey(long long) NtUserUnregisterHotKey
+-# @ stub UnregisterMessagePumpHook
++@ stdcall UnregisterMessagePumpHook()
+ # @ stub UnregisterPointerInputTarget
+ # @ stub UnregisterPointerInputTargetEx
+ @ stdcall UnregisterPowerSettingNotification(ptr)
