@@ -79,3 +79,5 @@
 0079-uxtheme-msstyles-format-4.patch
 0080-dlls-windows7-start-menu.patch
 0081-server-windows7-stored-dacl.patch
+0082-uxtheme-windows7-taskbar.patch
+0083-dlls-windows7-start-button.patch

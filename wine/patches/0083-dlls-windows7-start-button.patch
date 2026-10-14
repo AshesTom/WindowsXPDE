@@ -1,0 +1,352 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] win32u, winex11, comctl32: draw Windows 7's Start button
+
+Purpose: draw Windows 7's Start button over the taskbar without a dark
+fringe, with its hover glow, and without black flashes when it grows.
+Windows 7 behavior: the Start button is a layered window owned by the
+taskbar (Shell_TrayWnd), drawn with UpdateLayeredWindow from a
+premultiplied 32 bpp image of 54x54 pixels. At rest the window is 54x40
+over the taskbar and shows rows 7 to 46 of the image; while the mouse is
+over it, the window grows to 54x54 (7 pixels above the taskbar and 7
+below the screen) and the glow fades in and out. Its edge and glow are
+partly transparent. On Windows, drawing on the DC of a window updated with
+UpdateLayeredWindow does not change what is shown.
+Wine before: without a compositing manager, UpdateLayeredWindow copied
+the image over black and only left out the pixels with alpha 0, so the
+partly transparent pixels showed as a dark, jagged fringe. The button is
+the XP shell's Start button class (0040), which also painted its own
+image on WM_PAINT and on state changes, over explorer's. When the window
+grew, three things showed black under a shifted button for a frame or
+more: the window manager applied the new size after Wine had drawn the
+image; apply_window_pos flushed the new image into the old geometry and
+left nothing to flush afterwards; and the image goes through gdi_display
+while the geometry goes through the window's display.
+Change: only with WIN4WINE_SHELL=win7, for a layered window that the
+taskbar owns. win32u: the taskbar paints its client area into a bitmap
+(WM_PRINTCLIENT) and the partly transparent pixels over it are blended
+with it; over other parts of the screen, where what is underneath is not
+known, pixels with alpha below 128 are left out and the others are shown
+unpremultiplied. UpdateLayeredWindow draws the new image first, then
+applies the new geometry, and marks the image to be flushed after that.
+winex11: the window is not managed (no window manager round trip) and the
+display is synchronized after a size change, before the image is put.
+comctl32: the Start button class does not draw on a layered window.
+Evidence: Windows 7 SP1 x64 explorer.exe; the edge matches the taskbar's
+background at rest and with the glow; in 8 hover cycles captured with 6
+screenshots each (96 frames) no frame shows black, and the glow fades in
+and out. bridge-wm keeps this unmanaged window above the taskbar.
+Scope: only with WIN4WINE_SHELL=win7 and WIN4WINE_EXTERNAL_SHELL, and only
+for layered windows that the taskbar owns. XP's Start button is a child
+of the taskbar and is not layered.
+---
+ dlls/comctl32_v6/button.c |  24 ++++++++-
+ dlls/win32u/window.c      | 135 ++++++++++++++++++++++++++++++++++++++++++++--
+ dlls/winex11.drv/window.c |  24 +++++++++
+ dlls/winex11.drv/x11drv.h |   1 +
+ 4 files changed, 179 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
+index 24da589..97e0b5e 100644
+--- a/dlls/comctl32_v6/button.c
++++ b/dlls/comctl32_v6/button.c
+@@ -239,9 +239,21 @@ static inline BOOL button_centers_text( LONG window_style )
+     return type <= BS_DEFPUSHBUTTON || type == BS_SPLITBUTTON || type == BS_DEFSPLITBUTTON;
+ }
+ 
++/* Windows 7's Start button is a layered window that explorer draws with
++ * UpdateLayeredWindow; drawing on its DC would overwrite that image (on Windows
++ * it has no effect). */
++static BOOL layered_start_button( HWND hwnd )
++{
++    WCHAR name[64];
++    return win4wine_external_shell() &&
++        (GetWindowLongW( hwnd, GWL_EXSTYLE ) & WS_EX_LAYERED) &&
++        GetClassNameW( hwnd, name, ARRAY_SIZE(name) ) && !wcscmp( name, L"Win4WineStartButton" );
++}
++
+ /* paint a button of any type */
+ static inline void paint_button( BUTTON_INFO *infoPtr, LONG style, UINT action )
+ {
++    if (layered_start_button( infoPtr->hwnd )) return;
+     if (btnPaintFunc[style] && IsWindowVisible(infoPtr->hwnd))
+     {
+         HDC hdc = GetDC( infoPtr->hwnd );
+@@ -561,6 +573,7 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
+         return COMCTL32_ThemeChanged( hWnd, WC_BUTTONW, TRUE, TRUE );
+ 
+     case WM_ERASEBKGND:
++        if (layered_start_button( hWnd )) return 1;
+         if (btn_type == BS_OWNERDRAW)
+         {
+             HDC hdc = (HDC)wParam;
+@@ -583,6 +596,15 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
+         PAINTSTRUCT ps;
+         HDC hdc;
+ 
++        if (layered_start_button( hWnd ))
++        {
++            if (!wParam)
++            {
++                BeginPaint( hWnd, &ps );
++                EndPaint( hWnd, &ps );
++            }
++            break;
++        }
+         theme = GetWindowTheme( hWnd );
+         hdc = wParam ? (HDC)wParam : BeginPaint( hWnd, &ps );
+ 
+@@ -735,7 +757,7 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
+     case WM_SETTEXT:
+     {
+         /* Clear an old text here as Windows does */
+-        if (IsWindowVisible(hWnd))
++        if (IsWindowVisible(hWnd) && !layered_start_button( hWnd ))
+         {
+             HDC hdc = GetDC(hWnd);
+             HBRUSH hbrush;
+diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
+index 7333a83..243d73c 100644
+--- a/dlls/win32u/window.c
++++ b/dlls/win32u/window.c
+@@ -2646,6 +2646,100 @@ BOOL WINAPI NtUserSetLayeredWindowAttributes( HWND hwnd, COLORREF key, BYTE alph
+     return ret;
+ }
+ 
++/* Windows 7's Start button (WIN4WINE_SHELL is win7) is a layered window with
++ * per-pixel alpha, owned by the taskbar and drawn over it. Without a compositing
++ * manager its surface shows the premultiplied colours over black, so the partly
++ * transparent edge of the button is dark. Get the taskbar's background under the
++ * window (WM_PRINTCLIENT) to blend those pixels with. */
++static HWND get_tray_owner( HWND hwnd )
++{
++    static const WCHAR trayW[] = {'S','h','e','l','l','_','T','r','a','y','W','n','d'};
++    const char *shell = getenv( "WIN4WINE_SHELL" );
++    WCHAR nameW[MAX_ATOM_LEN + 1];
++    UNICODE_STRING name = RTL_CONSTANT_STRING(nameW);
++    HWND owner;
++
++    if (!win4wine_external_shell() || !shell || strcasecmp( shell, "win7" )) return 0;
++    if (!(owner = get_window_relative( hwnd, GW_OWNER ))) return 0;
++    name.Length = NtUserGetClassName( owner, FALSE, &name ) * sizeof(WCHAR);
++    if (name.Length != sizeof(trayW) || memcmp( name.Buffer, trayW, sizeof(trayW) )) return 0;
++    return owner;
++}
++
++static HBITMAP get_tray_background( HWND owner, POINT *offset, SIZE *size, DWORD **bits )
++{
++    BITMAPINFO info = {{ sizeof(info.bmiHeader) }};
++    RECT client;
++    HBITMAP bitmap;
++    HDC hdc;
++
++    if (!get_client_rect( owner, &client, get_thread_dpi() ) || IsRectEmpty( &client )) return 0;
++
++    /* the taskbar's client area; offset is its origin in screen coordinates */
++    offset->x = offset->y = 0;
++    map_window_points( owner, 0, offset, 1, get_thread_dpi() );
++    size->cx = client.right;
++    size->cy = client.bottom;
++    info.bmiHeader.biWidth = size->cx;
++    info.bmiHeader.biHeight = -size->cy;
++    info.bmiHeader.biPlanes = 1;
++    info.bmiHeader.biBitCount = 32;
++    info.bmiHeader.biCompression = BI_RGB;
++    if (!(hdc = NtGdiCreateCompatibleDC( 0 ))) return 0;
++    if (!(bitmap = NtGdiCreateDIBSection( hdc, NULL, 0, &info, DIB_RGB_COLORS, 0, 0, 0, (void **)bits )))
++    {
++        NtGdiDeleteObjectApp( hdc );
++        return 0;
++    }
++    NtGdiSelectBitmap( hdc, bitmap );
++    send_message( owner, WM_PRINTCLIENT, (WPARAM)hdc, PRF_CLIENT | PRF_ERASEBKGND );
++    NtGdiDeleteObjectApp( hdc );
++    return bitmap;
++}
++
++/* blend the partly transparent pixels of a premultiplied surface with the background;
++ * window is the window's screen position */
++static void blend_tray_background( struct window_surface *surface, const RECT *rect, const RECT *window,
++                                   POINT offset, SIZE size, const DWORD *background )
++{
++    char buffer[FIELD_OFFSET( BITMAPINFO, bmiColors[256] )];
++    BITMAPINFO *info = (BITMAPINFO *)buffer;
++    DWORD *color, *row, alpha, pixel, under;
++    int x, y, bx, by, stride;
++
++    if (!(color = window_surface_get_color( surface, info ))) return;
++    if (info->bmiHeader.biBitCount != 32) return;
++    stride = info->bmiHeader.biWidth;
++    for (y = rect->top; y < rect->bottom; y++)
++    {
++        by = window->top + y - offset.y;
++        row = color + (info->bmiHeader.biHeight < 0 ? y : info->bmiHeader.biHeight - 1 - y) * stride;
++        for (x = rect->left; x < rect->right; x++)
++        {
++            bx = window->left + x - offset.x;
++            pixel = row[x];
++            alpha = pixel >> 24;
++            if (!alpha || alpha == 0xff) continue;
++            if (by < 0 || by >= size.cy || bx < 0 || bx >= size.cx)
++            {
++                /* Outside the taskbar what is underneath is unknown: leave out the
++                 * mostly transparent pixels and show the others unpremultiplied. */
++                if (alpha < 0x80) row[x] = 0;
++                else row[x] = (pixel & 0xff000000) |
++                              min( 255, ((pixel >> 16) & 0xff) * 255 / alpha ) << 16 |
++                              min( 255, ((pixel >> 8) & 0xff) * 255 / alpha ) << 8 |
++                              min( 255, (pixel & 0xff) * 255 / alpha );
++                continue;
++            }
++            under = background[by * size.cx + bx];
++            row[x] = (pixel & 0xff000000) |
++                     (((pixel >> 16) & 0xff) + ((under >> 16) & 0xff) * (255 - alpha) / 255) << 16 |
++                     (((pixel >> 8) & 0xff) + ((under >> 8) & 0xff) * (255 - alpha) / 255) << 8 |
++                     ((pixel & 0xff) + (under & 0xff) * (255 - alpha) / 255);
++        }
++    }
++}
++
+ /*****************************************************************************
+  *           UpdateLayeredWindow (win32u.@)
+  */
+@@ -2659,6 +2753,8 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+     struct window_surface *surface;
+     RECT surface_rect;
+     SIZE offset;
++    BOOL deferred = FALSE;
++    HWND tray = 0;
+     BOOL ret = FALSE;
+ 
+     if (flags & ~(ULW_COLORKEY | ULW_ALPHA | ULW_OPAQUE | ULW_EX_NORESIZE) ||
+@@ -2706,7 +2802,12 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+     TRACE( "window %p new_rects %s\n", hwnd, debugstr_window_rects( &new_rects ) );
+ 
+     surface = get_window_surface( hwnd, swp_flags, TRUE, &new_rects, &surface_rect );
+-    apply_window_pos( hwnd, 0, swp_flags, surface, &new_rects, NULL );
++    /* Windows 7's Start button: draw the new image before the window moves or grows,
++     * so that it does not show the old image and black for a moment. */
++    if ((tray = get_tray_owner( hwnd )) && hdc_src && surface && surface != &dummy_surface)
++        deferred = TRUE;
++    else
++        apply_window_pos( hwnd, 0, swp_flags, surface, &new_rects, NULL );
+     if (!surface) return FALSE;
+ 
+     if (!hdc_src || surface == &dummy_surface)
+@@ -2718,16 +2819,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+     {
+         BLENDFUNCTION src_blend = { AC_SRC_OVER, 0, 255, 0 };
+         RECT rect = new_rects.window, src_rect;
++        HBITMAP background;
++        DWORD *background_bits = NULL;
++        POINT background_offset;
++        SIZE background_size;
+         HDC hdc = NULL;
+ 
+         OffsetRect( &rect, -rect.left, -rect.top );
+         intersect_rect( &rect, &rect, &surface_rect );
++        if (dirty) intersect_rect( &rect, &rect, dirty );
++        background = tray ? get_tray_background( tray, &background_offset, &background_size, &background_bits ) : 0;
+ 
+-        if (!(hdc = NtGdiCreateCompatibleDC( 0 ))) goto done;
++        if (!(hdc = NtGdiCreateCompatibleDC( 0 )))
++        {
++            if (background) NtGdiDeleteObjectApp( background );
++            if (deferred) apply_window_pos( hwnd, 0, swp_flags, surface, &new_rects, NULL );
++            goto done;
++        }
+         window_surface_lock( surface );
+         NtGdiSelectBitmap( hdc, surface->color_bitmap );
+ 
+-        if (dirty) intersect_rect( &rect, &rect, dirty );
+         NtGdiPatBlt( hdc, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, BLACKNESS );
+ 
+         src_rect = rect;
+@@ -2737,10 +2848,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+         ret = NtGdiAlphaBlend( hdc, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
+                                hdc_src, src_rect.left, src_rect.top, src_rect.right - src_rect.left, src_rect.bottom - src_rect.top,
+                                *(DWORD *)&src_blend, 0 );
+-        if (ret) add_bounds_rect( &surface->bounds, &rect );
++        /* deferred: apply_window_pos flushes the surface before the window has its new
++         * geometry; mark the image to be flushed only after that */
++        if (ret && !deferred) add_bounds_rect( &surface->bounds, &rect );
+ 
+         NtGdiDeleteObjectApp( hdc );
++        if (ret && background)
++            blend_tray_background( surface, &rect, &new_rects.window, background_offset, background_size,
++                                   background_bits );
+         window_surface_unlock( surface );
++        if (background) NtGdiDeleteObjectApp( background );
++        if (deferred)
++        {
++            apply_window_pos( hwnd, 0, swp_flags, surface, &new_rects, NULL );
++            if (ret)
++            {
++                window_surface_lock( surface );
++                add_bounds_rect( &surface->bounds, &rect );
++                window_surface_unlock( surface );
++            }
++        }
+ 
+         if (!(flags & ULW_COLORKEY)) key = CLR_INVALID;
+         window_surface_set_layered( surface, key, -1, 0xff000000 );
+diff --git a/dlls/winex11.drv/window.c b/dlls/winex11.drv/window.c
+index 9ad98c8..8161ea7 100644
+--- a/dlls/winex11.drv/window.c
++++ b/dlls/winex11.drv/window.c
+@@ -432,6 +432,25 @@ static struct x11drv_win_data *alloc_win_data( Display *display, HWND hwnd )
+ }
+ 
+ 
++/* Windows 7's Start button (WIN4WINE_SHELL is win7): a layered window owned by the
++ * taskbar. It grows to show its hover glow; unmanaged, it is resized together with
++ * its new image instead of after a window manager round trip, which showed black
++ * for a moment. */
++BOOL is_windows7_tray_layered( HWND hwnd )
++{
++    static const WCHAR trayW[] = {'S','h','e','l','l','_','T','r','a','y','W','n','d'};
++    const char *shell = getenv( "WIN4WINE_SHELL" );
++    WCHAR buffer[64];
++    UNICODE_STRING name = { 0, sizeof(buffer), buffer };
++    HWND owner;
++
++    if (!win4wine_external_shell() || !shell || strcasecmp( shell, "win7" )) return FALSE;
++    if (!(NtUserGetWindowLongW( hwnd, GWL_EXSTYLE ) & WS_EX_LAYERED)) return FALSE;
++    if (!(owner = NtUserGetWindowRelative( hwnd, GW_OWNER ))) return FALSE;
++    name.Length = NtUserGetClassName( owner, FALSE, &name ) * sizeof(WCHAR);
++    return name.Length == sizeof(trayW) && !memcmp( buffer, trayW, sizeof(trayW) );
++}
++
+ /***********************************************************************
+  *		is_window_managed
+  *
+@@ -446,6 +465,7 @@ static BOOL is_window_managed( HWND hwnd, UINT swp_flags, BOOL fullscreen )
+     /* child windows are not managed */
+     style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
+     if ((style & (WS_CHILD|WS_POPUP)) == WS_CHILD) return FALSE;
++    if (is_windows7_tray_layered( hwnd )) return FALSE;
+     /* activated windows are managed */
+     if (!(swp_flags & (SWP_NOACTIVATE|SWP_HIDEWINDOW))) return TRUE;
+     if (hwnd == get_active_window()) return TRUE;
+@@ -1660,6 +1680,10 @@ static void window_set_config( struct x11drv_win_data *data, RECT rect, BOOL abo
+     TRACE( "window %p/%lx, requesting config %s mask %#x above %u, serial %lu\n", data->hwnd, data->whole_window,
+            wine_dbgstr_rect(new_rect), mask, above, data->configure_serial );
+     XReconfigureWMWindow( data->display, data->whole_window, data->vis.screen, mask, &changes );
++    /* The new image of Windows 7's Start button goes through gdi_display: let the
++     * server apply the new geometry first, so that the image is not drawn in the old
++     * one and the new part does not stay black. */
++    if ((mask & (CWWidth | CWHeight)) && is_windows7_tray_layered( data->hwnd )) XSync( data->display, False );
+ }
+ 
+ /***********************************************************************
+diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
+index 2440dfe..590b0f7 100644
+--- a/dlls/winex11.drv/x11drv.h
++++ b/dlls/winex11.drv/x11drv.h
+@@ -716,6 +716,7 @@ extern void window_net_wm_state_notify( struct x11drv_win_data *data, unsigned l
+ extern void window_wm_hints_notify( struct x11drv_win_data *data, unsigned long serial, const XWMHints *hints );
+ extern void window_mwm_hints_notify( struct x11drv_win_data *data, unsigned long serial, const MwmHints *hints );
+ extern void window_wm_normal_hints_notify( struct x11drv_win_data *data, unsigned long serial, const XSizeHints *hints );
++extern BOOL is_windows7_tray_layered( HWND hwnd );
+ extern void window_configure_notify( struct x11drv_win_data *data, unsigned long serial, const RECT *rect );
+ 
+ extern void set_net_active_window( HWND hwnd, HWND previous );

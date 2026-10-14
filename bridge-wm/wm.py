@@ -81,6 +81,7 @@ class Manager:
         # redirected window's every resize costs a new off-screen image,
         # which made resizing a native client several times slower in a VM.
         self.redirect = redirect and self.d.has_extension('Composite')
+        self.start_buttons = {}  # override-redirect Windows 7 Start buttons, kept above the taskbar
         # Windows without a cursor of their own, such as the menus of Linux
         # applications while they hold the pointer, show the root's: an
         # arrow, as window managers set, instead of the X server's cross.
@@ -455,6 +456,13 @@ class Manager:
         for c in self.clients.values():
             if c['kind'] == 'dock' and not c['hidden']:
                 c['w'].configure(stack_mode=X.Above)
+        # Windows 7's Start button is an unmanaged (override-redirect) window of
+        # its own over the taskbar; raising the taskbar must not cover it.
+        for w in list(self.start_buttons.values()):
+            try:
+                w.configure(stack_mode=X.Above)
+            except error.XError:
+                self.start_buttons.pop(w.id, None)
         # Win32 topmost windows (EWMH above), such as XP's dimmed shut down
         # screen, cover the topmost taskbar; keep their transients above them.
         above = self.atom('_NET_WM_STATE_ABOVE')
@@ -833,6 +841,14 @@ class Manager:
         if e.type == X.MapRequest:
             self.manage(e.window)
         elif e.type == X.MapNotify:
+            if e.override and e.window.id not in self.start_buttons:
+                try:
+                    cls = bytes(self.prop(e.window, '_WIN4WINE_CLASS')).strip(b'\0').lower()
+                except error.XError:
+                    cls = b''
+                if cls == b'win4winestartbutton':
+                    self.start_buttons[e.window.id] = e.window
+                    self.restack()
             c = self.clients.get(e.window.id)
             if c and (c['kind'] == 'popup' or c['kind'] == 'normal' and self.active == e.window.id):
                 # Wine defers WM_TAKE_FOCUS while waiting for the initial map acknowledgement.
@@ -858,6 +874,7 @@ class Manager:
             if c and c['kind'] == 'dock':
                 self.workarea()
         elif e.type == X.DestroyNotify:
+            self.start_buttons.pop(e.window.id, None)
             self.unmanage(e.window.id)
         elif e.type == X.UnmapNotify:
             c = self.clients.get(e.window.id)
