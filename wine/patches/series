@@ -87,3 +87,4 @@
 0087-xmllite-utf16-input.patch
 0088-dlls-windows7-folder-windows.patch
 0089-combase-surrogate-bitness.patch
+0090-uxtheme-window-theme-attribute.patch

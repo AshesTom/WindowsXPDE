@@ -27,13 +27,15 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 3
+VERSION = 4
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
 # Windows 7's names of shell items whose registration wine.inf writes with Wine's own string.
 NAMES = (
     ('{20D04FE0-3AEA-1069-A2D8-08002B30309D}', r'@%SystemRoot%\system32\shell32.dll,-9216'),  # Computer
     ('{21EC2020-3AEA-1069-A2DD-08002B30309D}', r'@%SystemRoot%\system32\shell32.dll,-4161'),  # Control Panel
+    # Network names itself in NetworkExplorer.dll, which is not installed; shell32 has the same name.
+    ('{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}', r'@%SystemRoot%\system32\shell32.dll,-9217'),  # Network
     # Help and Support names itself in explorer.exe; %SystemRoot%\explorer.exe is Wine's.
     ('{2559a1f1-21d7-11d4-bdaf-00c04f60b9f0}', r'@C:\w7\w7-explorer.exe,-7021'),
 )

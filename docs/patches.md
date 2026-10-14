@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 89 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 90 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -177,6 +177,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0087 | xmllite: 16 KB を超える UTF-16 の入力を読む。UTF-16 のときだけ、変換した生のバッファを空けておらず、3 回目の読み込みで同じ 8 KB をもう一度写していた（Windows 7 の DirectUI が UTF-16 で渡すフォルダの窓の UIFILE が途中で壊れ、Win+E の窓が出る前に閉じた）。Wine の xmllite の reader のテスト（2145 件）は通る | なし |
 | 0088 | ieframe, dsrole, samcli, ntshrui: Windows 7 のフォルダの窓のために。ieframe に ordinal 158・159（SHRestricted2A/W。Windows 7 の shdocvw が転送する）。新しい組み込みの dsrole.dll と samcli.dll（netapi32 への転送）と ntshrui.dll（共有しているフォルダは無い、と答える）。Windows 7 の shell32 と linkinfo が遅延読み込みする | なし |
 | 0089 | combase: DLL の代理プロセス（dllhost）を、クラスが登録されている側のビット数で起動する。64bit のプログラムは、64bit 側に登録されたクラスでも常に SysWOW64 の 32bit の dllhost を起動していた（Windows 7 のサムネイルのキャッシュのサーバーが読み込めなかった） | なし |
+| 0090 | uxtheme: SetWindowThemeAttribute（WTA_NONCLIENT）の WTNCA_NODRAWCAPTION と WTNCA_NODRAWICON を覚え、外部のシェルのテーマの枠（0043）がタイトルの文字とアイコンを省く（Windows 7 のフォルダの窓はタイトルバーに何も出さない）。今までは stub だった | なし |
 
 ## 並び順の考え方
 
