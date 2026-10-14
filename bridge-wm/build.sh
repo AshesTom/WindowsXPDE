@@ -23,6 +23,9 @@ compile "$root/.local/bridge/inspect.exe" "$root/bridge-wm/inspect.c" -luser32 -
 compile "$root/.local/bridge/menu-settings.exe" "$root/prefix/menu-settings.c" -lshell32
 compile "$root/.local/bridge/theme-settings.exe" "$root/prefix/theme-settings.c" -luxtheme
 compile "$root/.local/bridge/wallpaper-convert.exe" -municode "$root/prefix/wallpaper-convert.c" -lole32 -luuid -lwindowscodecs
+# Windows 7's shell prefix (prefix/win7.py).
+compile "$root/.local/bridge/mui-merge.exe" "$root/prefix/mui-merge.c"
+compile "$root/.local/bridge/theme-fonts.exe" "$root/prefix/theme-fonts.c" -luxtheme
 # Linux applications in the XP Start menu (session/linux_apps.py).
 compile "$root/.local/bridge/linux-launch.exe" "$root/session/linux-launch.c" -mwindows -luser32
 compile "$root/.local/bridge/linux-links.exe" "$root/session/linux-links.c" -lole32 -lshell32 -luuid
