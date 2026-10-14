@@ -277,6 +277,13 @@ static void key_input(INPUT *input, WORD vk, BOOL up)
     if (vk == VK_LWIN) input->ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
 }
 
+static BOOL windows7_shell(void)
+{
+    WCHAR value[8];
+    DWORD len = GetEnvironmentVariableW(L"WIN4WINE_SHELL", value, ARRAYSIZE(value));
+    return len && len < ARRAYSIZE(value) && !lstrcmpiW(value, L"win7");
+}
+
 static void shell_key_events(BOOL start)
 {
     static unsigned seen;
@@ -295,7 +302,14 @@ static void shell_key_events(BOOL start)
         return;
     }
     seen = number;
-    if (!strcmp(kind, "ctrl-escape"))
+    /* Windows 7's Start menu closes again when the Escape key's release
+     * reaches it; the Windows key alone opens it as Ctrl+Esc does. */
+    if (!strcmp(kind, "ctrl-escape") && windows7_shell())
+    {
+        key_input(&inputs[count++], VK_LWIN, FALSE);
+        key_input(&inputs[count++], VK_LWIN, TRUE);
+    }
+    else if (!strcmp(kind, "ctrl-escape"))
     {
         key_input(&inputs[count++], VK_CONTROL, FALSE);
         key_input(&inputs[count++], VK_ESCAPE, FALSE);
@@ -556,12 +570,6 @@ static void frame_geometry(void)
  * atom of the ID, as a probe with Windows 7's shell32 shows (EnumPropsEx). */
 static const WCHAR app_id_property[] = L"{9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3} 5";
 
-static BOOL windows7_shell(void)
-{
-    WCHAR value[8];
-    DWORD len = GetEnvironmentVariableW(L"WIN4WINE_SHELL", value, ARRAYSIZE(value));
-    return len && len < ARRAYSIZE(value) && !lstrcmpiW(value, L"win7");
-}
 
 static void client_app_id(struct client *c)
 {

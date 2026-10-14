@@ -1,0 +1,182 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] dwmapi, combase, ole32: what Windows 7's shell needs for the Windows key and folder windows
+
+Purpose: open Windows 7's Start menu with the Windows key, and get
+Windows 7's folder windows (Win+E) further.
+Windows 7 behavior: when its task switcher gets HSHELL_TASKMAN (the
+Windows key, 0023), the taskbar calls dwmapi's DwmpActivateLivePreview
+(ordinal 113) before it opens the Start menu. Opening a folder window,
+explorer registers in the global interface table its own objects'
+interfaces that their QueryInterface does not give (for example
+IBrowserProgressAggregator), and its proxies (actxprxy.dll) import the
+NDR64 names of ole32's user marshal functions (HWND_UserSize64, ...).
+Wine before: DwmpActivateLivePreview was a stub and the shell ended at the
+Windows key; the free-threaded marshaler asks the object for the
+interface even within the process and failed with E_NOINTERFACE, which
+explorer showed as "ファイル システムのエラーです"; the NDR64 names were
+missing, so Windows 7's proxies could not marshal.
+Change: on 64-bit, DwmpActivateLivePreview returns S_OK without reading
+its arguments (there is no desktop composition, so no preview; the
+caller passes the arguments in registers and removes them); it stays a
+stub on 32-bit. With WIN4WINE_SHELL=win7, the free-threaded marshaler
+passes the given pointer within the process when the object's
+QueryInterface does not give the interface. On 64-bit, ole32 exports
+HACCEL, HBITMAP, HGLOBAL, HICON, HMENU and HWND _UserSize64,
+_UserMarshal64, _UserUnmarshal64 and _UserFree64 as the classic
+functions, as 0078 does for oleaut32.
+Evidence: Windows 7 SP1 x64 explorer.exe opens its Start menu for the
+Windows key and Ctrl+Esc; Win+E creates the folder window (CabinetWClass)
+with Windows 7's actxprxy.dll loaded for its interfaces. The folder
+window does not show yet.
+Scope: the marshaler change only with WIN4WINE_SHELL=win7; the other
+changes are new 64-bit exports.
+---
+ dlls/combase/marshal.c    | 18 ++++++++++++++++++
+ dlls/dwmapi/dwmapi.spec   |  3 ++-
+ dlls/dwmapi/dwmapi_main.c | 15 +++++++++++++++
+ dlls/ole32/ole32.spec     | 24 ++++++++++++++++++++++++
+ 4 files changed, 59 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/combase/marshal.c b/dlls/combase/marshal.c
+index f638604..69a4778 100644
+--- a/dlls/combase/marshal.c
++++ b/dlls/combase/marshal.c
+@@ -299,6 +299,14 @@ static HRESULT WINAPI ftmarshaler_GetMarshalSizeMax(IMarshal *iface, REFIID riid
+     return hr;
+ }
+ 
++/* Windows 7's shell (win4wine: WIN4WINE_SHELL is win7). */
++static BOOL windows7_shell(void)
++{
++    WCHAR value[8];
++    DWORD len = GetEnvironmentVariableW(L"WIN4WINE_SHELL", value, ARRAY_SIZE(value));
++    return len && len < ARRAY_SIZE(value) && !wcsicmp(value, L"win7");
++}
++
+ static HRESULT WINAPI ftmarshaler_MarshalInterface(IMarshal *iface, IStream *stream, REFIID riid,
+         void *pv, DWORD dest_context, void *pvDestContext, DWORD mshlflags)
+ {
+@@ -317,6 +325,16 @@ static HRESULT WINAPI ftmarshaler_MarshalInterface(IMarshal *iface, IStream *str
+ 
+         data.value = 0;
+         hr = IUnknown_QueryInterface((IUnknown *)pv, riid, (void **)&data.object);
++        if (FAILED(hr) && windows7_shell())
++        {
++            /* Windows 7's explorer registers in the global interface table
++             * interfaces of its own objects that their QueryInterface does
++             * not give (IBrowserProgressAggregator, opening a folder window);
++             * within the process the pointer is passed as it is. */
++            data.object = pv;
++            IUnknown_AddRef(data.object);
++            hr = S_OK;
++        }
+         if (FAILED(hr))
+             return hr;
+ 
+diff --git a/dlls/dwmapi/dwmapi.spec b/dlls/dwmapi/dwmapi.spec
+index d899a7a..0c07842 100644
+--- a/dlls/dwmapi/dwmapi.spec
++++ b/dlls/dwmapi/dwmapi.spec
+@@ -10,7 +10,8 @@
+ 109 stub -noname DwmpOpenGraphicsStream
+ 110 stub -noname DwmpCloseGraphicsStream
+ 112 stub -noname DwmpSetGraphicsStreamTransformHint
+-113 stub -noname DwmpActivateLivePreview
++113 stdcall -noname -arch=win64 DwmpActivateLivePreview()
++113 stub -noname -arch=win32 DwmpActivateLivePreview
+ 114 stub -noname DwmpQueryThumbnailType
+ 115 stub -noname DwmpStartupViaUserInit
+ 118 stub -noname DwmpGetAssessment
+diff --git a/dlls/dwmapi/dwmapi_main.c b/dlls/dwmapi/dwmapi_main.c
+index 4b881b4..1037dd7 100644
+--- a/dlls/dwmapi/dwmapi_main.c
++++ b/dlls/dwmapi/dwmapi_main.c
+@@ -376,3 +376,18 @@ HRESULT WINAPI DwmpGetColorizationParameters(void *params)
+     FIXME("(%p) stub\n", params);
+     return E_NOTIMPL;
+ }
++
++/**********************************************************************
++ *           DwmpActivateLivePreview         (DWMAPI.113)
++ *
++ * Windows 7's taskbar calls it (for example when the task list opens) to
++ * start or end a window preview. There is no desktop composition here, so
++ * there is no preview. Its arguments have no public description; on 64-bit
++ * the caller passes them in registers and removes them itself, so returning
++ * without reading them is safe.
++ */
++HRESULT WINAPI DwmpActivateLivePreview(void)
++{
++    TRACE( "\n" );
++    return S_OK;
++}
+diff --git a/dlls/ole32/ole32.spec b/dlls/ole32/ole32.spec
+index c600bc3..1359493 100644
+--- a/dlls/ole32/ole32.spec
++++ b/dlls/ole32/ole32.spec
+@@ -126,13 +126,21 @@
+ @ stub GetHookInterface
+ @ stdcall GetRunningObjectTable(long ptr)
+ @ stdcall HACCEL_UserFree(ptr ptr) combase.HACCEL_UserFree
++@ stdcall -arch=win64 HACCEL_UserFree64(ptr ptr) combase.HACCEL_UserFree
+ @ stdcall HACCEL_UserMarshal(ptr ptr ptr) combase.HACCEL_UserMarshal
++@ stdcall -arch=win64 HACCEL_UserMarshal64(ptr ptr ptr) combase.HACCEL_UserMarshal
+ @ stdcall HACCEL_UserSize(ptr long ptr) combase.HACCEL_UserSize
++@ stdcall -arch=win64 HACCEL_UserSize64(ptr long ptr) combase.HACCEL_UserSize
+ @ stdcall HACCEL_UserUnmarshal(ptr ptr ptr) combase.HACCEL_UserUnmarshal
++@ stdcall -arch=win64 HACCEL_UserUnmarshal64(ptr ptr ptr) combase.HACCEL_UserUnmarshal
+ @ stdcall HBITMAP_UserFree(ptr ptr) combase.HBITMAP_UserFree
++@ stdcall -arch=win64 HBITMAP_UserFree64(ptr ptr) combase.HBITMAP_UserFree
+ @ stdcall HBITMAP_UserMarshal(ptr ptr ptr) combase.HBITMAP_UserMarshal
++@ stdcall -arch=win64 HBITMAP_UserMarshal64(ptr ptr ptr) combase.HBITMAP_UserMarshal
+ @ stdcall HBITMAP_UserSize(ptr long ptr) combase.HBITMAP_UserSize
++@ stdcall -arch=win64 HBITMAP_UserSize64(ptr long ptr) combase.HBITMAP_UserSize
+ @ stdcall HBITMAP_UserUnmarshal(ptr ptr ptr) combase.HBITMAP_UserUnmarshal
++@ stdcall -arch=win64 HBITMAP_UserUnmarshal64(ptr ptr ptr) combase.HBITMAP_UserUnmarshal
+ @ stdcall HBRUSH_UserFree(ptr ptr) combase.HBRUSH_UserFree
+ @ stdcall HBRUSH_UserMarshal(ptr ptr ptr) combase.HBRUSH_UserMarshal
+ @ stdcall HBRUSH_UserSize(ptr long ptr) combase.HBRUSH_UserSize
+@@ -146,17 +154,29 @@
+ @ stdcall HENHMETAFILE_UserSize(ptr long ptr)
+ @ stdcall HENHMETAFILE_UserUnmarshal(ptr ptr ptr)
+ @ stdcall HGLOBAL_UserFree(ptr ptr) combase.HGLOBAL_UserFree
++@ stdcall -arch=win64 HGLOBAL_UserFree64(ptr ptr) combase.HGLOBAL_UserFree
+ @ stdcall HGLOBAL_UserMarshal(ptr ptr ptr) combase.HGLOBAL_UserMarshal
++@ stdcall -arch=win64 HGLOBAL_UserMarshal64(ptr ptr ptr) combase.HGLOBAL_UserMarshal
+ @ stdcall HGLOBAL_UserSize(ptr long ptr) combase.HGLOBAL_UserSize
++@ stdcall -arch=win64 HGLOBAL_UserSize64(ptr long ptr) combase.HGLOBAL_UserSize
+ @ stdcall HGLOBAL_UserUnmarshal(ptr ptr ptr) combase.HGLOBAL_UserUnmarshal
++@ stdcall -arch=win64 HGLOBAL_UserUnmarshal64(ptr ptr ptr) combase.HGLOBAL_UserUnmarshal
+ @ stdcall HICON_UserFree(ptr ptr) combase.HICON_UserFree
++@ stdcall -arch=win64 HICON_UserFree64(ptr ptr) combase.HICON_UserFree
+ @ stdcall HICON_UserMarshal(ptr ptr ptr) combase.HICON_UserMarshal
++@ stdcall -arch=win64 HICON_UserMarshal64(ptr ptr ptr) combase.HICON_UserMarshal
+ @ stdcall HICON_UserSize(ptr long ptr) combase.HICON_UserSize
++@ stdcall -arch=win64 HICON_UserSize64(ptr long ptr) combase.HICON_UserSize
+ @ stdcall HICON_UserUnmarshal(ptr ptr ptr) combase.HICON_UserUnmarshal
++@ stdcall -arch=win64 HICON_UserUnmarshal64(ptr ptr ptr) combase.HICON_UserUnmarshal
+ @ stdcall HMENU_UserFree(ptr ptr) combase.HMENU_UserFree
++@ stdcall -arch=win64 HMENU_UserFree64(ptr ptr) combase.HMENU_UserFree
+ @ stdcall HMENU_UserMarshal(ptr ptr ptr) combase.HMENU_UserMarshal
++@ stdcall -arch=win64 HMENU_UserMarshal64(ptr ptr ptr) combase.HMENU_UserMarshal
+ @ stdcall HMENU_UserSize(ptr long ptr) combase.HMENU_UserSize
++@ stdcall -arch=win64 HMENU_UserSize64(ptr long ptr) combase.HMENU_UserSize
+ @ stdcall HMENU_UserUnmarshal(ptr ptr ptr) combase.HMENU_UserUnmarshal
++@ stdcall -arch=win64 HMENU_UserUnmarshal64(ptr ptr ptr) combase.HMENU_UserUnmarshal
+ @ stdcall HMETAFILEPICT_UserFree(ptr ptr)
+ @ stdcall HMETAFILEPICT_UserMarshal(ptr ptr ptr)
+ @ stdcall HMETAFILEPICT_UserSize(ptr long ptr)
+@@ -170,9 +190,13 @@
+ @ stdcall HPALETTE_UserSize(ptr long ptr) combase.HPALETTE_UserSize
+ @ stdcall HPALETTE_UserUnmarshal(ptr ptr ptr) combase.HPALETTE_UserUnmarshal
+ @ stdcall HWND_UserFree(ptr ptr) combase.HWND_UserFree
++@ stdcall -arch=win64 HWND_UserFree64(ptr ptr) combase.HWND_UserFree
+ @ stdcall HWND_UserMarshal(ptr ptr ptr) combase.HWND_UserMarshal
++@ stdcall -arch=win64 HWND_UserMarshal64(ptr ptr ptr) combase.HWND_UserMarshal
+ @ stdcall HWND_UserSize(ptr long ptr) combase.HWND_UserSize
++@ stdcall -arch=win64 HWND_UserSize64(ptr long ptr) combase.HWND_UserSize
+ @ stdcall HWND_UserUnmarshal(ptr ptr ptr) combase.HWND_UserUnmarshal
++@ stdcall -arch=win64 HWND_UserUnmarshal64(ptr ptr ptr) combase.HWND_UserUnmarshal
+ @ stdcall IIDFromString(wstr ptr) combase.IIDFromString
+ @ stub I_RemoteMain
+ @ stdcall IsAccelerator(long long ptr ptr)
