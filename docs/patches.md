@@ -170,7 +170,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0080 | user32, samlib: Windows 7 のスタートメニューが開くようにする。user32 に RegisterMessagePumpHook・UnregisterMessagePumpHook を足す（フックに user32 の関数の表を渡して登録だけを数える。ReactOS と同じく、メッセージの関数はフックを通さない。無いと検索欄の部分の作成が失敗し、スタートメニュー全体が壊される）。samlib の SamConnect は失敗を返し（SAM は無い）、SamCloseHandle と SamFreeMemory は成功を返す | なし |
 | 0081 | server: ファイルとフォルダに付けた DACL を拡張属性 `user.wine.dacl` に残し、セキュリティを読むときにそれを返す（所有者とグループは今までどおり Unix の所有者から）。Windows 7 の shell32 はごみ箱のフォルダの DACL を自分の付けたものと比べ、違うと「ごみ箱が壊れています」と出す | あり（`WIN4WINE_SHELL=win7`） |
 | 0082 | uxtheme: Windows 7 のタスクバーが自分で通知領域と時計を描く。`WIN4WINE_SHELL=win7` では 0053（DrawThemeParentBackground で通知領域の背景だけを描く）と 0054（時計の差し替え）をしない（Windows 7 の通知領域の背景は半透明で、黒くなり、時刻が二重になった）。BeginBufferedPaint の BP_PAINTPARAMS（BPPF_ERASE、prcExclude、pBlendFunction での AlphaBlend）、BufferedPaintClear、BufferedPaintSetAlpha を文書どおりに | 一部あり（`WIN4WINE_SHELL=win7`） |
-| 0083 | win32u, winex11, comctl32: Windows 7 のスタートボタン（タスクバーが持ち主のレイヤードウィンドウ）とスタートメニューのユーザーの写真を描く。半透明の画素を持ち主の窓が出している画素（その surface の写し）と合成し、持ち主の外やまだ描かれていない所ではアルファが 128 未満の画素を抜いてほかは乗算を戻す（合成のマネージャーが無いと縁が黒いギザギザになった）。ホバーで窓が伸びるときは、新しい画像を描いてから大きさを変え、その後で送り出す。窓は WM の管理にせず、大きさを変えたら画像の前に X と同期する（伸びた所が一瞬黒くなった）。0040 のスタートボタンのクラスは、レイヤードの窓には描かない | あり（`WIN4WINE_SHELL=win7`） |
+| 0083 | win32u, winex11, comctl32: Windows 7 のスタートボタン（タスクバーが持ち主のレイヤードウィンドウ）とスタートメニューのユーザーの写真を描く。半透明の画素を持ち主の窓が出している画素（その surface の写し）と合成し、持ち主の外やまだ描かれていない所ではアルファが 128 未満の画素を抜いてほかは乗算を戻す（元の画像を覚えておき、持ち主が新しく描いたら合成し直す）（合成のマネージャーが無いと縁が黒いギザギザになった）。ホバーで窓が伸びるときは、新しい画像を描いてから大きさを変え、その後で送り出す。窓は WM の管理にせず、大きさを変えたら画像の前に X と同期する（伸びた所が一瞬黒くなった）。0040 のスタートボタンのクラスは、レイヤードの窓には描かない | あり（`WIN4WINE_SHELL=win7`） |
 
 ## 並び順の考え方
 

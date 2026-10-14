@@ -31,7 +31,9 @@ blended with what the owner shows under them (a copy of the owner's
 window surface, where its children draw too); where that is not known
 (outside the owner, or where the owner has not drawn yet, as for the
 picture made before the menu is first shown), pixels with alpha below 128
-are left out and the others are shown unpremultiplied.
+are left out and the others are shown unpremultiplied. The premultiplied
+image is kept, and when the owner's surface shows new pixels the window
+is blended again with them.
 UpdateLayeredWindow draws the new image first, then applies the new
 geometry, and marks the image to be flushed after that.
 winex11: the window is not managed (no window manager round trip) and the
@@ -40,19 +42,21 @@ comctl32: the Start button class does not draw on a layered window.
 Evidence: Windows 7 SP1 x64 explorer.exe; the edge matches the taskbar's
 background at rest and with the glow; in 8 hover cycles captured with 6
 screenshots each (96 frames) no frame shows black, and the glow fades in
-and out. The user picture shows its frame without a dark border (its
-shadow is left out). bridge-wm keeps these unmanaged windows above the
+and out. The user picture's frame edge is blended with the Start menu
+once the menu has drawn. bridge-wm keeps these unmanaged windows above the
 taskbar and the Start menu.
 Scope: only with WIN4WINE_SHELL=win7 and WIN4WINE_EXTERNAL_SHELL, and only
 for layered windows that the taskbar or the Start menu owns (the window
 manager change only for the taskbar's). XP's Start button is a child
 of the taskbar and is not layered.
 ---
- dlls/comctl32_v6/button.c |  24 +++++++-
- dlls/win32u/window.c      | 146 ++++++++++++++++++++++++++++++++++++++++++++--
- dlls/winex11.drv/window.c |  24 ++++++++
- dlls/winex11.drv/x11drv.h |   1 +
- 4 files changed, 190 insertions(+), 5 deletions(-)
+ dlls/comctl32_v6/button.c    |  24 +++-
+ dlls/win32u/dce.c            |   4 +
+ dlls/win32u/win32u_private.h |   2 +
+ dlls/win32u/window.c         | 265 ++++++++++++++++++++++++++++++++++++++++++-
+ dlls/winex11.drv/window.c    |  24 ++++
+ dlls/winex11.drv/x11drv.h    |   1 +
+ 6 files changed, 315 insertions(+), 5 deletions(-)
 
 diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
 index 24da589..97e0b5e 100644
@@ -113,11 +117,49 @@ index 24da589..97e0b5e 100644
          {
              HDC hdc = GetDC(hWnd);
              HBRUSH hbrush;
+diff --git a/dlls/win32u/dce.c b/dlls/win32u/dce.c
+index 38fe9dd..9d34962 100644
+--- a/dlls/win32u/dce.c
++++ b/dlls/win32u/dce.c
+@@ -616,6 +616,7 @@ W32KAPI void window_surface_flush( struct window_surface *surface )
+     BITMAPINFO *color_info = (BITMAPINFO *)color_buf;
+     BITMAPINFO *shape_info = (BITMAPINFO *)shape_buf;
+     RECT dirty = surface->rect, bounds;
++    BOOL flushed = FALSE;
+     void *color_bits;
+ 
+     window_surface_lock( surface );
+@@ -639,9 +640,12 @@ W32KAPI void window_surface_flush( struct window_surface *surface )
+         if (surface->funcs->flush( surface, &surface->rect, &dirty, color_info, color_bits,
+                                    shape_changed, shape_info, shape_bits ))
+             reset_bounds( &surface->bounds );
++        flushed = TRUE;
+     }
+ 
+     window_surface_unlock( surface );
++    /* Windows 7's shell: layered windows over this one blend with its new pixels */
++    if (flushed && have_shell_overlays()) blend_shell_overlays( surface );
+ }
+ 
+ W32KAPI void window_surface_set_layered( struct window_surface *surface, COLORREF color_key, UINT alpha_bits, UINT alpha_mask )
+diff --git a/dlls/win32u/win32u_private.h b/dlls/win32u/win32u_private.h
+index 71b4976..dab6f7b 100644
+--- a/dlls/win32u/win32u_private.h
++++ b/dlls/win32u/win32u_private.h
+@@ -266,6 +266,8 @@ extern HWND get_hwnd_message_parent(void);
+ extern UINT get_window_dpi_awareness_context( HWND hwnd );
+ extern MINMAXINFO get_min_max_info( HWND hwnd );
+ extern HWND get_window_relative( HWND hwnd, UINT rel );
++extern BOOL have_shell_overlays(void);
++extern void blend_shell_overlays( struct window_surface *owner );
+ extern DWORD get_window_thread( HWND hwnd, DWORD *process );
+ extern HWND is_current_process_window( HWND hwnd );
+ extern HWND is_current_thread_window( HWND hwnd );
 diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
-index 7333a83..3adf3fb 100644
+index 7333a83..d4ab030 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
-@@ -2646,6 +2646,111 @@ BOOL WINAPI NtUserSetLayeredWindowAttributes( HWND hwnd, COLORREF key, BYTE alph
+@@ -2646,6 +2646,226 @@ BOOL WINAPI NtUserSetLayeredWindowAttributes( HWND hwnd, COLORREF key, BYTE alph
      return ret;
  }
  
@@ -226,10 +268,125 @@ index 7333a83..3adf3fb 100644
 +    }
 +}
 +
++/* The premultiplied images of those windows, to blend them again when their owner
++ * shows new pixels: the Start menu's user picture is made before the menu draws. */
++struct shell_overlay
++{
++    struct list entry;
++    HWND owner;
++    struct window_surface *surface;  /* the overlay's surface, referenced */
++    RECT rect;     /* in the window */
++    RECT window;   /* the window on the screen */
++    DWORD *bits;   /* rect's pixels, top-down */
++};
++static struct list shell_overlays = LIST_INIT( shell_overlays );
++static pthread_mutex_t shell_overlays_lock = PTHREAD_MUTEX_INITIALIZER;
++
++/* copy rect of a 32 bpp surface, top-down; the surface is locked */
++static DWORD *copy_surface_rect( struct window_surface *surface, const RECT *rect )
++{
++    char buffer[FIELD_OFFSET( BITMAPINFO, bmiColors[256] )];
++    BITMAPINFO *info = (BITMAPINFO *)buffer;
++    int y, width = rect->right - rect->left;
++    DWORD *color, *bits;
++
++    if (!(color = window_surface_get_color( surface, info )) || info->bmiHeader.biBitCount != 32) return NULL;
++    if (!(bits = malloc( width * (rect->bottom - rect->top) * sizeof(*bits) ))) return NULL;
++    for (y = rect->top; y < rect->bottom; y++)
++        memcpy( bits + (y - rect->top) * width,
++                color + (info->bmiHeader.biHeight < 0 ? y : info->bmiHeader.biHeight - 1 - y) * info->bmiHeader.biWidth
++                      + rect->left, width * sizeof(*bits) );
++    return bits;
++}
++
++static void restore_surface_rect( struct window_surface *surface, const RECT *rect, const DWORD *bits )
++{
++    char buffer[FIELD_OFFSET( BITMAPINFO, bmiColors[256] )];
++    BITMAPINFO *info = (BITMAPINFO *)buffer;
++    int y, width = rect->right - rect->left;
++    DWORD *color;
++
++    if (!(color = window_surface_get_color( surface, info )) || info->bmiHeader.biBitCount != 32) return;
++    for (y = rect->top; y < rect->bottom; y++)
++        memcpy( color + (info->bmiHeader.biHeight < 0 ? y : info->bmiHeader.biHeight - 1 - y) * info->bmiHeader.biWidth
++                      + rect->left, bits + (y - rect->top) * width, width * sizeof(*bits) );
++}
++
++static void save_shell_overlay( HWND owner, struct window_surface *surface, const RECT *rect, const RECT *window,
++                                DWORD *bits )
++{
++    struct shell_overlay *overlay;
++
++    pthread_mutex_lock( &shell_overlays_lock );
++    LIST_FOR_EACH_ENTRY( overlay, &shell_overlays, struct shell_overlay, entry )
++        if (overlay->surface->hwnd == surface->hwnd) break;
++    if (&overlay->entry == &shell_overlays)
++    {
++        if (!(overlay = calloc( 1, sizeof(*overlay) )))
++        {
++            pthread_mutex_unlock( &shell_overlays_lock );
++            free( bits );
++            return;
++        }
++        list_add_tail( &shell_overlays, &overlay->entry );
++    }
++    else window_surface_release( overlay->surface );
++    free( overlay->bits );
++    window_surface_add_ref( surface );
++    overlay->owner = owner;
++    overlay->surface = surface;
++    overlay->rect = *rect;
++    overlay->window = *window;
++    overlay->bits = bits;
++    pthread_mutex_unlock( &shell_overlays_lock );
++}
++
++/* OWNER flushed new pixels: blend its overlays again with them */
++void blend_shell_overlays( struct window_surface *owner )
++{
++    struct window_surface *flush[8];
++    struct shell_overlay *overlay;
++    DWORD *background = NULL;
++    POINT offset = {0};
++    SIZE size = {0};
++    unsigned int i, count = 0;
++
++    if (owner == &dummy_surface) return;
++    pthread_mutex_lock( &shell_overlays_lock );
++    LIST_FOR_EACH_ENTRY( overlay, &shell_overlays, struct shell_overlay, entry )
++    {
++        if (overlay->owner != owner->hwnd || overlay->surface == owner || count == ARRAY_SIZE(flush)) continue;
++        if (!background && !(background = get_tray_background( owner->hwnd, &offset, &size ))) break;
++        window_surface_lock( overlay->surface );
++        restore_surface_rect( overlay->surface, &overlay->rect, overlay->bits );
++        blend_tray_background( overlay->surface, &overlay->rect, &overlay->window, offset, size, background );
++        add_bounds_rect( &overlay->surface->bounds, &overlay->rect );
++        window_surface_unlock( overlay->surface );
++        window_surface_add_ref( overlay->surface );
++        flush[count++] = overlay->surface;
++    }
++    pthread_mutex_unlock( &shell_overlays_lock );
++    free( background );
++    for (i = 0; i < count; i++)
++    {
++        window_surface_flush( flush[i] );
++        window_surface_release( flush[i] );
++    }
++}
++
++BOOL have_shell_overlays(void)
++{
++    BOOL ret;
++    pthread_mutex_lock( &shell_overlays_lock );
++    ret = !list_empty( &shell_overlays );
++    pthread_mutex_unlock( &shell_overlays_lock );
++    return ret;
++}
++
  /*****************************************************************************
   *           UpdateLayeredWindow (win32u.@)
   */
-@@ -2659,6 +2764,8 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2659,6 +2879,8 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      struct window_surface *surface;
      RECT surface_rect;
      SIZE offset;
@@ -238,7 +395,7 @@ index 7333a83..3adf3fb 100644
      BOOL ret = FALSE;
  
      if (flags & ~(ULW_COLORKEY | ULW_ALPHA | ULW_OPAQUE | ULW_EX_NORESIZE) ||
-@@ -2706,7 +2813,12 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2706,7 +2928,12 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      TRACE( "window %p new_rects %s\n", hwnd, debugstr_window_rects( &new_rects ) );
  
      surface = get_window_surface( hwnd, swp_flags, TRUE, &new_rects, &surface_rect );
@@ -252,11 +409,11 @@ index 7333a83..3adf3fb 100644
      if (!surface) return FALSE;
  
      if (!hdc_src || surface == &dummy_surface)
-@@ -2718,16 +2830,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2718,16 +2945,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      {
          BLENDFUNCTION src_blend = { AC_SRC_OVER, 0, 255, 0 };
          RECT rect = new_rects.window, src_rect;
-+        DWORD *background;
++        DWORD *background, *overlay_bits = NULL;
 +        POINT background_offset;
 +        SIZE background_size;
          HDC hdc = NULL;
@@ -281,7 +438,7 @@ index 7333a83..3adf3fb 100644
          NtGdiPatBlt( hdc, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, BLACKNESS );
  
          src_rect = rect;
-@@ -2737,10 +2859,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2737,10 +2974,30 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
          ret = NtGdiAlphaBlend( hdc, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
                                 hdc_src, src_rect.left, src_rect.top, src_rect.right - src_rect.left, src_rect.bottom - src_rect.top,
                                 *(DWORD *)&src_blend, 0 );
@@ -292,9 +449,13 @@ index 7333a83..3adf3fb 100644
  
          NtGdiDeleteObjectApp( hdc );
 +        if (ret && tray)
++        {
++            overlay_bits = copy_surface_rect( surface, &rect );
 +            blend_tray_background( surface, &rect, &new_rects.window, background_offset, background_size,
 +                                   background );
++        }
          window_surface_unlock( surface );
++        if (overlay_bits) save_shell_overlay( tray, surface, &rect, &new_rects.window, overlay_bits );
 +        free( background );
 +        if (deferred)
 +        {
