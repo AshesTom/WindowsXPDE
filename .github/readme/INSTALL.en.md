@@ -36,6 +36,7 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `--wayland` | also install the Wayland session "XP Shell (Wine, Wayland)" (builds labwc and wlroots): a scale per monitor, scales such as 125% or 150%, XP frames for Wayland applications; with `--greeter` it becomes the Welcome screen's default session. **Even more experimental than the X11 session** (tested less, with known limits; [docs/wayland.md](../../docs/wayland.md)) |
 | `--wine-install DIR` | use a Wine built on another Debian 13 machine (a copy of its `.local/wine-install`) instead of building it here |
 | `--jobs N` | parallel jobs for the Wine build (default: the number of CPUs) |
+| `--no-shadowfb` | on a virtual machine, leave the way X draws as it is (step 8 of "2. What the script does") |
 | `--shell reactos` | set up ReactOS's shell instead of XP's (no `--media`; see "The ReactOS shell" below) |
 | `--lang ja\|en` | the ReactOS shell's language (default: `ja` if the current locale is Japanese, else `en`) |
 
@@ -51,8 +52,12 @@ If it fails, just run it again: finished steps are skipped. Everything it builds
 5. Generates the locale of that language (`ja_JP.UTF-8` or `en_US.UTF-8`).
 6. Creates the XP prefix (`.local/prefix`), with that XP's fonts and settings (see "English XP" below).
 7. Writes `~/.config/win4wine/session.json` and registers the session "XP Shell (Wine, X11)".
-8. With `--greeter`, installs XP's Welcome screen.
-9. With `--wayland`, builds labwc and wlroots with their patches (`.local/labwc-install`; log in `.local/labwc-build.log`)
+8. On a virtual machine whose virtual graphics card is slow to read back from (QEMU's standard VGA, Hyper-V, VirtualBox's
+   VBoxVGA and VBoxSVGA), makes X draw in memory first (`/etc/X11/xorg.conf.d/20-win4wine-shadowfb.conf`, modesetting's
+   ShadowFB). Moving windows then costs the X server about half or less. It applies to every X session of the machine.
+   `--no-shadowfb` skips it; virtio-gpu and VMware's virtual cards are left as they are.
+9. With `--greeter`, installs XP's Welcome screen.
+10. With `--wayland`, builds labwc and wlroots with their patches (`.local/labwc-install`; log in `.local/labwc-build.log`)
    and registers the session "XP Shell (Wine, Wayland)" too.
 
 ## English XP
@@ -134,6 +139,7 @@ Restart the display manager (or reboot).
 | `outputs` | (none) | the Wayland session's settings per output, e.g. `{"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}` (`mode` too; `wlr-randr` lists the names) |
 | `shell` | `xp` | `reactos` for ReactOS's shell (setup.sh writes it into `reactos-session.json`) |
 | `primary` | the leftmost output | the output the Wayland session makes Win32's primary monitor; XP's desktop and taskbar are on it |
+| `composite` | `true` | the X server keeps the contents of Wine's windows (Composite's automatic redirection): moving or closing a window no longer shows the Wine windows below black until they repaint. `false` turns it off |
 | `window_snap` | `false` | `true` lets windows snap to half of the screen (like Windows 7's Aero Snap; XP has no such thing): Win+Left/Right for the left or right half, Win+Up to maximize, Win+Down to restore or minimize; dragging a title bar to the left or right edge of the screen snaps it to that half, to the top edge maximizes it; dragging a maximized window's title bar restores it. Takes effect at the next login |
 
 ## Changing the look and the text size
@@ -180,6 +186,7 @@ sudo rm /usr/share/wayland-sessions/xp-shell-wayland.desktop /usr/local/bin/xp-s
 sudo rm /usr/share/xsessions/reactos-shell.desktop /usr/local/bin/reactos-shell-session   # and the ReactOS shell's
 sudo rm /usr/share/wayland-sessions/reactos-shell-wayland.desktop /usr/local/bin/reactos-shell-wayland-session
 python3 session/linux_apps.py .local/prefix --wine .local/wine-install/bin/wine --remove   # remove the Start menu entries it made
+sudo rm -f /etc/X11/xorg.conf.d/20-win4wine-shadowfb.conf   # remove the virtual machine's X setting (from the next start of X)
 ```
 
 The builds, extracted files and prefix go away with `.local/` of this checkout.

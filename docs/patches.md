@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 73 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 76 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -13,7 +13,7 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 
 - 判定は 0013 が加える `include/wine/win4wine.h` の `win4wine_external_shell()` に 1 つにまとめています。
   ntdll は Rtl の関数で、wow64.dll（0017）は ntdll の関数で同じ変数を読みます。
-- opt-in なしで効くのは、文書化された Win32 の挙動の修正（0001〜0012、0064）と、普通のアプリの見た目と動作を変えない 0019・0020 です。
+- opt-in なしで効くのは、文書化された Win32 の挙動の修正（0001〜0012、0064、0076）と、普通のアプリの見た目と動作を変えない 0019・0020 です。
 - 0018 は `WIN4WINE_SESSION_REQUEST` があるときだけ効きます。
 - 0063 は、さらに `WIN4WINE_FOLDER_SHELL` があるときだけ効きます（ReactOS のシェルのセッションだけが設定します）。
 - ReactOS のシェルのセッションは `WIN4WINE_SHELL=reactos` も設定します。0047 はそのとき、XP のための部品の差し替えをしません。
@@ -142,7 +142,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0065 | user32: SwitchToThisWindow で窓を前面にもする（ReactOS のタスクバー。Wayland のセッションで戻した窓が有効にならなかった） | あり |
 | 0066 | user32: ダイアログの部品のリソースの番号を、ReactOS と同じ「#番号」の名前で渡す（ReactOS の Static がバナーとアイコンを読めるように。`WIN4WINE_SHELL=reactos` のときだけ） | あり |
 
-### その後の修正（0067〜0073）
+### その後の修正（0067〜0076）
 
 | 番号 | 内容 | opt-in |
 |---|---|---|
@@ -153,6 +153,9 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0071 | win32u: Windows キーだけか、ほかのキーと一緒かを、サーバーのキーの反転ビットで見分ける（0023 の判定が、Win+R の R の離しを別のスレッドより先に Windows キーの離しを処理して誤り、開いたダイアログが有効にならなかった） | あり |
 | 0072 | uxtheme: テーマを当てたときのメニューバーの高さを XP と同じ 19（96 DPI）から始める（Luna はクラシックより 1 高い。英語版の Tahoma では 18 のままだった） | あり |
 | 0073 | win32u: 窓のドラッグを EVENT_SYSTEM_MOVESIZESTART/END と `Win4WineSizeMove` で知らせ、寄せた窓を引き剥がすと元の大きさに戻す。`WIN4WINE_WINDOW_SNAP=1` では最大化した窓もドラッグで元の大きさに戻す（proxy の窓の寄せ。`window_snap` のときだけ使われます） | あり |
+| 0074 | winex11: メモリー DC を作るたびに X に送り出さない（GC を作る要求は、それを使う要求と一緒に出ます。テーマの描画はメモリー DC をいくつも作るので、そのたびに X サーバーを起こしていた） | あり |
+| 0075 | uxtheme, user32: Luna の枠とテーマの部品を、少ない転送で描く。8・24 bpp のテーマ画像を 32 bpp で持つ、0053 の XP の拡大を列ごとの転送なしで行う、窓の DC への色キー付きの部品を AlphaBlend 1 回で描く、大きさだけ変わったときに枠を二度描かない、Luna の caption の下にクラシックの caption を描かない（窓の大きさを変えるときに、枠を描く回数がおよそ 2 倍に。画素は変わりません） | あり |
+| 0076 | uxtheme: DrawThemeParentBackground で、親の背景を子の窓の位置に描く（範囲は切り抜きにだけ使う。XP と同じ。フォルダの窓のツールバーで、状態の変わったボタンだけを描き直すと、無効になった「移動」「コピー」の背景が黒くなった） | なし |
 
 ## 並び順の考え方
 

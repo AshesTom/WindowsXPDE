@@ -2,9 +2,10 @@
 """Measure bridge latency and idle wakeups; run with WM + proxy active.
 
 Reports, in milliseconds, how long the genuine Wine frame takes to follow a
-moved or resized native client, how long a native title takes to reach the
-Win32 proxy (what the XP taskbar reads), and how long a proxy command takes
-to reach the native client. Then counts the context switches and CPU time of
+moved or resized native client, how long the native client takes to follow
+its frame moved as Wine's move loop moves it, how long a native title takes
+to reach the Win32 proxy (what the XP taskbar reads), and how long a proxy
+command takes to reach the native client. Then counts the context switches and CPU time of
 the WM, the proxy and their wineserver while nothing happens.
 """
 import os
@@ -145,10 +146,22 @@ try:
         commands.append(wait(lambda: (native.get_geometry().x, native.get_geometry().y) == (x, y),
                              'native follows proxy command'))
         time.sleep(.15)
+    follows = []
+    for i in range(rounds):
+        # A request to move the frame's X window, as Wine makes for each
+        # step of a drag; the WM moves the client in the same pass.
+        f = frame.get_geometry()
+        x, y = f.x + (12 if i % 2 else -12), f.y + (6 if i % 3 else -6)
+        frame.configure(x=x, y=y)
+        d.flush()
+        follows.append(wait(lambda: (frame.get_geometry().x, frame.get_geometry().y) == (x, y) and paired(),
+                            'native follows frame move'))
+        time.sleep(.15)
     summary('frame follows native move', moves)
     summary('frame follows native resize', resizes)
     summary('native title reaches proxy', titles)
     summary('proxy command reaches native', commands)
+    summary('native follows frame move', follows)
 
     pids = processes()
     time.sleep(2)

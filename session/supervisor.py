@@ -116,6 +116,7 @@ class Session:
         # Japanese XP, Tahoma on English XP (the prefix's "language").
         self.linux_font = config.get('linux_font', 'Tahoma' if self.language() == 'en' else 'MS UI Gothic')
         self.linux_menu = config.get('linux_menu', True)
+        self.composite = config.get('composite', True)
         # Wine's ExitWindowsEx records log off / shut down / restart here,
         # so that the shell's exit ends the session instead of restarting it.
         self.request = self.state / 'session-request'
@@ -344,14 +345,21 @@ class Session:
                 fds.append(self.pidfds[process])
         for process in [p for p in self.pidfds if p.poll() is not None]:
             os.close(self.pidfds.pop(process))
-        if not self.d.pending_events() and not self.stopping:
-            select.select(fds, [], [], timeout)
-        try:
-            os.read(self.wakeup[0], 512)
-        except BlockingIOError:
-            pass
-        while self.d.pending_events():
-            self.d.next_event()
+        while True:
+            ready = []
+            if not self.d.pending_events() and not self.stopping:
+                ready = select.select(fds, [], [], timeout)[0]
+            try:
+                os.read(self.wakeup[0], 512)
+            except BlockingIOError:
+                pass
+            moves = True
+            while self.d.pending_events():
+                moves = self.d.next_event().type == X.ConfigureNotify and moves
+            # Without a timeout the taskbar is up: windows that only move
+            # or change size (each step of a drag) need no check.
+            if timeout is not None or not moves or self.stopping or set(ready) - {self.d.fileno()}:
+                return
 
     def halt(self, *processes):
         """End the processes' groups: SIGTERM together, then SIGKILL after three seconds.
@@ -427,7 +435,8 @@ class Session:
             self.configure_outputs()
         self.show_welcome('logon')
         if not self.compositor:
-            wm = self.spawn(['python3', str(ROOT / 'bridge-wm/wm.py'), '--ipc', str(self.ipc)], 'wm')
+            wm = self.spawn(['python3', str(ROOT / 'bridge-wm/wm.py'), '--ipc', str(self.ipc)] +
+                            ([] if self.composite else ['--no-composite']), 'wm')
             time.sleep(.5)
             if wm.poll() is not None:
                 raise RuntimeError('WM failed; see wm.log')
