@@ -38,6 +38,18 @@ Wine 自身の管理のプロセスや復旧の経路まで XP の DLL に頼る
 - prefix は 64-bit（WoW64）です。XP の DLL は `syswow64` に置き、XP のシェルのための登録は 32-bit の側にだけ書きます
   （「64bit（WoW64）対応」）。
 
+## ほかのシェル（ReactOS、Windows 7）
+
+XP のシェルと同じ Wine、bridge、supervisor で、ほかの Windows 系のシェルも動かせるようにしています。シェルごとに専用の
+prefix を作り、そのシェルの DLL はそのシェルのプロセスにだけ使わせます（XP と同じ「Override の隔離」）。
+
+- **ReactOS**（[reactos.md](reactos.md)）: 自由なソフトウェアなので公式のリリースから取得します。登録は ReactOS の DLL 自身の
+  `DllRegisterServer` に書かせます。
+- **Windows 7**（[windows7.md](windows7.md)、実験的）: 64bit のシェルを使います（prefix が WoW64 なので、64bit のまま動かせます）。
+  登録は、XP のように 1 つずつ確かめて手で書くには多すぎる（DirectUI、プロパティ システム、既知のフォルダなど）ので、
+  **使うファイルの部品のマニフェスト**（WinSxS）が登録するものを入れます。インストール済みの Windows のレジストリは移しません。
+  Windows 7 のためだけの Wine の挙動は `WIN4WINE_SHELL=win7` のときだけ効かせ、XP と ReactOS のシェルには影響させません。
+
 ## Linux のアプリとの統合（bridge）
 
 - **WM は枠を描きません。** Linux の窓の XP の枠は、proxy.exe が作る Win32 の窓に Wine が描きます。XP の見た目を自分で

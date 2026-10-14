@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 90 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 93 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -18,7 +18,7 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 - 0018 は `WIN4WINE_SESSION_REQUEST` があるときだけ効きます。
 - 0063 は、さらに `WIN4WINE_FOLDER_SHELL` があるときだけ効きます（ReactOS のシェルのセッションだけが設定します）。
 - ReactOS のシェルのセッションは `WIN4WINE_SHELL=reactos` も設定します。0047 はそのとき、XP のための部品の差し替えをしません。
-- 0081、0083、0085 は `WIN4WINE_SHELL=win7` のときだけ効きます（Windows 7 のシェルの試作。0081 は wineserver が起動したときの環境で判断します）。
+- 0081、0083、0085、0092 は `WIN4WINE_SHELL=win7` のときだけ効きます（Windows 7 のシェルの試作。0081 は wineserver が起動したときの環境で判断します）。
   0082 はそのとき 0053 と 0054 の XP のための置き換えをしません。
 
 ## 一覧
@@ -178,6 +178,9 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0088 | ieframe, dsrole, samcli, ntshrui: Windows 7 のフォルダの窓のために。ieframe に ordinal 158・159（SHRestricted2A/W。Windows 7 の shdocvw が転送する）。新しい組み込みの dsrole.dll と samcli.dll（netapi32 への転送）と ntshrui.dll（共有しているフォルダは無い、と答える）。Windows 7 の shell32 と linkinfo が遅延読み込みする | なし |
 | 0089 | combase: DLL の代理プロセス（dllhost）を、クラスが登録されている側のビット数で起動する。64bit のプログラムは、64bit 側に登録されたクラスでも常に SysWOW64 の 32bit の dllhost を起動していた（Windows 7 のサムネイルのキャッシュのサーバーが読み込めなかった） | なし |
 | 0090 | uxtheme: SetWindowThemeAttribute（WTA_NONCLIENT）の WTNCA_NODRAWCAPTION と WTNCA_NODRAWICON を覚え、外部のシェルのテーマの枠（0043）がタイトルの文字とアイコンを省く（Windows 7 のフォルダの窓はタイトルバーに何も出さない）。今までは stub だった | なし |
+| 0091 | ntdll: MUI ファイルからリソースを探す。RT_MUI を持つ（言語に依存しない）モジュールで見つからないリソースを、`<フォルダ>\<UI の言語>\<ファイル名>.mui`（無ければ en-US）から探す。データファイルとして読み込んだものも同じ。Windows 7 のシェルの DLL を、リソースを書き込まずにメディアのまま使うため | なし |
+| 0092 | ntdll: Windows 7 のシェルは、SxS の振り分けで comctl32 を求めたとき、実行ファイルの横にある Wine のものではない comctl32.dll（`C:\w7\comctl32.dll`）を使う。Wine の Common Controls 6 はほかのプログラムのまま（以前は置き換えていて、Wine の Notepad が入力を受けなかった） | あり（`WIN4WINE_SHELL=win7`） |
+| 0093 | server: HKCU\Software を 32bit と 64bit で共有する（Windows と同じ。Classes の下だけが分かれる）。64bit のソフト（Windows 7 の explorer）が HKCU\Software\Wow6432Node を作ると、32bit のプログラムから利用者の設定（Wine の X11 の設定、テーマ）が見えなくなっていた | なし |
 
 ## 並び順の考え方
 

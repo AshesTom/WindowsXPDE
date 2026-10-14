@@ -1,15 +1,20 @@
 #!/bin/bash
-# install.sh [--reactos] [--wayland LABWC] : the X11 session, and with a labwc
-# built by wayland/build.sh also the Wayland session. With --reactos, the
+# install.sh [--reactos | --win7] [--wayland LABWC] : the X11 session, and with a
+# labwc built by wayland/build.sh also the Wayland session. With --reactos, the
 # "ReactOS Shell" session, which reads ~/.config/win4wine/reactos-session.json
-# (with --wayland also its Wayland session).
+# (with --wayland also its Wayland session). With --win7, the "Windows 7 Shell"
+# session (X11 only), which reads ~/.config/win4wine/win7-session.json.
 set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 [[ $root != *$'\n'* ]] || exit 1
 labwc=
 reactos=no
+win7=no
 if [[ ${1:-} == --reactos ]]; then
     reactos=yes
+    shift
+elif [[ ${1:-} == --win7 ]]; then
+    win7=yes
     shift
 fi
 if [[ ${1:-} == --wayland ]]; then
@@ -30,6 +35,13 @@ if [[ $reactos == yes ]]; then
     as_root install -Dm755 "$wrapper" /usr/local/bin/reactos-shell-session
     as_root install -Dm644 "$root/session/reactos-shell.desktop" /usr/share/xsessions/reactos-shell.desktop
     printf 'Installed the ReactOS shell Xsession. Configuration: ~/.config/win4wine/reactos-session.json\n'
+fi
+if [[ $win7 == yes ]]; then
+    printf '#!/bin/bash\nexec python3 %q --config "${XDG_CONFIG_HOME:-$HOME/.config}/win4wine/win7-session.json" "$@"\n' \
+        "$root/session/supervisor.py" > "$wrapper"
+    as_root install -Dm755 "$wrapper" /usr/local/bin/windows7-shell-session
+    as_root install -Dm644 "$root/session/windows7-shell.desktop" /usr/share/xsessions/windows7-shell.desktop
+    printf 'Installed the Windows 7 shell Xsession. Configuration: ~/.config/win4wine/win7-session.json\n'
 fi
 if [[ -n $labwc ]]; then
     printf '#!/bin/bash\nexec %q %q\n' "$root/wayland/session.sh" "$labwc" > "$wrapper"

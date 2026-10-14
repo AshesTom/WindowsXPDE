@@ -1,0 +1,112 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] ntdll: let Windows 7's shell take comctl32 from beside its executable
+
+Purpose: give Windows 7's shell Windows 7's Common Controls 6 while every
+other program keeps Wine's.
+Windows 7 behavior: explorer.exe's manifest asks for Common Controls 6
+(Microsoft.Windows.Common-Controls 6.0.0.0), which the loader takes from
+its SxS assembly.
+Wine before: the SxS redirection leads to Wine's own Common Controls 6
+assembly. A prefix that put Windows 7's comctl32.dll in that assembly's
+place broke Wine's programs: they load it with the builtin load order,
+which then gave them Wine's version 5 comctl32 (Wine's Notepad took no
+input and showed column 59057).
+Change: with WIN4WINE_SHELL=win7, when the SxS redirection resolves
+comctl32.dll and a comctl32.dll that is not a Wine builtin lies beside
+the process's executable, that file is used (C:\w7\comctl32.dll for
+w7-explorer.exe, which loads it native). Programs in system32 find
+Wine's builtin there and keep the assembly's file.
+Evidence: +loaddll shows C:\w7\comctl32.dll (native) in w7-explorer.exe
+and Wine's assembly (builtin) in Notepad, which takes input again.
+Scope: only with WIN4WINE_SHELL=win7, only comctl32.dll, and only with a
+non-builtin copy beside the executable.
+---
+ dlls/ntdll/loader.c | 68 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 68 insertions(+)
+
+diff --git a/dlls/ntdll/loader.c b/dlls/ntdll/loader.c
+index 5c32fb1..d1d4e25 100644
+--- a/dlls/ntdll/loader.c
++++ b/dlls/ntdll/loader.c
+@@ -3249,6 +3249,65 @@ done:
+     return status;
+ }
+ 
++/* The session of Windows 7's shell (win4wine) */
++static BOOL windows7_shell(void)
++{
++    UNICODE_STRING name = RTL_CONSTANT_STRING( L"WIN4WINE_SHELL" ), value;
++    WCHAR buffer[8];
++
++    value.Buffer = buffer;
++    value.Length = 0;
++    value.MaximumLength = sizeof(buffer);
++    return !RtlQueryEnvironmentVariable_U( NULL, &name, &value ) &&
++           value.Length == 4 * sizeof(WCHAR) && !wcsnicmp( buffer, L"win7", 4 );
++}
++
++/***********************************************************************
++ *	shell_comctl32
++ *
++ * Windows 7's shell takes Windows 7's Common Controls 6 from beside its
++ * executable (C:\w7\comctl32.dll), where its manifest's SxS redirection
++ * leads to Wine's own assembly, which every other program keeps. A copy
++ * there that is a Wine builtin (system32's, for programs in system32) is
++ * not used.
++ */
++static WCHAR *shell_comctl32(void)
++{
++    static const char builtin_signature[] = "Wine builtin DLL";
++    const UNICODE_STRING *image = &NtCurrentTeb()->Peb->ProcessParameters->ImagePathName;
++    UNICODE_STRING nt_name;
++    OBJECT_ATTRIBUTES attr;
++    IO_STATUS_BLOCK io;
++    char header[0x40 + sizeof(builtin_signature)];
++    LARGE_INTEGER offset = {{ 0 }};
++    HANDLE file;
++    WCHAR *path;
++    unsigned int dir;
++    BOOL native = FALSE;
++
++    if (!windows7_shell() || !image->Buffer) return NULL;
++    for (dir = image->Length / sizeof(WCHAR); dir && image->Buffer[dir - 1] != '\\'; dir--);
++    if (!dir || !(path = RtlAllocateHeap( GetProcessHeap(), 0, (dir + 13) * sizeof(WCHAR) ))) return NULL;
++    memcpy( path, image->Buffer, dir * sizeof(WCHAR) );
++    wcscpy( path + dir, L"comctl32.dll" );
++    if (!RtlDosPathNameToNtPathName_U_WithStatus( path, &nt_name, NULL, NULL ))
++    {
++        InitializeObjectAttributes( &attr, &nt_name, OBJ_CASE_INSENSITIVE, 0, NULL );
++        if (!NtOpenFile( &file, GENERIC_READ | SYNCHRONIZE, &attr, &io, FILE_SHARE_READ | FILE_SHARE_DELETE,
++                         FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE ))
++        {
++            if (!NtReadFile( file, 0, NULL, NULL, &io, header, sizeof(header), &offset, NULL ) &&
++                io.Information == sizeof(header) && header[0] == 'M' && header[1] == 'Z')
++                native = memcmp( header + 0x40, builtin_signature, sizeof(builtin_signature) - 1 ) != 0;
++            NtClose( file );
++        }
++        RtlFreeUnicodeString( &nt_name );
++    }
++    if (native) return path;
++    RtlFreeHeap( GetProcessHeap(), 0, path );
++    return NULL;
++}
++
+ /***********************************************************************
+  *	find_dll_file
+  *
+@@ -3275,6 +3334,15 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname, UNI
+         {
+             status = find_actctx_dll( libname, &fullname );
+             if (status == STATUS_SUCCESS) *redirected = TRUE;
++            if (status == STATUS_SUCCESS && !wcsicmp( libname, L"comctl32.dll" ))
++            {
++                WCHAR *shell = shell_comctl32();
++                if (shell)
++                {
++                    RtlFreeHeap( GetProcessHeap(), 0, fullname );
++                    fullname = shell;
++                }
++            }
+         }
+ 
+         if (status == STATUS_SUCCESS)

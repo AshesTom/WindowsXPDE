@@ -8,9 +8,12 @@ ASSETS is the output of extract/win7.py (the image's language decides the
 prefix's: Japanese or English).
 
 Windows 7's x64 explorer runs as C:\\w7\\w7-explorer.exe, a 64-bit process.
-Its shell DLLs (with their MUI resources merged, since Wine does not look for
-.mui files) are kept in C:\\w7\\native and placed in system32; Common
-Controls 6 replaces Wine's assembly file. The prefix keeps Wine's DLLs for
+Its shell DLLs are kept in C:\\w7\\native and placed in system32, each with
+its MUI file in the language's folder (system32\\ja-JP\\shell32.dll.mui), as
+Windows 7 keeps them; Wine reads MUI files (patch 0091). Windows 7's Common
+Controls 6 is C:\\w7\\comctl32.dll, beside the shell (patch 0092); Wine's own
+assembly stays every other program's. The files are placed as they are on
+the media, under the names the prefix uses. The prefix keeps Wine's DLLs for
 every other program (DllOverrides builtin) and gives w7-explorer.exe the
 native ones (AppDefaults), as prefix/create.py does for XP's explorer.
 DLLs that the shell only reads for their strings and icons (imageres) are
@@ -35,8 +38,9 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 4
+VERSION = 5
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
+# Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
 # Windows 7's names of shell items whose registration wine.inf writes with Wine's own string.
 NAMES = (
@@ -59,6 +63,7 @@ PROXIES = ('actxprxy', 'w7actxprxy', '{C90250F3-4D7D-4991-9B69-A5C5BC1C2AE6}')
 # Japanese text in the UI fonts' fallback (Windows 7 links Meiryo UI too).
 FONT_LINKS = ('Segoe UI', 'Tahoma', 'MS Shell Dlg', 'MS Shell Dlg 2', 'Microsoft Sans Serif', 'MS UI Gothic')
 FONT_SUBSTITUTES = ('MS Shell Dlg', 'MS Shell Dlg 2', 'MS UI Gothic')
+X11_DRIVER = (('Managed', 'Y'), ('Decorated', 'N'))
 # Wine's own desktop items that Windows 7's desktop does not show: My Documents,
 # the Unix root folder and Internet Explorer.
 HIDDEN_DESKTOP_ITEMS = ('{450D8FBA-AD25-11D0-98A8-0800361B1103}', '{9D20AAE8-0625-44B0-9CA7-71889C2254D9}',
@@ -109,25 +114,37 @@ class Prefix:
         finally:
             path.unlink(missing_ok=True)
 
-    def merge(self, dll, mui, target):
-        """Copy DLL to TARGET with the resources of its MUI file (Wine reads no .mui files)."""
-        helper = ROOT / '.local/bridge/mui-merge.exe'
-        if not mui.is_file():
-            shutil.copyfile(dll, target)
-            return
-        self.run(str(helper), windows_path(dll), windows_path(mui), windows_path(target))
+    def copy(self, dll, mui, target):
+        """Copy DLL to TARGET, and its MUI file (MUI, if any) to the language's folder beside it."""
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(dll, target)
+        if mui.is_file():
+            (target.parent / mui.parent.name).mkdir(exist_ok=True)
+            shutil.copyfile(mui, target.parent / mui.parent.name / f'{target.name}.mui')
 
     def place_files(self):
         native = self.path / 'drive_c/w7/native'
         for source in sorted(native.glob('*.dll')):
             self.place(source, self.system / source.name)
-        # Same assembly version as Wine's own Common Controls 6: the file is
-        # replaced, and the prefix-wide builtin override keeps Wine's for others.
-        if (native / 'sxs/comctl32.dll').is_file():
-            self.place(native / 'sxs/comctl32.dll', self.path / f'drive_c/windows/winsxs/{SXS}/comctl32.dll')
+        for source in sorted(native.glob('*/*.mui')):
+            self.place(source, self.system / source.parent.name / source.name)
+        # Wine's own Common Controls 6, for every other program.
+        wine_controls = self.wine.parent.parent / 'lib/wine/x86_64-windows/comctl32_v6.dll'
+        assembly = self.path / f'drive_c/windows/winsxs/{SXS}/comctl32.dll'
+        if wine_controls.is_file() and assembly.is_file():
+            self.place(wine_controls, assembly)
 
     def registrations(self):
-        """What a Wine update of the prefix rewrites."""
+        """What a Wine update of the prefix, or Wine's font setup, rewrites."""
+        # Wine frames the proxy windows itself (the WM does not decorate them).
+        for name, value in X11_DRIVER:
+            self.reg(r'HKCU\Software\Wine\X11 Driver', name, value)
+        if self.lang == 'ja':
+            nt = r'HKLM\Software\Microsoft\Windows NT\CurrentVersion'
+            for name in FONT_LINKS:
+                self.reg(nt + r'\FontLink\SystemLink', name, r'MEIRYO.TTC,Meiryo UI\0MEIRYO.TTC,Meiryo', 'REG_MULTI_SZ')
+            for name in FONT_SUBSTITUTES:
+                self.reg(nt + r'\FontSubstitutes', name, 'Meiryo UI')
         for clsid, name in NAMES:
             self.reg(rf'HKCR\CLSID\{clsid}', 'LocalizedString', name, 'REG_EXPAND_SZ')
         # Linux tray icons and the input method's mode stay in the notification
@@ -153,7 +170,7 @@ def create(assets, dest, home, wine):
     assets, dest, home = assets.resolve(strict=True), dest.resolve(), home.resolve(strict=True)
     if dest.exists():
         raise SystemExit(f'Refusing existing prefix: {dest}')
-    for tool in ('mui-merge.exe', 'theme-fonts.exe', 'theme-settings.exe', 'wallpaper-convert.exe'):
+    for tool in ('theme-fonts.exe', 'theme-settings.exe', 'wallpaper-convert.exe'):
         if not (ROOT / '.local/bridge' / tool).is_file():
             raise SystemExit(f'Run bridge-wm/build.sh first: missing {tool}')
     media = json.loads((assets / 'media.json').read_text())
@@ -167,20 +184,20 @@ def create(assets, dest, home, wine):
         raise SystemExit('Expected a 64-bit prefix: use the WoW64 build of the patched Wine')
     c = dest / 'drive_c'
     native = c / 'w7/native'
-    (native / 'sxs').mkdir(parents=True)
+    native.mkdir(parents=True)
     user = pwd.getpwuid(os.getuid()).pw_name
     try:
-        prefix.merge(assets / 'shell/explorer.exe', assets / f'shell/{ui}/explorer.exe.mui', c / 'w7/w7-explorer.exe')
+        prefix.copy(assets / 'shell/explorer.exe', assets / f'shell/{ui}/explorer.exe.mui', c / 'w7/w7-explorer.exe')
         for name in NATIVE:
-            prefix.merge(assets / f'system32/{name}.dll', assets / f'system32/{ui}/{name}.dll.mui',
-                         native / f'{name}.dll')
+            prefix.copy(assets / f'system32/{name}.dll', assets / f'system32/{ui}/{name}.dll.mui',
+                        native / f'{name}.dll')
         source, name, _ = PROXIES
-        prefix.merge(assets / f'system32/{source}.dll', assets / f'system32/{ui}/{source}.dll.mui',
-                     native / f'{name}.dll')
+        prefix.copy(assets / f'system32/{source}.dll', assets / f'system32/{ui}/{source}.dll.mui',
+                    native / f'{name}.dll')
         for name in RESOURCES:
-            prefix.merge(assets / f'system32/{name}.dll', assets / f'system32/{ui}/{name}.dll.mui',
-                         prefix.system / f'{name}.dll')
-        prefix.merge(assets / 'sxs/comctl32.dll', assets / f'sxs/{ui}/comctl32.dll.mui', native / 'sxs/comctl32.dll')
+            prefix.copy(assets / f'system32/{name}.dll', assets / f'system32/{ui}/{name}.dll.mui',
+                        prefix.system / f'{name}.dll')
+        prefix.copy(assets / 'sxs/comctl32.dll', assets / f'sxs/{ui}/comctl32.dll.mui', c / 'w7/comctl32.dll')
         for font in (assets / 'fonts').iterdir():
             shutil.copyfile(font, c / 'windows/Fonts' / font.name)
         shutil.copytree(assets / 'themes', c / 'windows/Resources/Themes', dirs_exist_ok=True)
@@ -249,18 +266,10 @@ def settings(prefix, lang):
     for view in ('/reg:32', '/reg:64'):
         prefix.run('reg', 'add', r'HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon', '/v', 'Shell',
                    '/d', 'w7-explorer.exe', '/f', view)
-    if lang == 'ja':
-        nt = r'HKLM\Software\Microsoft\Windows NT\CurrentVersion'
-        for name in FONT_LINKS:
-            prefix.reg(nt + r'\FontLink\SystemLink', name, r'MEIRYO.TTC,Meiryo UI\0MEIRYO.TTC,Meiryo', 'REG_MULTI_SZ')
-        for name in FONT_SUBSTITUTES:
-            prefix.reg(nt + r'\FontSubstitutes', name, 'Meiryo UI')
     # ClearType, Windows 7's default.
     prefix.reg(r'HKCU\Control Panel\Desktop', 'FontSmoothing', '2')
     prefix.reg(r'HKCU\Control Panel\Desktop', 'FontSmoothingType', 2, 'REG_DWORD')
     prefix.reg(r'HKCU\Control Panel\Desktop', 'LogPixels', 96, 'REG_DWORD')
-    prefix.reg(r'HKCU\Software\Wine\X11 Driver', 'Managed', 'Y')
-    prefix.reg(r'HKCU\Software\Wine\X11 Driver', 'Decorated', 'N')
     # The user's documents are the Linux home (H:), as in the XP session.
     for suffix in ('Shell Folders', 'User Shell Folders'):
         prefix.reg('HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\' + suffix, 'Personal', 'H:\\')
@@ -282,6 +291,35 @@ def stage_registrations(prefix):
         prefix.stop()
 
 
+def registry_values(path, key):
+    """The values of KEY (as a .reg section names it) in a prefix's registry file."""
+    values, section = {}, False
+    try:
+        lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        if line.startswith('['):
+            section = line.startswith(f'[{key}]')
+        elif section and line.startswith('"') and '"=' in line:
+            name, value = line[1:].split('"=', 1)
+            values[name] = value
+    return values
+
+
+def fonts_current(dest, lang):
+    """Whether Japanese text still falls back to Meiryo.
+
+    Wine sets up its font links again (to fonts that are not installed) when a
+    process starts under other code pages than those it recorded; a 32-bit
+    process (the session's proxy) has its own record, so the first session
+    does it once."""
+    if lang != 'ja':
+        return True
+    links = registry_values(dest / 'system.reg', r'Software\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink')
+    return all('MEIRYO' in links.get(face, '') for face in FONT_LINKS)
+
+
 def stage(dest, wine=None):
     config = json.loads((dest / MARKER).read_text())
     prefix = Prefix(dest, wine or config['wine'], config.get('lang', 'ja'))
@@ -291,7 +329,7 @@ def stage(dest, wine=None):
     current = timestamp.read_text().strip() if timestamp.is_file() else ''
     wine_current = inf.is_file() and current == str(int(inf.stat().st_mtime))
     applied = version.read_text().split() if version.is_file() else []
-    if wine_current and applied == [str(VERSION), current]:
+    if wine_current and applied == [str(VERSION), current] and fonts_current(dest, prefix.lang):
         # Nothing changed, but a first wineboot or an update may have replaced files.
         prefix.place_files()
         return

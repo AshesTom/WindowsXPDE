@@ -88,3 +88,6 @@
 0088-dlls-windows7-folder-windows.patch
 0089-combase-surrogate-bitness.patch
 0090-uxtheme-window-theme-attribute.patch
+0091-ntdll-mui-files.patch
+0092-ntdll-windows7-shell-comctl32.patch
+0093-server-hkcu-software-shared.patch

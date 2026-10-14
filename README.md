@@ -31,6 +31,8 @@ Microsoft のファイルは同梱していません。お手元の XP の ISO �
 XP の ISO が無い方は、XP のシェルの代わりに **[ReactOS](https://reactos.org/) のシェル**（Windows 2000 風のクラシックの見た目）でも
 試せます。ReactOS は自由なソフトウェアなので、導入スクリプトが公式のリリースから取得します（[docs/reactos.md](docs/reactos.md)）。
 
+Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベーシックの見た目）でも試せます。まだ実験的な試作です（[docs/windows7.md](docs/windows7.md)）。
+
 ## できること
 
 - **XP のシェル**: Luna（またはクラシック）のタスクバー、スタートメニュー、デスクトップ、マイ コンピュータ、フォルダウィンドウ。
@@ -52,6 +54,9 @@ XP の ISO が無い方は、XP のシェルの代わりに **[ReactOS](https://
   ふだん試すなら X11 のセッションをおすすめします。
 - **ReactOS のシェル（任意）**: XP の ISO の代わりに ReactOS 0.4.16 の explorer で動かすセッションです。日本語と英語に対応します。
   XP のシェルと並べて入れられます。
+- **Windows 7 のシェル（任意・実験的）**: Windows 7 SP1 x64 の explorer で動かすセッションです（Windows 7 ベーシックの見た目。
+  Aero のガラスはまだありません）。スタートメニュー、タスクバー、通知領域、フォルダの窓が動き、Linux のアプリもアプリごとに
+  タスクバーにまとまります。確かめたのは日本語版だけです。
 
 <table>
   <tr>
@@ -87,14 +92,22 @@ scripts/setup.sh --shell reactos --lang ja   # 英語なら --lang en
 
 ログイン画面でセッション「ReactOS Shell (Wine, X11)」を選びます。
 
+Windows 7 のシェル（実験的）は、Windows 7 SP1 x64 の ISO から作ります。
+
+```sh
+scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
+```
+
+ログイン画面でセッション「Windows 7 Shell (Wine, X11)」を選びます。
+
 詳しい手順とオプションは 🔗 [導入手順（INSTALL.md）](INSTALL.md) にあります。Wine をソースからビルドするので、4 コアで 1 時間半ほどかかります。
 テーマ（XP のクラシックなど）と文字の大きさは、後から変えられます（[見た目と文字の大きさを変える](INSTALL.md#見た目と文字の大きさを変える)）。
 
 ## 注意
 
 > [!WARNING]
-> - **Windows XP の ISO はご自身で入手してください。** このリポジトリにも導入スクリプトにも、Microsoft のファイルを取得する処理はありません。
->   ISO と取り出したファイルの扱いは、Microsoft の使用許諾に従ってください。
+> - **Windows XP（と Windows 7）の ISO はご自身で入手してください。** このリポジトリにも導入スクリプトにも、Microsoft のファイルを
+>   取得する処理はありません。ISO と取り出したファイルの扱いは、Microsoft の使用許諾に従ってください。
 > - **利用は自己責任でお願いします。** データの損失や不具合について、作者は責任を負いません。
 > - Microsoft とも Wine プロジェクトとも関係のない、非公式のプロジェクトです。
 > - 確かめているのは日本語版と英語版の XP SP3（x86）だけです。ほかの言語の XP も英語版と同じ設定で入れるので動くかもしれませんが、
@@ -105,8 +118,8 @@ scripts/setup.sh --shell reactos --lang ja   # 英語なら --lang en
 ```text
 LightDM ─ XP のようこそ画面 (greeter/)
    └─ XP Shell セッション (session/supervisor.py)
-        ├─ Wine 11.0 + 90 本のパッチ (wine/patches/)
-        │    └─ XP の explorer.exe, shell32.dll, …（ISO から取り出したもの）
+        ├─ Wine 11.0 + 93 本のパッチ (wine/patches/)
+        │    └─ XP の explorer.exe, shell32.dll, …（ISO から取り出したもの。ReactOS や Windows 7 のシェルではそれらのもの）
         ├─ bridge-wm: X11 のウィンドウマネージャー + Win32 の代理ウィンドウ (bridge-wm/)
         │    （Wayland のセッションでは、ウィンドウマネージャーの代わりにパッチを当てた labwc。wayland/）
         └─ fcitx5 + Mozc, トレイの仲介 (bridge-wm/tray.py)
@@ -129,5 +142,5 @@ LightDM ─ XP のようこそ画面 (greeter/)
 
 [LGPL-2.1-or-later](LICENSE)（Wine と同じ）です。対象はこのリポジトリのコードとパッチだけです。
 ただし `wayland/patches/labwc/` は labwc と同じ GPL-2.0-only、`wayland/patches/wlroots/` は wlroots と同じ MIT です。
-Windows XP のファイルと、スクリーンショットに写っている XP の画面の著作権は Microsoft にあります。
+Windows XP と Windows 7 のファイルと、スクリーンショットに写っている XP の画面の著作権は Microsoft にあります。
 ReactOS のシェルで使う ReactOS のファイルは、ReactOS のライセンス（GPL-2.0-or-later、DLL の多くは LGPL-2.1-or-later）に従います。
