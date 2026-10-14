@@ -27,7 +27,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 1
+VERSION = 2
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
 # Windows 7's names of shell items whose registration wine.inf writes with Wine's own string.
@@ -99,6 +99,9 @@ class Prefix:
         """What a Wine update of the prefix rewrites."""
         for clsid, name in NAMES:
             self.reg(rf'HKCR\CLSID\{clsid}', 'LocalizedString', name, 'REG_EXPAND_SZ')
+        # Linux tray icons and the input method's mode stay in the notification
+        # area (Windows 7's "always show all icons and notifications").
+        self.reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer', 'EnableAutoTray', 0, 'REG_DWORD')
         icons = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel'
         for clsid in HIDDEN_DESKTOP_ITEMS:
             self.reg(icons, clsid, 1, 'REG_DWORD')

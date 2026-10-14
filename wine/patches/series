@@ -82,3 +82,4 @@
 0082-uxtheme-windows7-taskbar.patch
 0083-dlls-windows7-start-button.patch
 0084-apphelp-allow-perm-layer.patch
+0085-shell32-windows7-notify-icon.patch
