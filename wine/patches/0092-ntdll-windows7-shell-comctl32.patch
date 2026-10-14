@@ -12,23 +12,26 @@ place broke Wine's programs: they load it with the builtin load order,
 which then gave them Wine's version 5 comctl32 (Wine's Notepad took no
 input and showed column 59057).
 Change: with WIN4WINE_SHELL=win7, when the SxS redirection resolves
-comctl32.dll and a comctl32.dll that is not a Wine builtin lies beside
-the process's executable, that file is used (C:\w7\comctl32.dll for
-w7-explorer.exe, which loads it native). Programs in system32 find
-Wine's builtin there and keep the assembly's file.
+comctl32.dll in w7-explorer.exe (the name the shell has in the prefix)
+and a comctl32.dll that is not a Wine builtin lies beside it, that file
+is used (C:\w7\comctl32.dll, which the shell loads native). Other
+programs, which inherit the variable from the shell, keep the assembly's
+file even when they bring a comctl32.dll of their own.
 Evidence: +loaddll shows C:\w7\comctl32.dll (native) in w7-explorer.exe
-and Wine's assembly (builtin) in Notepad, which takes input again.
-Scope: only with WIN4WINE_SHELL=win7, only comctl32.dll, and only with a
-non-builtin copy beside the executable.
+and Wine's assembly (builtin) in Notepad, which takes input again. A
+program beside a Windows comctl32.dll keeps Wine's assembly, and its
+IFileOpenDialog shows (it failed in that comctl32).
+Scope: only with WIN4WINE_SHELL=win7, only comctl32.dll, only in
+w7-explorer.exe with a non-builtin copy beside it.
 ---
- dlls/ntdll/loader.c | 68 +++++++++++++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 68 insertions(+)
+ dlls/ntdll/loader.c | 70 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 70 insertions(+)
 
 diff --git a/dlls/ntdll/loader.c b/dlls/ntdll/loader.c
-index 5c32fb1..d1d4e25 100644
+index 5c32fb1..89ec731 100644
 --- a/dlls/ntdll/loader.c
 +++ b/dlls/ntdll/loader.c
-@@ -3249,6 +3249,65 @@ done:
+@@ -3249,6 +3249,67 @@ done:
      return status;
  }
  
@@ -48,11 +51,11 @@ index 5c32fb1..d1d4e25 100644
 +/***********************************************************************
 + *	shell_comctl32
 + *
-+ * Windows 7's shell takes Windows 7's Common Controls 6 from beside its
-+ * executable (C:\w7\comctl32.dll), where its manifest's SxS redirection
-+ * leads to Wine's own assembly, which every other program keeps. A copy
-+ * there that is a Wine builtin (system32's, for programs in system32) is
-+ * not used.
++ * Windows 7's shell (w7-explorer.exe) takes Windows 7's Common Controls 6
++ * from beside its executable (C:\w7\comctl32.dll), where its manifest's SxS
++ * redirection leads to Wine's own assembly, which every other program keeps,
++ * including programs that bring a comctl32.dll of their own. A copy there
++ * that is a Wine builtin is not used.
 + */
 +static WCHAR *shell_comctl32(void)
 +{
@@ -70,6 +73,8 @@ index 5c32fb1..d1d4e25 100644
 +
 +    if (!windows7_shell() || !image->Buffer) return NULL;
 +    for (dir = image->Length / sizeof(WCHAR); dir && image->Buffer[dir - 1] != '\\'; dir--);
++    if (image->Length / sizeof(WCHAR) - dir != 15 || wcsnicmp( image->Buffer + dir, L"w7-explorer.exe", 15 ))
++        return NULL;
 +    if (!dir || !(path = RtlAllocateHeap( GetProcessHeap(), 0, (dir + 13) * sizeof(WCHAR) ))) return NULL;
 +    memcpy( path, image->Buffer, dir * sizeof(WCHAR) );
 +    wcscpy( path + dir, L"comctl32.dll" );
@@ -94,7 +99,7 @@ index 5c32fb1..d1d4e25 100644
  /***********************************************************************
   *	find_dll_file
   *
-@@ -3275,6 +3334,15 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname, UNI
+@@ -3275,6 +3336,15 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname, UNI
          {
              status = find_actctx_dll( libname, &fullname );
              if (status == STATUS_SUCCESS) *redirected = TRUE;

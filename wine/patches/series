@@ -91,3 +91,5 @@
 0091-ntdll-mui-files.patch
 0092-ntdll-windows7-shell-comctl32.patch
 0093-server-hkcu-software-shared.patch
+0094-comdlg32-view-font-redraw.patch
+0095-comdlg32-item-dialog-windows-browser.patch
