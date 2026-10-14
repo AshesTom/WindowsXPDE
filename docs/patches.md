@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 78 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 79 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -164,6 +164,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 番号 | 内容 | opt-in |
 |---|---|---|
 | 0078 | dlls: Windows 7 の explorer と shell32 などが import する関数を足す（ntdll の WinSqm*・ShipAssert・RtlSetEnvironmentVar、user32 の CalculatePopupWindowPosition など、kernel32 の CheckElevation など、kernelbase の LoadStringByReference、winsta の WinStationIsSessionRemoteable、64 ビットの oleaut32 の NDR64 の名前、rpcrt4 の NdrStubCall3、gdi32 の CreateBitmapFromDxSurface）。足すだけで、Wine にあった関数は変わらない | なし |
+| 0079 | uxtheme: Windows Vista と 7 のテーマ（msstyles の形式 4。VMAP、CMAP、VARIANT のバイナリのプロパティ、MUI の文字列表、PNG の画像）を読む。値は形式 3 の ini と同じテキストにして、今のクラス・パーツ・ステートに入れる（Windows 7 Basic の aero.msstyles）。形式 3（XP、ReactOS）の読み方は変わらない | なし |
 
 ## 並び順の考え方
 
