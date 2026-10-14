@@ -81,6 +81,7 @@ class Manager:
         # redirected window's every resize costs a new off-screen image,
         # which made resizing a native client several times slower in a VM.
         self.redirect = redirect and self.d.has_extension('Composite')
+        self.previous_classes = None
         self.overlays = {}  # override-redirect Windows 7 shell windows kept above the taskbar and Start menu
         # Windows without a cursor of their own, such as the menus of Linux
         # applications while they hold the pointer, show the root's: an
@@ -234,6 +235,14 @@ class Manager:
             title = self.prop(w, '_NET_WM_NAME')
             name = bytes(title).decode('utf-8', 'replace') if len(title) else (w.get_wm_name() or '')
             c['title'] = name.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')[:500]
+        if atom in (None, Xatom.WM_CLASS):
+            # The application's class: Windows 7's taskbar groups a Linux
+            # application's windows by it (classes.tsv, proxy).
+            try:
+                names = w.get_wm_class()
+            except error.XError:
+                names = None
+            c['class'] = (names[1] if names and len(names) > 1 else '').replace('\t', ' ').replace('\n', ' ')[:100]
         if atom in (None, self.atom('WM_TRANSIENT_FOR')):
             try:
                 owner = w.get_wm_transient_for()
@@ -756,6 +765,7 @@ class Manager:
 
     def snapshot(self):
         lines = []
+        classes = []
         focused = self.d.get_input_focus().focus
         # An XP menu can take focus without changing the EWMH active client.
         # Do not keep stealing Win32 foreground from that menu back to a proxy.
@@ -783,6 +793,13 @@ class Manager:
                     self.previous_icons[i] = data
                 c['icon_dirty'] = False
             lines.append(f'{i:x}\t{int(c["hidden"])}\t{int(i == self.active and i == focused_id)}\t{c["title"]}\n')
+            classes.append(f'{i:x}\t{c.get("class", "")}\n')
+        text = ''.join(classes)
+        if text != self.previous_classes:
+            temp = self.ipc / 'classes.tmp'
+            temp.write_text(text, encoding='utf-8')
+            temp.replace(self.ipc / 'classes.tsv')
+            self.previous_classes = text
         text = ''.join(lines)
         if text != self.previous_snapshot:
             temp = self.ipc / 'windows.tmp'

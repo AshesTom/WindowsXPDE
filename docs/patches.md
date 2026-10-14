@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 83 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 84 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -14,7 +14,7 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 - 判定は 0013 が加える `include/wine/win4wine.h` の `win4wine_external_shell()` に 1 つにまとめています。
   ntdll は Rtl の関数で、wow64.dll（0017）は ntdll の関数で同じ変数を読みます。
 - opt-in なしで効くのは、文書化された Win32 の挙動の修正（0001〜0012、0064、0076）と、普通のアプリの見た目と動作を変えない 0019・0020、
-  Wine に無かった関数を足す 0078 と 0080 です。
+  Wine に無かった関数を足す 0078、0080、0084 です。
 - 0018 は `WIN4WINE_SESSION_REQUEST` があるときだけ効きます。
 - 0063 は、さらに `WIN4WINE_FOLDER_SHELL` があるときだけ効きます（ReactOS のシェルのセッションだけが設定します）。
 - ReactOS のシェルのセッションは `WIN4WINE_SHELL=reactos` も設定します。0047 はそのとき、XP のための部品の差し替えをしません。
@@ -171,6 +171,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0081 | server: ファイルとフォルダに付けた DACL を拡張属性 `user.wine.dacl` に残し、セキュリティを読むときにそれを返す（所有者とグループは今までどおり Unix の所有者から）。Windows 7 の shell32 はごみ箱のフォルダの DACL を自分の付けたものと比べ、違うと「ごみ箱が壊れています」と出す | あり（`WIN4WINE_SHELL=win7`） |
 | 0082 | uxtheme: Windows 7 のタスクバーが自分で通知領域と時計を描く。`WIN4WINE_SHELL=win7` では 0053（DrawThemeParentBackground で通知領域の背景だけを描く）と 0054（時計の差し替え）をしない（Windows 7 の通知領域の背景は半透明で、黒くなり、時刻が二重になった）。BeginBufferedPaint の BP_PAINTPARAMS（BPPF_ERASE、prcExclude、pBlendFunction での AlphaBlend）、BufferedPaintClear、BufferedPaintSetAlpha を文書どおりに | 一部あり（`WIN4WINE_SHELL=win7`） |
 | 0083 | win32u, winex11, comctl32: Windows 7 のスタートボタン（タスクバーが持ち主のレイヤードウィンドウ）とスタートメニューのユーザーの写真を描く。半透明の画素を持ち主の窓が出している画素（その surface の写し）と合成し、持ち主の外やまだ描かれていない所ではアルファが 128 未満の画素を抜いてほかは乗算を戻す（元の画像を覚えておき、持ち主が新しく描いたら合成し直す）（合成のマネージャーが無いと縁が黒いギザギザになった）。ホバーで窓が伸びるときは、新しい画像を描いてから大きさを変え、その後で送り出す。窓は WM の管理にせず、大きさを変えたら画像の前に X と同期する（伸びた所が一瞬黒くなった）。0040 のスタートボタンのクラスは、レイヤードの窓には描かない | あり（`WIN4WINE_SHELL=win7`） |
+| 0084 | apphelp: AllowPermLayer（互換モードの層を使ってよいか。ネットワークのパスとリモートのドライブでは FALSE。ReactOS と同じ）。Windows 7 のスタートメニューからプログラムを起動すると呼ばれ、stub ではシェルが落ちた | なし |
 
 ## 並び順の考え方
 

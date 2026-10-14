@@ -17,6 +17,7 @@
 struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; int moving; int x, y, width, height;
     RECT workarea;
     HICON icon; int icon_checked, icon_present; FILETIME icon_time; DWORD icon_size;
+    ATOM app_id;
 };
 static struct client clients[MAX_CLIENTS];
 /* WM_TIMER of a frame whose caption is painted again after an activation change. */
@@ -547,6 +548,52 @@ static void frame_geometry(void)
     }
 }
 
+/* Windows 7's taskbar (WIN4WINE_SHELL=win7) groups windows by their application
+ * (AppUserModelID); all frames are this process's windows. Give each the ID of its
+ * Linux application (WM_CLASS, classes.tsv from the WM), or one of its own. The
+ * value is the window property that SHGetPropertyStoreForWindow writes for
+ * PKEY_AppUserModel_ID on Windows 7 (its format string and id) holding a global
+ * atom of the ID, as a probe with Windows 7's shell32 shows (EnumPropsEx). */
+static const WCHAR app_id_property[] = L"{9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3} 5";
+
+static BOOL windows7_shell(void)
+{
+    WCHAR value[8];
+    DWORD len = GetEnvironmentVariableW(L"WIN4WINE_SHELL", value, ARRAYSIZE(value));
+    return len && len < ARRAYSIZE(value) && !lstrcmpiW(value, L"win7");
+}
+
+static void client_app_id(struct client *c)
+{
+    WCHAR path[MAX_PATH + 32], id[160], name[101];
+    char line[256];
+    FILE *file;
+    ATOM atom;
+
+    if (!windows7_shell()) return;
+    swprintf(id, ARRAYSIZE(id), L"Win4Wine.Linux.Window.%lx", c->xid);
+    swprintf(path, MAX_PATH + 32, L"%ls\\classes.tsv", directory);
+    if ((file = _wfopen(path, L"rb")))
+    {
+        while (fgets(line, sizeof(line), file))
+        {
+            unsigned long xid;
+            int offset = 0;
+            if (sscanf(line, "%lx\t%n", &xid, &offset) != 1 || !offset || xid != c->xid) continue;
+            line[strcspn(line, "\r\n")] = 0;
+            if (line[offset] && MultiByteToWideChar(CP_UTF8, 0, line + offset, -1, name, ARRAYSIZE(name)))
+                swprintf(id, ARRAYSIZE(id), L"Win4Wine.Linux.%ls", name);
+            break;
+        }
+        fclose(file);
+    }
+    if (!(atom = GlobalAddAtomW(id))) return;
+    if (atom == c->app_id) { GlobalDeleteAtom(atom); return; }
+    SetPropW(c->hwnd, app_id_property, (HANDLE)(ULONG_PTR)atom);
+    if (c->app_id) GlobalDeleteAtom(c->app_id);
+    c->app_id = atom;
+}
+
 static void snapshot(void)
 {
     WCHAR path[MAX_PATH + 32];
@@ -576,6 +623,10 @@ static void snapshot(void)
             c->hwnd = CreateWindowExW(WS_EX_APPWINDOW, L"Win4WineProxy", title,
                 WS_OVERLAPPEDWINDOW, -32000, -32000, 1, 1, NULL, NULL, GetModuleHandleW(NULL), (void *)(uintptr_t)xid);
             if (!c->hwnd) { c->xid = 0; continue; }
+            client_app_id(c);
+            /* before the taskbar sees the window: Windows 7's keeps the icon of an
+             * application's first window for its button */
+            client_icon(c);
             ShowWindow(c->hwnd, SW_SHOWNOACTIVATE);
         }
         c->seen = 1;
@@ -616,6 +667,7 @@ static void snapshot(void)
         {
             DestroyWindow(clients[i].hwnd);
             if (clients[i].icon) DestroyIcon(clients[i].icon);
+            if (clients[i].app_id) GlobalDeleteAtom(clients[i].app_id);
             memset(&clients[i], 0, sizeof(clients[i]));
         }
     frame_geometry();
