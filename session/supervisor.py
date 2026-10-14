@@ -99,8 +99,9 @@ class Session:
                 # On Wayland GTK talks to fcitx5 through the compositor (text-input-v3).
                 if not self.compositor:
                     self.env.update(GTK_IM_MODULE='fcitx')
-        # Linux applications take the XP shell's DPI (LogPixels) too.
+        # Linux applications take the XP shell's DPI (LogPixels) and ClearType too.
         self.dpi = dpi.prefix_dpi(self.prefix)
+        self.cleartype = dpi.prefix_cleartype(self.prefix)
         self.env.update(dpi.environment(self.dpi, wayland=self.compositor))
         # Wayland: each output's scale, and the one Win32 takes as its primary monitor.
         self.outputs = config.get('outputs', {})
@@ -135,7 +136,7 @@ class Session:
         if self.failures < 1 or self.readiness_timeout <= 0:
             raise SystemExit('Invalid recovery limits')
         self.d = display.Display()
-        dpi.set_xft_dpi(self.d, self.dpi)
+        dpi.set_xft(self.d, self.dpi, self.cleartype)
         self.class_atom = self.d.intern_atom('_WIN4WINE_CLASS')
         # The supervisor sleeps until a top-level window changes, a child
         # exits or a signal comes; signal handlers write to this pipe.
@@ -165,7 +166,8 @@ class Session:
 
         The prefix's Fonts directory is added so that the XP shell's own
         fonts, such as MS UI Gothic, serve Linux applications too. The
-        system configuration, and through it the user's, still applies."""
+        system configuration, and through it the user's, still applies.
+        With XP's ClearType, fonts are drawn in its RGB subpixel order."""
         directory = self.state / 'fontconfig'
         directory.mkdir(mode=0o700, exist_ok=True)
         family = escape(self.linux_font)
@@ -179,6 +181,9 @@ class Session:
                 + ('' if self.compositor else
                    '  <match target="pattern"><edit name="dpi" mode="assign">'
                    f'<double>{self.dpi}</double></edit></match>\n')
+                + ('  <match target="font"><edit name="rgba" mode="assign"><const>rgb</const></edit>'
+                   '<edit name="lcdfilter" mode="assign"><const>lcddefault</const></edit></match>\n'
+                   if self.cleartype else '')
                 + '</fontconfig>\n')
         target = directory / 'fonts.conf'
         tmp = directory / 'fonts.tmp'

@@ -71,6 +71,33 @@ class FontRendering(unittest.TestCase):
                 self.assertEqual(writes, expected)
                 self.assertFalse(any('FontSmoothing' in cmd for cmd in commands))
 
+    def test_font_smoothing(self):
+        for option, kind in ((None, None), ('standard', '1'), ('cleartype', '2')):
+            with self.subTest(option=option), tempfile.TemporaryDirectory() as temporary:
+                prefix = Path(temporary)
+                (prefix / 'xp-shell.json').write_text('{}')
+                commands = []
+                argv = ['display.py'] + ([] if option is None else ['--font-smoothing', option])
+                with patch.dict('os.environ', {'WINEPREFIX': str(prefix), 'WINE': 'fixture-wine'}), \
+                     patch.object(sys, 'argv', argv), \
+                     patch('subprocess.run', side_effect=lambda cmd, **kw: commands.append(cmd)):
+                    runpy.run_path(str(ROOT / 'prefix/display.py'), run_name='__main__')
+                values = {cmd[cmd.index('/v') + 1]: cmd[cmd.index('/d') + 1] for cmd in commands}
+                if option is None:
+                    self.assertEqual(values, {})
+                else:
+                    self.assertEqual(values, {'FontSmoothing': '2', 'FontSmoothingType': kind,
+                                              'FontSmoothingOrientation': '1'})
+
+    def test_font_smoothing_xp_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            prefix = Path(temporary)
+            (prefix / 'reactos-shell.json').write_text('{}')
+            with patch.dict('os.environ', {'WINEPREFIX': str(prefix)}), \
+                 patch.object(sys, 'argv', ['display.py', '--font-smoothing', 'cleartype']), \
+                 self.assertRaises(SystemExit):
+                runpy.run_path(str(ROOT / 'prefix/display.py'), run_name='__main__')
+
 
 if __name__ == '__main__':
     unittest.main()

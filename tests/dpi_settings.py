@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""session/dpi.py: the prefix's LogPixels and the settings Linux applications get from it.
+"""session/dpi.py: the prefix's LogPixels and font smoothing, and the settings Linux applications get from them.
 
-With DISPLAY set (Xvfb is enough), also checks that Xft.dpi lands in the root
-window's resources next to the ones already there."""
+With DISPLAY set (Xvfb is enough), also checks that Xft.dpi, and with
+ClearType Xft.rgba, land in the root window's resources next to the ones
+already there."""
 import os
 from pathlib import Path
 import sys
@@ -52,6 +53,26 @@ class PrefixDpi(unittest.TestCase):
         self.assertEqual(dpi.prefix_dpi(Path(tempfile.mkdtemp())), 96)
 
 
+class PrefixClearType(unittest.TestCase):
+    def prefix(self, values):
+        directory = Path(tempfile.mkdtemp())
+        (directory / 'user.reg').write_text(USER.format(logpixels=values))
+        return directory
+
+    def test_cleartype(self):
+        self.assertTrue(dpi.prefix_cleartype(self.prefix(
+            '"FontSmoothing"="2"\n"FontSmoothingType"=dword:00000002\n')))
+
+    def test_standard_and_off(self):
+        self.assertFalse(dpi.prefix_cleartype(self.prefix(
+            '"FontSmoothing"="2"\n"FontSmoothingType"=dword:00000001\n')))
+        # XP ignores the type while smoothing is off.
+        self.assertFalse(dpi.prefix_cleartype(self.prefix(
+            '"FontSmoothing"="0"\n"FontSmoothingType"=dword:00000002\n')))
+        self.assertFalse(dpi.prefix_cleartype(self.prefix('')))
+        self.assertFalse(dpi.prefix_cleartype(Path(tempfile.mkdtemp())))
+
+
 class Environment(unittest.TestCase):
     def test_xp_cursor_sizes(self):
         # XP's SM_CXCURSOR at 96, 108, 120, 132, 144, 168, 192 and 216 DPI.
@@ -77,12 +98,24 @@ class XftDpi(unittest.TestCase):
         root = d.screen().root
         atom = d.intern_atom('RESOURCE_MANAGER')
         saved = root.get_full_property(atom, Xatom.STRING)
+
+        def resources():
+            value = root.get_full_property(atom, Xatom.STRING).value
+            return (value.decode() if isinstance(value, bytes) else value).splitlines()
         try:
             root.change_property(atom, Xatom.STRING, 8, b'*customization:\t-color\nXft.dpi:\t96\n')
-            dpi.set_xft_dpi(d, 144)
-            value = root.get_full_property(atom, Xatom.STRING).value
-            value = value.decode() if isinstance(value, bytes) else value
-            self.assertEqual(value.splitlines(), ['*customization:\t-color', 'Xft.dpi:\t144'])
+            dpi.set_xft(d, 144)
+            self.assertEqual(resources(), ['*customization:\t-color', 'Xft.dpi:\t144'])
+            dpi.set_xft(d, 120, cleartype=True)
+            self.assertEqual(resources(), ['*customization:\t-color', 'Xft.dpi:\t120', 'Xft.rgba:\trgb',
+                                           'Xft.lcdfilter:\tlcddefault', 'win4wine.cleartype:\t1'])
+            # A later session with standard smoothing on the same server takes them back ...
+            dpi.set_xft(d, 96)
+            self.assertEqual(resources(), ['*customization:\t-color', 'Xft.dpi:\t96'])
+            # ... but not the user's own.
+            root.change_property(atom, Xatom.STRING, 8, b'Xft.rgba:\tbgr\n')
+            dpi.set_xft(d, 96)
+            self.assertEqual(resources(), ['Xft.rgba:\tbgr', 'Xft.dpi:\t96'])
         finally:
             if saved:
                 root.change_property(atom, Xatom.STRING, 8, saved.value)

@@ -74,3 +74,4 @@
 0074-winex11-external-gc-flush.patch
 0075-uxtheme-external-paint-speed.patch
 0076-uxtheme-parent-background-origin.patch
+0077-win32u-external-cleartype.patch
