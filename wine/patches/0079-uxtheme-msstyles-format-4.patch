@@ -13,6 +13,10 @@ eight bytes. With a resource id nothing follows: fonts and some
 rectangles are strings of the theme's string table, in its MUI file
 (ja-JP\aero.msstyles.mui: "Meiryo, 9, Quality:ClearType"), and image
 files are IMAGE resources, PNG with alpha. Enumerations are numbers.
+A class takes the properties it does not define from a base class: BCMAP
+holds, after a count, the base of each class as an index counted from
+"globals" in CMAP, or -1 (Tooltip has TooltipStyle as its base, which
+defines TextColor; ItemsView::ListView has Explorer::ListView).
 Wine before: themes of any format but 3 were rejected ("Version of theme
 file is unsupported: 0x0004") and Windows 7 drew its classic look.
 Change: a format 4 theme opens with the colors and sizes of VMAP and the
@@ -22,20 +26,24 @@ name map lacks the value) in the classes, parts and states of the
 existing reader, with sysmetrics applied as SysMetrics; the strings come
 from <dir>\<UI language>\<file>.mui, else en-US, else the theme. An
 application's class takes what it lacks from the class of the same name,
-then globals. Images load from the IMAGE resource through WIC as 32 bpp
+then globals; a class with a base in BCMAP takes it from that base
+instead (a base that would make a loop is ignored, and a class that only
+has a base is created so it can be opened). Images load from the IMAGE resource through WIC as 32 bpp
 DIB sections and go through the same alpha preparation as format 3 ones.
 Evidence: Windows 7 SP1 explorer.exe draws the Basic taskbar, Start
 button and dialog frames and buttons with aero.msstyles. XP's Luna and
 classic scenes (13 scenes, nested session) are pixel-identical with and
-without the patch.
+without the patch. Without base classes, GetThemeColor(Tooltip, 1, 0,
+TMT_TEXTCOLOR) failed and Windows 7's DirectUI stopped building its folder
+windows at the scroll tip; with them it is 0x575757.
 Scope: format 4 themes only; format 3 themes (XP, ReactOS) read as before.
 ---
  dlls/uxtheme/Makefile.in |   2 +-
- dlls/uxtheme/msstyles.c  | 370 ++++++++++++++++++++++++++++++++++++++++++++++-
+ dlls/uxtheme/msstyles.c  | 393 ++++++++++++++++++++++++++++++++++++++++++++++-
  dlls/uxtheme/msstyles.h  |  15 ++
  dlls/uxtheme/property.c  |  10 +-
  dlls/uxtheme/stylemap.c  |  16 ++
- 5 files changed, 409 insertions(+), 4 deletions(-)
+ 5 files changed, 432 insertions(+), 4 deletions(-)
 
 diff --git a/dlls/uxtheme/Makefile.in b/dlls/uxtheme/Makefile.in
 index e16c2e7..ac2bdad 100644
@@ -51,7 +59,7 @@ index e16c2e7..ac2bdad 100644
  SOURCES = \
  	buffer.c \
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
-index 85abac6..1879aff 100644
+index 85abac6..8a4e8c2 100644
 --- a/dlls/uxtheme/msstyles.c
 +++ b/dlls/uxtheme/msstyles.c
 @@ -18,6 +18,8 @@
@@ -147,7 +155,7 @@ index 85abac6..1879aff 100644
      prepare_alpha (img->image, hasAlpha, &has_default);
      img->image = screen_format_image(img->image);
      img->hasAlpha = *hasAlpha;
-@@ -1856,3 +1889,336 @@ HRESULT MSSTYLES_GetPropertyMargins(PTHEME_PROPERTY tp, RECT *prc, MARGINS *pMar
+@@ -1856,3 +1889,359 @@ HRESULT MSSTYLES_GetPropertyMargins(PTHEME_PROPERTY tp, RECT *prc, MARGINS *pMar
      }
      return S_OK;
  }
@@ -350,12 +358,12 @@ index 85abac6..1879aff 100644
 +
 +static void MSSTYLES_ParseThemeV4(PTHEME_FILE tf, BOOL setMetrics)
 +{
-+    const BYTE *cmap, *variant, *p, *end;
++    const BYTE *cmap, *variant, *bcmap, *p, *end;
 +    const WCHAR **names;
 +    struct PARSECOLORSTATE colorState;
 +    struct PARSENONCLIENTSTATE nonClientState;
 +    WCHAR app[MAX_THEME_APP_NAME], name[MAX_THEME_CLASS_NAME], text[512];
-+    DWORD len, size, count = 0, i;
++    DWORD len, size, count = 0, first, i;
 +    PTHEME_CLASS cls, globals;
 +    PTHEME_PARTSTATE ps;
 +    const WCHAR *value;
@@ -430,6 +438,29 @@ index 85abac6..1879aff 100644
 +        if (cls == globals) continue;
 +        cls->overrides = *cls->szAppName ? MSSTYLES_FindClass(tf, NULL, cls->szClassName) : NULL;
 +        if (!cls->overrides) cls->overrides = globals;
++    }
++
++    /* A class takes what it lacks from its base class: BCMAP holds the base
++     * of each class, as indexes counted from globals, or -1. */
++    for (first = 0; first < count && lstrcmpiW(names[first], L"globals"); first++);
++    if ((bcmap = find_v4_resource(tf->hTheme, L"BCMAP", L"BCMAP", &len)) && len >= sizeof(DWORD))
++    {
++        const INT *bases = (const INT *)bcmap + 1;
++        DWORD total = min(*(const DWORD *)bcmap, len / sizeof(DWORD) - 1);
++
++        for (i = 0; i < total && first + i < count; i++)
++        {
++            PTHEME_CLASS base, c;
++
++            if (bases[i] < 0 || bases[i] == i || first + bases[i] >= count) continue;
++            parse_app_class_name(names[first + i], app, name);
++            cls = MSSTYLES_AddClass(tf, app, name);
++            parse_app_class_name(names[first + bases[i]], app, name);
++            base = MSSTYLES_AddClass(tf, app, name);
++            if (!base->overrides && base != globals) base->overrides = globals;
++            for (c = base; c && c != cls; c = c->overrides);
++            if (!c) cls->overrides = base;
++        }
 +    }
 +    free(names);
 +    if (!tf->classes) ERR("Failed to parse format 4 theme\n");
