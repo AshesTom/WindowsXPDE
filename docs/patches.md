@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 77 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 78 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -13,7 +13,8 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 
 - 判定は 0013 が加える `include/wine/win4wine.h` の `win4wine_external_shell()` に 1 つにまとめています。
   ntdll は Rtl の関数で、wow64.dll（0017）は ntdll の関数で同じ変数を読みます。
-- opt-in なしで効くのは、文書化された Win32 の挙動の修正（0001〜0012、0064、0076）と、普通のアプリの見た目と動作を変えない 0019・0020 です。
+- opt-in なしで効くのは、文書化された Win32 の挙動の修正（0001〜0012、0064、0076）と、普通のアプリの見た目と動作を変えない 0019・0020、
+  Wine に無かった関数を足すだけの 0078 です。
 - 0018 は `WIN4WINE_SESSION_REQUEST` があるときだけ効きます。
 - 0063 は、さらに `WIN4WINE_FOLDER_SHELL` があるときだけ効きます（ReactOS のシェルのセッションだけが設定します）。
 - ReactOS のシェルのセッションは `WIN4WINE_SHELL=reactos` も設定します。0047 はそのとき、XP のための部品の差し替えをしません。
@@ -158,10 +159,16 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0076 | uxtheme: DrawThemeParentBackground で、親の背景を子の窓の位置に描く（範囲は切り抜きにだけ使う。XP と同じ。フォルダの窓のツールバーで、状態の変わったボタンだけを描き直すと、無効になった「移動」「コピー」の背景が黒くなった） | なし |
 | 0077 | win32u: XP の ClearType（`FontSmoothingType` が 2）を、XP と同じく描いて測る。fontconfig と X の設定より prefix の設定を優先する、埋め込みビットマップのある大きさ（MS UI Gothic の 22 ピクセルまで）は標準と同じに描く、ほかは横を 6 倍にして白黒で描き、サブピクセルごとに 6 つのサンプルを数える（7 段階。ガンマ 2.2）、字幅は標準と同じ白黒の字幅（ClearType にしても行の長さが変わらない） | あり |
 
+### Windows 7 のシェル（0078〜）
+
+| 番号 | 内容 | opt-in |
+|---|---|---|
+| 0078 | dlls: Windows 7 の explorer と shell32 などが import する関数を足す（ntdll の WinSqm*・ShipAssert・RtlSetEnvironmentVar、user32 の CalculatePopupWindowPosition など、kernel32 の CheckElevation など、kernelbase の LoadStringByReference、winsta の WinStationIsSessionRemoteable、64 ビットの oleaut32 の NDR64 の名前、rpcrt4 の NdrStubCall3、gdi32 の CreateBitmapFromDxSurface）。足すだけで、Wine にあった関数は変わらない | なし |
+
 ## 並び順の考え方
 
 まとまりは「opt-in の要らない修正 → XP の部品が呼ぶ API → 外部シェルの基盤 → bridge との連携 → ウィンドウ → 文字と画素 →
-コントロール → uxtheme → Wayland のセッション → ReactOS のシェル」の順で、その後の修正は末尾に足します。同じまとまりの中では、後のパッチが前のパッチのコードを使う順にしてあります
+コントロール → uxtheme → Wayland のセッション → ReactOS のシェル → Windows 7 のシェル」の順で、その後の修正は末尾に足します。同じまとまりの中では、後のパッチが前のパッチのコードを使う順にしてあります
 （例: 0050〜0052 は 0049 の枠の描画を前提にしています）。
 
 ## 書式

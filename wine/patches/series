@@ -75,3 +75,4 @@
 0075-uxtheme-external-paint-speed.patch
 0076-uxtheme-parent-background-origin.patch
 0077-win32u-external-cleartype.patch
+0078-dlls-windows7-shell-imports.patch
