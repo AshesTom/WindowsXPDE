@@ -20,7 +20,10 @@ its arguments (there is no desktop composition, so no preview; the
 caller passes the arguments in registers and removes them); it stays a
 stub on 32-bit. With WIN4WINE_SHELL=win7, the free-threaded marshaler
 passes the given pointer within the process when the object's
-QueryInterface does not give the interface. On 64-bit, ole32 exports
+QueryInterface does not give the interface, marks it so in the marshaled
+data, and unmarshaling gives that pointer back without asking again
+(asking again failed the same way when the thumbnail cache's interface
+was taken from the global interface table). On 64-bit, ole32 exports
 HACCEL, HBITMAP, HGLOBAL, HICON, HMENU and HWND _UserSize64,
 _UserMarshal64, _UserUnmarshal64 and _UserFree64 as the classic
 functions, as 0078 does for oleaut32.
@@ -31,17 +34,17 @@ window does not show yet.
 Scope: the marshaler change only with WIN4WINE_SHELL=win7; the other
 changes are new 64-bit exports.
 ---
- dlls/combase/marshal.c    | 18 ++++++++++++++++++
+ dlls/combase/marshal.c    | 32 +++++++++++++++++++++++++++++++-
  dlls/dwmapi/dwmapi.spec   |  3 ++-
  dlls/dwmapi/dwmapi_main.c | 15 +++++++++++++++
  dlls/ole32/ole32.spec     | 24 ++++++++++++++++++++++++
- 4 files changed, 59 insertions(+), 1 deletion(-)
+ 4 files changed, 72 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/combase/marshal.c b/dlls/combase/marshal.c
-index f638604..69a4778 100644
+index f638604..1e1315f 100644
 --- a/dlls/combase/marshal.c
 +++ b/dlls/combase/marshal.c
-@@ -299,6 +299,14 @@ static HRESULT WINAPI ftmarshaler_GetMarshalSizeMax(IMarshal *iface, REFIID riid
+@@ -299,6 +299,17 @@ static HRESULT WINAPI ftmarshaler_GetMarshalSizeMax(IMarshal *iface, REFIID riid
      return hr;
  }
  
@@ -53,10 +56,13 @@ index f638604..69a4778 100644
 +    return len && len < ARRAY_SIZE(value) && !wcsicmp(value, L"win7");
 +}
 +
++/* Marks in the marshaled data a pointer passed as it was given. */
++#define FTM_AS_GIVEN 0x77346d66
++
  static HRESULT WINAPI ftmarshaler_MarshalInterface(IMarshal *iface, IStream *stream, REFIID riid,
          void *pv, DWORD dest_context, void *pvDestContext, DWORD mshlflags)
  {
-@@ -317,6 +325,16 @@ static HRESULT WINAPI ftmarshaler_MarshalInterface(IMarshal *iface, IStream *str
+@@ -317,6 +328,17 @@ static HRESULT WINAPI ftmarshaler_MarshalInterface(IMarshal *iface, IStream *str
  
          data.value = 0;
          hr = IUnknown_QueryInterface((IUnknown *)pv, riid, (void **)&data.object);
@@ -68,10 +74,28 @@ index f638604..69a4778 100644
 +             * within the process the pointer is passed as it is. */
 +            data.object = pv;
 +            IUnknown_AddRef(data.object);
++            unknown_guid.Data1 = FTM_AS_GIVEN;
 +            hr = S_OK;
 +        }
          if (FAILED(hr))
              return hr;
+ 
+@@ -361,7 +383,15 @@ static HRESULT WINAPI ftmarshaler_UnmarshalInterface(IMarshal *iface, IStream *s
+     hr = IStream_Read(stream, &unknown_guid, sizeof(unknown_guid), NULL);
+     if (hr != S_OK) return STG_E_READFAULT;
+ 
+-    hr = IUnknown_QueryInterface(data.object, riid, ppv);
++    if (unknown_guid.Data1 == FTM_AS_GIVEN)
++    {
++        /* passed as it was given (see ftmarshaler_MarshalInterface) */
++        *ppv = data.object;
++        IUnknown_AddRef(data.object);
++        hr = S_OK;
++    }
++    else
++        hr = IUnknown_QueryInterface(data.object, riid, ppv);
+     if (!(mshlflags & (MSHLFLAGS_TABLEWEAK | MSHLFLAGS_TABLESTRONG)))
+         IUnknown_Release(data.object);
  
 diff --git a/dlls/dwmapi/dwmapi.spec b/dlls/dwmapi/dwmapi.spec
 index d899a7a..0c07842 100644

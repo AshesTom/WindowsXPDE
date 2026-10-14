@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 88 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 89 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -167,15 +167,16 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 |---|---|---|
 | 0078 | dlls: Windows 7 の explorer と shell32 などが import する関数を足す（ntdll の WinSqm*・ShipAssert・RtlSetEnvironmentVar、user32 の CalculatePopupWindowPosition など、kernel32 の CheckElevation など、kernelbase の LoadStringByReference、winsta の WinStationIsSessionRemoteable、64 ビットの oleaut32 の NDR64 の名前、rpcrt4 の NdrStubCall3、gdi32 の CreateBitmapFromDxSurface）。足すだけで、Wine にあった関数は変わらない | なし |
 | 0079 | uxtheme: Windows Vista と 7 のテーマ（msstyles の形式 4。VMAP、CMAP、VARIANT のバイナリのプロパティ、MUI の文字列表、PNG の画像）を読む。値は形式 3 の ini と同じテキストにして、今のクラス・パーツ・ステートに入れる（Windows 7 Basic の aero.msstyles）。クラスは BCMAP の基底のクラスから足りない値を取る（Tooltip は TooltipStyle から。無いと DirectUI がフォルダの窓を作るのを止めた）。形式 3（XP、ReactOS）の読み方は変わらない | なし |
-| 0080 | user32, samlib: Windows 7 のスタートメニューが開くようにする。user32 に RegisterMessagePumpHook・UnregisterMessagePumpHook を足す（フックに user32 の関数の表を渡して登録だけを数える。ReactOS と同じく、メッセージの関数はフックを通さない。無いと検索欄の部分の作成が失敗し、スタートメニュー全体が壊される）。samlib の SamConnect は失敗を返し（SAM は無い）、SamCloseHandle と SamFreeMemory は成功を返す | なし |
+| 0080 | user32, samlib: Windows 7 のスタートメニューが開くようにする。user32 に RegisterMessagePumpHook・UnregisterMessagePumpHook を足す（フックに user32 の関数の表を渡し、フックが返す関数を使う。ReactOS と同じくスレッドごとに数え、登録したスレッドの GetMessage・PeekMessage・WaitMessage・GetQueueStatus・MsgWaitForMultipleObjectsEx だけがフックを通る。DirectUser はその中で後回しの配置や描画をする。無いと検索欄の部分の作成が失敗してスタートメニュー全体が壊され、フックを通さないとフォルダの窓のアイコンが入力が来るまで出なかった）。samlib の SamConnect は失敗を返し（SAM は無い）、SamCloseHandle と SamFreeMemory は成功を返す | なし |
 | 0081 | server: ファイルとフォルダに付けた DACL を拡張属性 `user.wine.dacl` に残し、セキュリティを読むときにそれを返す（所有者とグループは今までどおり Unix の所有者から）。Windows 7 の shell32 はごみ箱のフォルダの DACL を自分の付けたものと比べ、違うと「ごみ箱が壊れています」と出す | あり（`WIN4WINE_SHELL=win7`） |
 | 0082 | uxtheme: Windows 7 のタスクバーが自分で通知領域と時計を描く。`WIN4WINE_SHELL=win7` では 0053（DrawThemeParentBackground で通知領域の背景だけを描く）と 0054（時計の差し替え）をしない（Windows 7 の通知領域の背景は半透明で、黒くなり、時刻が二重になった）。BeginBufferedPaint の BP_PAINTPARAMS（BPPF_ERASE、prcExclude、pBlendFunction での AlphaBlend）、BufferedPaintClear、BufferedPaintSetAlpha を文書どおりに | 一部あり（`WIN4WINE_SHELL=win7`） |
 | 0083 | win32u, winex11, comctl32: Windows 7 のスタートボタン（タスクバーが持ち主のレイヤードウィンドウ）とスタートメニューのユーザーの写真を描く。半透明の画素を持ち主の窓が出している画素（その surface の写し）と合成し、持ち主の外やまだ描かれていない所ではアルファが 128 未満の画素を抜いてほかは乗算を戻す（元の画像を覚えておき、持ち主が新しく描いたら合成し直す）（合成のマネージャーが無いと縁が黒いギザギザになった）。ホバーで窓が伸びるときは、新しい画像を描いてから大きさを変え、その後で送り出す。窓は WM の管理にせず、大きさを変えたら画像の前に X と同期する（伸びた所が一瞬黒くなった）。0040 のスタートボタンのクラスは、レイヤードの窓には描かない | あり（`WIN4WINE_SHELL=win7`） |
 | 0084 | apphelp: AllowPermLayer（互換モードの層を使ってよいか。ネットワークのパスとリモートのドライブでは FALSE。ReactOS と同じ）。Windows 7 のスタートメニューからプログラムを起動すると呼ばれ、stub ではシェルが落ちた | なし |
 | 0085 | shell32: 通知領域のアイコンを Windows 7 のタスクバーの形式で送る（1484 バイト: 0056 の XP の形、32bit のバルーンのアイコン、呼び出したプロセスのモジュールのパス。Windows 7 の shell32 とおとりのタスクバーの窓で測った）。XP の形は拒まれていた | あり（`WIN4WINE_SHELL=win7`） |
-| 0086 | dwmapi, combase, ole32: Windows キーとフォルダの窓のために。x64 で DwmpActivateLivePreview（ordinal 113）を S_OK に（合成が無いのでプレビューは無い。stub ではシェルが Windows キーで落ちた）。`WIN4WINE_SHELL=win7` で、フリースレッドのマーシャラーが同じプロセス内では QueryInterface で得られないインターフェースもそのまま渡す（「ファイル システムのエラー」になっていた）。x64 の ole32 に HWND などの _User*64（NDR64 の名前）を通常の関数として | 一部あり（`WIN4WINE_SHELL=win7`） |
+| 0086 | dwmapi, combase, ole32: Windows キーとフォルダの窓のために。x64 で DwmpActivateLivePreview（ordinal 113）を S_OK に（合成が無いのでプレビューは無い。stub ではシェルが Windows キーで落ちた）。`WIN4WINE_SHELL=win7` で、フリースレッドのマーシャラーが同じプロセス内では QueryInterface で得られないインターフェースもそのまま渡し、取り出すときもそのまま返す（「ファイル システムのエラー」になっていた）。x64 の ole32 に HWND などの _User*64（NDR64 の名前）を通常の関数として | 一部あり（`WIN4WINE_SHELL=win7`） |
 | 0087 | xmllite: 16 KB を超える UTF-16 の入力を読む。UTF-16 のときだけ、変換した生のバッファを空けておらず、3 回目の読み込みで同じ 8 KB をもう一度写していた（Windows 7 の DirectUI が UTF-16 で渡すフォルダの窓の UIFILE が途中で壊れ、Win+E の窓が出る前に閉じた）。Wine の xmllite の reader のテスト（2145 件）は通る | なし |
 | 0088 | ieframe, dsrole, samcli, ntshrui: Windows 7 のフォルダの窓のために。ieframe に ordinal 158・159（SHRestricted2A/W。Windows 7 の shdocvw が転送する）。新しい組み込みの dsrole.dll と samcli.dll（netapi32 への転送）と ntshrui.dll（共有しているフォルダは無い、と答える）。Windows 7 の shell32 と linkinfo が遅延読み込みする | なし |
+| 0089 | combase: DLL の代理プロセス（dllhost）を、クラスが登録されている側のビット数で起動する。64bit のプログラムは、64bit 側に登録されたクラスでも常に SysWOW64 の 32bit の dllhost を起動していた（Windows 7 のサムネイルのキャッシュのサーバーが読み込めなかった） | なし |
 
 ## 並び順の考え方
 
