@@ -68,7 +68,12 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - `WIN4WINE_SHELL=win7` を設定します。Windows 7 のためだけの Wine のパッチ（0081、0083、0085、0086 の一部）は、これがあるときだけ効きます。
 - Linux の窓は、`WM_CLASS` ごとにタスクバーのボタンにまとまります（proxy が窓に AppUserModelID を付けます）。
 - Linux のトレイアイコン（StatusNotifierItem と XEmbed）は、Windows 7 の通知領域に出ます（Wine の 0085）。
+- 日本語入力は XP のシェルと同じ fcitx5 + Mozc です。入力モード（「あ」など）は通知領域に出て、Wine のアプリでは窓の中で
+  変換します。
+- Windows のアプリがスタートメニューに作るショートカットは、「すべてのプログラム」に並びます。
 - Windows キー、Ctrl+Esc（Linux の窓からも）、Win+R、Win+E、Alt+Tab（XP の形）が使えます。
+- スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
+  終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
 Windows 7 のシェルのために足した Wine のパッチは 0078〜0093 です（[patches.md](patches.md)）。
 
@@ -79,3 +84,4 @@ Windows 7 のシェルのために足した Wine のパッチは 0078〜0093 で
 - Wayland のセッションはまだありません。
 - 確かめたのは日本語版の Windows 7 Professional SP1（x64）だけです。英語版も同じ手順で作りますが、試していません。
 - ネットワーク、ヘルプとサポート、コントロール パネルの中身は、Wine にその部品が無いので使えません。
+- スタートメニューの「ロック」「スリープ」「休止状態」は何もしません。
