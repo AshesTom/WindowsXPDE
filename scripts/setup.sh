@@ -307,12 +307,19 @@ if [[ $shell == xp ]]; then
 elif [[ $shell == win7 ]]; then
     step 'Windows 7 files'
     assets=$local/assets-win7
-    if [[ -f $assets/manifest.json ]]; then
+    wanted=$(sed -n 's/^EXTRACT_VERSION = //p' "$root/extract/win7.py")
+    have=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("extract_version", 1))' \
+        "$assets/media.json" 2>/dev/null || echo 0)
+    if [[ -f $assets/manifest.json && $have == "$wanted" ]]; then
         printf 'Extracted already: %s\n' "$assets"
     else
         # 7z needs room for install.wim; keep it out of a small /tmp.
         mkdir -p "$local/tmp"
-        TMPDIR=$local/tmp python3 "$root/extract/win7.py" "$media" "$assets"
+        rm -rf "$assets.new"
+        TMPDIR=$local/tmp python3 "$root/extract/win7.py" "$media" "$assets.new"
+        # An earlier extraction: replaced; the prefix's stage takes the new files.
+        rm -rf "$assets"
+        mv "$assets.new" "$assets"
     fi
     lang=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["lang"])' "$assets/media.json")
     printf 'Windows 7 in %s\n' "$([[ $lang == ja ]] && echo Japanese || echo English)"

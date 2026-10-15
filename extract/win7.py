@@ -24,6 +24,8 @@ import media  # noqa: E402
 
 RT_GROUP_ICON = 14
 
+# Bump when the extracted files change; setup.sh then extracts again.
+EXTRACT_VERSION = 2
 # The image's language -> our language (the session's and the prefix's).
 LANGUAGES = {'ja-JP': 'ja', 'en-US': 'en'}
 # Windows 7's shell and the DLLs it uses from Windows 7 (prefix/win7.py says which
@@ -32,6 +34,11 @@ SYSTEM32 = ('explorerframe.dll', 'shell32.dll', 'shlwapi.dll', 'propsys.dll', 's
             'dui70.dll', 'duser.dll', 'profapi.dll', 'sndvolsso.dll', 'winbrand.dll', 'shacct.dll',
             'thumbcache.dll', 'authui.dll', 'linkinfo.dll', 'actxprxy.dll',
             'imageres.dll', 'sud.dll', 'DeviceCenter.dll')
+# Their 32-bit copies (SysWOW64): every program of the session uses Windows 7's
+# shell DLLs for its file dialogs (prefix/win7.py).
+SYSWOW64 = ('explorerframe.dll', 'shell32.dll', 'shlwapi.dll', 'propsys.dll', 'shdocvw.dll', 'dui70.dll',
+            'duser.dll', 'profapi.dll', 'sndvolsso.dll', 'winbrand.dll', 'shacct.dll', 'thumbcache.dll',
+            'authui.dll', 'linkinfo.dll', 'actxprxy.dll', 'imageres.dll')
 # The components of these files, whose registry entries the prefix gets.
 COMPONENTS = ('microsoft-windows-explorer', 'microsoft-windows-explorerframe', 'microsoft-windows-shell32',
               'microsoft-windows-shlwapi', 'microsoft-windows-propsys', 'microsoft-windows-shdocvw',
@@ -112,6 +119,14 @@ def select(paths, lang_dir, lang):
         raise SystemExit('Not in this Windows 7 image: Common Controls 6 (amd64)')
     want(sxs[-1], 'sxs/comctl32.dll')
     want(f'Windows/System32/{lang_dir}/comctl32.dll.mui', f'sxs/{lang_dir}/comctl32.dll.mui')
+    # The 32-bit Common Controls 6, for the 32-bit copies of the shell DLLs
+    sxs = sorted((p for p in paths if re.match(
+        r'windows/winsxs/x86_microsoft\.windows\.common-controls_6595b64144ccf1df_6\.0\.[\d.]+_none_[0-9a-f]+/comctl32\.dll$', p)),
+        key=version)
+    if not sxs:
+        raise SystemExit('Not in this Windows 7 image: Common Controls 6 (x86)')
+    want(sxs[-1], 'sxs/wow64/comctl32.dll')
+    want(f'Windows/SysWOW64/{lang_dir}/comctl32.dll.mui', f'sxs/wow64/{lang_dir}/comctl32.dll.mui')
     for path, real in paths.items():
         name = PurePosixPath(path).name
         if path.startswith('windows/fonts/') and re.match(FONTS[lang], name):
@@ -123,9 +138,7 @@ def select(paths, lang_dir, lang):
             wanted[real] = 'cursors/' + PurePosixPath(real).name
         elif path.startswith('programdata/microsoft/user account pictures/'):
             wanted[real] = 'pictures/' + real[len('ProgramData/Microsoft/User Account Pictures/'):]
-    # The icons and names that registrations give in shell32.dll and imageres.dll,
-    # for 32-bit programs.
-    for name in ('shell32.dll', 'imageres.dll'):
+    for name in SYSWOW64:
         want(f'Windows/SysWOW64/{name}', f'syswow64/{name}')
         want(f'Windows/SysWOW64/{lang_dir}/{name}.mui', f'syswow64/{lang_dir}/{name}.mui', required=False)
     # The edition's name on the logon screen (greeter/w7logon.py)
@@ -138,17 +151,20 @@ def select(paths, lang_dir, lang):
         want(f'ProgramData/Microsoft/Windows/{folder}/desktop.ini', f'startmenu/{folder}/desktop.ini',
              required=False)
     # Component manifests, for the registry (not kept).
-    # The 32-bit view of a component has a manifest of its own (wow64_), for
-    # the components that also have 32-bit files.
-    for arch in ('amd64', 'wow64'):
+    # The 32-bit view of a component is in a manifest of its own: wow64_ for
+    # components with 64-bit counterparts, x86_ for the others.
+    for arch, prefixes in (('amd64', ('amd64',)), ('wow64', ('wow64', 'x86'))):
         for component in COMPONENTS:
-            found = sorted((p for p in paths if re.match(
-                rf'windows/winsxs/manifests/{arch}_{re.escape(component)}_31bf3856ad364e35_[\d.]+_[a-z-]+_[0-9a-f]+\.manifest$', p)),
-                key=version)
-            if found:
-                wanted[paths[found[-1]]] = f'manifests/{arch}/{component}.manifest'
-            elif arch == 'amd64':
-                raise SystemExit(f'Not in this Windows 7 image: the manifest of {component}')
+            for prefix in prefixes:
+                found = sorted((p for p in paths if re.match(
+                    rf'windows/winsxs/manifests/{prefix}_{re.escape(component)}_31bf3856ad364e35_[\d.]+_[a-z-]+_[0-9a-f]+\.manifest$', p)),
+                    key=version)
+                if found:
+                    wanted[paths[found[-1]]] = f'manifests/{arch}/{component}.manifest'
+                    break
+            else:
+                if arch == 'amd64':
+                    raise SystemExit(f'Not in this Windows 7 image: the manifest of {component}')
     return wanted
 
 
@@ -201,7 +217,8 @@ def extract(iso, output):
                 print(f'Registry entry left out ({arch}):', item, file=sys.stderr)
         (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
         (output / 'media.json').write_text(json.dumps(
-            {'lang': lang, 'ui_language': lang_dir, 'image': int(index), 'edition': edition}, indent=2) + '\n')
+            {'lang': lang, 'ui_language': lang_dir, 'image': int(index), 'edition': edition,
+             'extract_version': EXTRACT_VERSION}, indent=2) + '\n')
         print(f'Extracted {len(manifest)} files of Windows 7 {edition} ({lang_dir}) to {output}')
 
 

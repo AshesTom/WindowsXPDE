@@ -24,13 +24,13 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | ファイル | 使い方 |
 |---|---|
 | `explorer.exe` | `C:\w7\w7-explorer.exe` として置くシェル（x64） |
-| `explorerframe`、`shell32`、`shlwapi`、`propsys`、`shdocvw`、`dui70`、`duser`、`profapi`、`sndvolsso`、`winbrand`、`shacct`、`thumbcache`、`authui`、`linkinfo` | w7-explorer.exe（と、サムネイルを作る dllhost.exe）だけが使う DLL |
+| `explorerframe`、`shell32`、`shlwapi`、`propsys`、`shdocvw`、`dui70`、`duser`、`profapi`、`sndvolsso`、`winbrand`、`shacct`、`thumbcache`、`authui`、`linkinfo` | Windows 7 のシェルの DLL。シェルと、セッションのすべてのプログラム（ファイルのダイアログ）が使います（Wine 自身のプログラムを除く） |
 | `actxprxy` | Windows 7 のインターフェースの proxy。`w7actxprxy.dll` の名前で置きます（Wine の actxprxy.dll は Wine の DLL の proxy に残します） |
 | `imageres`、`sud`、`DeviceCenter` | 文字列とアイコンだけを読む DLL（override なし） |
 | `Cursors\aero_*.cur`、`aero_*.ani`、`user32.dll` | Windows 7 の Aero のカーソル（X のカーソルのテーマ `win4wine-win7` にします。I ビームと十字は user32.dll のもの） |
 | `Branding\Basebrd\basebrd.dll` | ログオン画面のエディションの名前 |
-| `SysWOW64\shell32.dll`、`SysWOW64\imageres.dll` | 32bit のプログラムが読むアイコンと名前（override なし。32bit のプログラムは Wine の shell32 のまま） |
-| Common Controls 6（amd64） | w7-explorer.exe が使う comctl32。`C:\w7\comctl32.dll` として、シェルの横に置きます |
+| 上の DLL と `imageres` の 32bit 版（`SysWOW64`） | 32bit のプログラムのファイルのダイアログ、アイコンと名前 |
+| Common Controls 6（amd64 と x86） | Windows 7 の DLL だけが使う comctl32。`C:\w7\comctl32.dll`（32bit は `C:\w7\wow64\comctl32.dll`） |
 | Segoe UI、メイリオ（日本語のとき） | Windows 7 の UI のフォント |
 | `Resources\Themes\Aero` | Aero のテーマ（形式 4 の msstyles。Wine の 0079 で読みます） |
 | `img0.jpg`、User Account Pictures、スタートメニューの `desktop.ini` | 壁紙、利用者の画像、スタートメニューのフォルダの日本語の名前 |
@@ -56,11 +56,13 @@ Windows 7 の comdlg32 の部品が登録する `FileOpenDialog`（シェルの�
 
 `.local/prefix-win7` は WoW64 の prefix で、XP の prefix と同じ考え方で作ります。
 
-- Windows 7 の DLL は `C:\w7\native` に置き、`system32` に写します（64bit のシェルなので system32 です）。prefix 全体では
-  Wine の DLL のまま（DllOverrides の `builtin`）にし、`w7-explorer.exe` と `dllhost.exe` だけに AppDefaults で `native` を使わせます。
-- Windows 7 の Common Controls 6 は、シェルの横（`C:\w7\comctl32.dll`）に置きます。シェルのマニフェストの SxS の振り分けは
-  Wine の Common Controls 6 を指しますが、Windows 7 のシェルのセッションでは、実行ファイルの横に Wine のものではない
-  comctl32.dll があれば、そちらを使います（Wine のパッチ 0092）。Wine の Common Controls 6 は、ほかのすべてのプログラムのものです。
+- Windows 7 のシェルの DLL は `C:\w7\native`（64bit）と `C:\w7\wow64`（32bit）に置き、`system32` と `syswow64` に写します。
+  prefix 全体で `native,builtin`（DllOverrides）にし、Windows のアプリのファイルを開く・保存するダイアログも Windows 7 の形になります。
+  Wine 自身のプログラム（デスクトップ、サービス、メニューやブラウザとのつなぎ）は AppDefaults で `builtin` のままです。
+- Windows 7 の Common Controls 6 は `C:\w7\comctl32.dll`（32bit は `C:\w7\wow64\comctl32.dll`）に置きます。Windows 7 のシェルの
+  セッションでは、シェル（`w7-explorer.exe`）と、ほかのプログラムの中の Windows 7 の DLL がこれを使い、プログラム自身は Wine の
+  Common Controls 6 のままです（Wine のパッチ 0092。Windows 7 の comctl32 をプログラムに使わせると Wine のアプリが壊れるため）。
+  サムネイルを作る `dllhost.exe` は、Wine の Common Controls 6 のままにします。
 - `HKLM\...\Winlogon` の `Shell` を `w7-explorer.exe` にします。
 - 日本語では、Segoe UI や Tahoma などの UI のフォントにメイリオを FontLink でつなぎます。
 - 見た目: ClearType（Windows 7 の既定）、Aero のテーマ（`prefix/theme-settings.c`）。テーマのフォント（メイリオ 9pt）を利用者の
@@ -93,9 +95,10 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - 日本語入力は XP のシェルと同じ fcitx5 + Mozc です。入力モード（「あ」など）は通知領域に出て、Wine のアプリでは窓の中で
   変換します。
 - Windows のアプリがスタートメニューに作るショートカットは、「すべてのプログラム」に並びます。
-- ファイルを開く・保存するダイアログ: Windows のアプリ（64bit・32bit）は Wine のダイアログ、Linux のアプリ（GTK 3・GTK 4・Qt）は
-  それぞれのダイアログです。どちらも「ドキュメント」（`H:`）は Linux のホームで、日本語の名前のファイルも開け、保存できます。
-  シェルの「ファイル名を指定して実行」の「参照」は、Windows 7 の shell32 で Wine のダイアログを開きます（Wine の 0095）。
+- ファイルを開く・保存するダイアログ: Windows のアプリ（64bit・32bit）は Windows 7 のダイアログです（Windows 7 の shell32 と
+  explorerframe が描きます。ダイアログの枠は Wine の comdlg32）。Notepad のように古い形のダイアログを使うアプリも、一覧は Windows 7 の
+  ものです（Wine の 0097、0098）。Linux のアプリ（GTK 3・GTK 4・Qt）はそれぞれのダイアログです。どちらも「ドキュメント」（`H:`）は
+  Linux のホームで、日本語の名前のファイルも開け、保存できます。
 - Windows キー、Ctrl+Esc（Linux の窓からも）、Win+R、Win+E、Alt+Tab が使えます。
 - Alt+Tab は Windows 7 ベーシックの形です。Windows 7 のテーマの `AltTab` クラスで描き（背景、選んだ項目の枠、題の字体と色）、
   大きさや並びは Windows 7 SP1 の実機に合わせています（1 行に 7 個、行は作業領域に入るだけ）。最初の行の最後に「デスクトップ」が
@@ -103,7 +106,7 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
-Windows 7 のシェルのために足した Wine のパッチは 0078〜0096 です（[patches.md](patches.md)）。
+Windows 7 のシェルのために足した Wine のパッチは 0078〜0100 です（[patches.md](patches.md)）。
 
 ## 制限
 

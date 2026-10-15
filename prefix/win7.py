@@ -38,7 +38,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 7
+VERSION = 8
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -51,14 +51,18 @@ NAMES = (
     # Help and Support names itself in explorer.exe; %SystemRoot%\explorer.exe is Wine's.
     ('{2559a1f1-21d7-11d4-bdaf-00c04f60b9f0}', r'@C:\w7\w7-explorer.exe,-7021'),
 )
-# Loaded as native by the shell (and by dllhost.exe, which runs Windows 7's
-# thumbnail cache server); Wine's builtin stays every other program's.
+# Windows 7's shell DLLs, 64-bit and 32-bit: native in every program of the
+# session (the shell, and the file dialogs of Windows applications), but for
+# Wine's own programs (WINE_PROGRAMS). Windows 7's DLLs get Windows 7's
+# Common Controls 6 from C:\w7 (Wine 0092); the programs keep Wine's.
 NATIVE = ('explorerframe', 'shell32', 'shlwapi', 'propsys', 'shdocvw', 'dui70', 'duser', 'profapi',
           'sndvolsso', 'winbrand', 'shacct', 'thumbcache', 'authui', 'linkinfo')
+# Wine's programs that keep Wine's shell DLLs: its desktop and services, and the
+# programs that link Wine to Linux (menus, the browser).
+WINE_PROGRAMS = ('explorer.exe', 'winemenubuilder.exe', 'winebrowser.exe', 'wineboot.exe', 'services.exe',
+                 'plugplay.exe', 'winedevice.exe', 'rpcss.exe', 'svchost.exe', 'conhost.exe')
 # Read only for their resources (strings and icons): placed in system32, no override.
 RESOURCES = ('imageres', 'sud', 'DeviceCenter')
-# Read only for their resources by 32-bit programs (placed in syswow64, no override).
-WOW64_RESOURCES = ('shell32', 'imageres')
 # Windows 7's interface proxies, under another name: Wine's own actxprxy.dll
 # keeps the proxies of Wine's builtin DLLs.
 PROXIES = ('actxprxy', 'w7actxprxy', '{C90250F3-4D7D-4991-9B69-A5C5BC1C2AE6}')
@@ -126,9 +130,12 @@ class Prefix:
 
     def place_files(self):
         # C:\w7\native: 64-bit, into system32; C:\w7\wow64: 32-bit, into syswow64
+        # (its comctl32.dll stays there, for Windows 7's DLLs only)
         for folder, system in (('native', self.system), ('wow64', self.path / 'drive_c/windows/syswow64')):
             native = self.path / 'drive_c/w7' / folder
             for source in sorted(native.glob('*.dll')):
+                if source.name.lower() == 'comctl32.dll':
+                    continue
                 self.place(source, system / source.name)
             for source in sorted(native.glob('*/*.mui')):
                 self.place(source, system / source.parent.name / source.name)
@@ -137,6 +144,23 @@ class Prefix:
         assembly = self.path / f'drive_c/windows/winsxs/{SXS}/comctl32.dll'
         if wine_controls.is_file() and assembly.is_file():
             self.place(wine_controls, assembly)
+
+    def overrides(self):
+        """Windows 7's shell DLLs in every program but Wine's own (see NATIVE)."""
+        for name in NATIVE + ('comctl32',):
+            # native,builtin: a program finds Wine's comctl32 (and any DLL that
+            # is missing) as before; Wine's builtin files load as builtin anyway.
+            self.reg(r'HKCU\Software\Wine\DllOverrides', name, 'native,builtin')
+            self.reg(r'HKCU\Software\Wine\AppDefaults\w7-explorer.exe\DllOverrides', name, 'native')
+            for program in WINE_PROGRAMS:
+                self.reg(rf'HKCU\Software\Wine\AppDefaults\{program}\DllOverrides', name, 'builtin')
+        # The thumbnail cache's surrogate keeps Wine's Common Controls 6 (with
+        # Windows 7's, explorer started a new surrogate every few seconds).
+        self.reg(r'HKCU\Software\Wine\AppDefaults\dllhost.exe\DllOverrides', 'comctl32', 'builtin')
+        _, proxies, clsid = PROXIES
+        for view, system in (('/reg:64', 'system32'), ('/reg:32', 'syswow64')):
+            self.run('reg', 'add', rf'HKCR\CLSID\{clsid}\InProcServer32', '/ve', '/t', 'REG_EXPAND_SZ',
+                     '/d', rf'%SystemRoot%\{system}\{proxies}.dll', '/f', view)
 
     def wow64_registry(self, assets):
         """The 32-bit view of the components' registrations (32-bit programs: icons, file types)."""
@@ -157,7 +181,9 @@ class Prefix:
             for name in FONT_SUBSTITUTES:
                 self.reg(nt + r'\FontSubstitutes', name, 'Meiryo UI')
         for clsid, name in NAMES:
-            self.reg(rf'HKCR\CLSID\{clsid}', 'LocalizedString', name, 'REG_EXPAND_SZ')
+            for view in ('/reg:64', '/reg:32'):
+                self.run('reg', 'add', rf'HKCR\CLSID\{clsid}', '/v', 'LocalizedString', '/t', 'REG_EXPAND_SZ',
+                         '/d', name, '/f', view)
         # The open dialog that shell32's Browse buttons (the Run dialog's) create:
         # Windows 7's comdlg32 component registers it, and Wine's comdlg32
         # implements it; the component's files are Wine's, so it is not extracted.
@@ -213,12 +239,7 @@ def create(assets, dest, home, wine):
         for name in RESOURCES:
             prefix.copy(assets / f'system32/{name}.dll', assets / f'system32/{ui}/{name}.dll.mui',
                         prefix.system / f'{name}.dll')
-        # 32-bit shell32.dll and imageres.dll, read for their icons and strings by
-        # 32-bit programs (which keep Wine's shell32), as system32's are by 64-bit ones.
-        for name in WOW64_RESOURCES:
-            if (assets / f'syswow64/{name}.dll').is_file():
-                prefix.copy(assets / f'syswow64/{name}.dll', assets / f'syswow64/{ui}/{name}.dll.mui',
-                            c / f'w7/wow64/{name}.dll')
+        wow64_files(prefix, assets, ui)
         prefix.copy(assets / 'sxs/comctl32.dll', assets / f'sxs/{ui}/comctl32.dll.mui', c / 'w7/comctl32.dll')
         for font in (assets / 'fonts').iterdir():
             shutil.copyfile(font, c / 'windows/Fonts' / font.name)
@@ -274,18 +295,22 @@ def start_menu(prefix, assets, user):
             prefix.run('attrib', '+s', path + '\\desktop.ini', check=False)
 
 
+def wow64_files(prefix, assets, ui):
+    """The 32-bit shell DLLs (and Common Controls 6) in C:\\w7\\wow64, from extract/win7.py's SysWOW64 files."""
+    wow64 = prefix.path / 'drive_c/w7/wow64'
+    source, renamed, _ = PROXIES
+    for name in NATIVE + ('imageres', source):
+        if (assets / f'syswow64/{name}.dll').is_file():
+            prefix.copy(assets / f'syswow64/{name}.dll', assets / f'syswow64/{ui}/{name}.dll.mui',
+                        wow64 / f'{renamed if name == source else name}.dll')
+    if (assets / 'sxs/wow64/comctl32.dll').is_file():
+        prefix.copy(assets / 'sxs/wow64/comctl32.dll', assets / f'sxs/wow64/{ui}/comctl32.dll.mui',
+                    wow64 / 'comctl32.dll')
+
+
 def settings(prefix, lang):
     """DLL overrides, the shell, fonts and Wine settings of a new prefix."""
-    _, proxies, clsid = PROXIES
-    prefix.reg(rf'HKCR\CLSID\{clsid}\InProcServer32', None, rf'%SystemRoot%\system32\{proxies}.dll', 'REG_EXPAND_SZ')
-    builtin = prefix.wine.parent.parent / 'lib/wine/x86_64-windows'
-    for name in NATIVE + ('comctl32',):
-        prefix.reg(r'HKCU\Software\Wine\AppDefaults\w7-explorer.exe\DllOverrides', name, 'native')
-        # dllhost.exe has no manifest for Common Controls 6, so it keeps Wine's comctl32.
-        if name != 'comctl32':
-            prefix.reg(r'HKCU\Software\Wine\AppDefaults\dllhost.exe\DllOverrides', name, 'native')
-        if (builtin / f'{name}.dll').is_file():
-            prefix.reg(r'HKCU\Software\Wine\DllOverrides', name, 'builtin')
+    prefix.overrides()
     for view in ('/reg:32', '/reg:64'):
         prefix.run('reg', 'add', r'HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon', '/v', 'Shell',
                    '/d', 'w7-explorer.exe', '/f', view)
@@ -361,14 +386,11 @@ def stage(dest, wine=None):
         if not wine_current:
             prefix.run('wineboot', '-u', timeout=900)
         if applied[:1] != [str(VERSION)] and config.get('assets'):
-            # Prefixes made before the 32-bit view was extracted (VERSION 7)
+            # Prefixes made before Windows 7's 32-bit shell DLLs and their registrations
             assets = Path(config['assets'])
             prefix.wow64_registry(assets)
-            ui = json.loads((assets / 'media.json').read_text())['ui_language']
-            for name in WOW64_RESOURCES:
-                if (assets / f'syswow64/{name}.dll').is_file():
-                    prefix.copy(assets / f'syswow64/{name}.dll', assets / f'syswow64/{ui}/{name}.dll.mui',
-                                dest / f'drive_c/w7/wow64/{name}.dll')
+            wow64_files(prefix, assets, json.loads((assets / 'media.json').read_text())['ui_language'])
+            prefix.overrides()
         prefix.registrations()
     finally:
         prefix.stop()

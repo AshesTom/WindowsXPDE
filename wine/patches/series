@@ -94,3 +94,7 @@
 0094-comdlg32-view-font-redraw.patch
 0095-comdlg32-item-dialog-windows-browser.patch
 0096-shell32-other-shell-registrations.patch
+0097-comdlg32-view-activate.patch
+0098-comctl32-foreign-imagelists.patch
+0099-advapi32-saferiisexecutablefiletype.patch
+0100-uxtheme-drawthemeparentbackgroundex.patch

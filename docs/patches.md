@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 96 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 100 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -179,11 +179,15 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0089 | combase: DLL の代理プロセス（dllhost）を、クラスが登録されている側のビット数で起動する。64bit のプログラムは、64bit 側に登録されたクラスでも常に SysWOW64 の 32bit の dllhost を起動していた（Windows 7 のサムネイルのキャッシュのサーバーが読み込めなかった） | なし |
 | 0090 | uxtheme: SetWindowThemeAttribute（WTA_NONCLIENT）の WTNCA_NODRAWCAPTION と WTNCA_NODRAWICON を覚え、外部のシェルのテーマの枠（0043）がタイトルの文字とアイコンを省く（Windows 7 のフォルダの窓はタイトルバーに何も出さない）。今までは stub だった | なし |
 | 0091 | ntdll: MUI ファイルからリソースを探す。RT_MUI を持つ（言語に依存しない）モジュールで見つからないリソースを、`<フォルダ>\<UI の言語>\<ファイル名>.mui`（無ければ en-US）から探す。データファイルとして読み込んだものも同じ（32bit のプロセスが sysnative から読んだ 64bit の DLL も、その横の MUI ファイルを使う）。Windows 7 のシェルの DLL を、リソースを書き込まずにメディアのまま使うため | なし |
-| 0092 | ntdll: Windows 7 のシェル（`w7-explorer.exe`）は、SxS の振り分けで comctl32 を求めたとき、横にある Wine のものではない comctl32.dll（`C:\w7\comctl32.dll`）を使う。Wine の Common Controls 6 はほかのプログラムのまま（以前は置き換えていて、Wine の Notepad が入力を受けなかった。自分の横に comctl32.dll を置くほかのプログラムも Wine のものを使う） | あり（`WIN4WINE_SHELL=win7`） |
+| 0092 | ntdll: Windows 7 のシェルのセッションで、Windows 7 の DLL に Windows 7 の comctl32 を渡す。シェル（`w7-explorer.exe`）は横の `C:\w7\comctl32.dll`、ほかのプログラムでは、Wine のものでない DLL が自分のマニフェストの文脈で求めたときに `C:\w7\comctl32.dll`（32bit は `C:\w7\wow64\comctl32.dll`）。プログラム自身は Wine の Common Controls 6 のまま | あり（`WIN4WINE_SHELL=win7`） |
 | 0093 | server: HKCU\Software を 32bit と 64bit で共有する（Windows と同じ。Classes の下だけが分かれる）。64bit のソフト（Windows 7 の explorer）が HKCU\Software\Wow6432Node を作ると、32bit のプログラムから利用者の設定（Wine の X11 の設定、テーマ）が見えなくなっていた | なし |
 | 0094 | comdlg32: ファイルを開く・保存するダイアログ（XP の形）で、ファイルの一覧に Wine のダイアログの字体を設定したあと描き直す。一覧が先に別の字体（アイコンの名前の字体）の行の高さで描かれ、高さの違う prefix（Windows 7 のメイリオ）では、クリックした行の下のファイルが選ばれていた | なし |
 | 0095 | comdlg32: Vista の形のダイアログ（IFileDialog）で、既定の操作（ダブルクリック・Enter）が来たフォルダを開き、結果を絶対の ID リストから作る（SHCreateShellItemArrayFromIDLists）。Windows 7 の shell32 の中では（Windows 7 のシェルの「ファイル名を指定して実行」の「参照」）、フォルダに入れず、選んだファイルがデスクトップのものとして返っていた | なし |
 | 0096 | shell32: ほかのシェルの登録だけが名指すものを省く。デスクトップの名前空間の拡張は、サーバーの DLL があり、shell32 の（またはサーバーの無い）ものはこの shell32 が作れるクラスのときだけ並べる（Windows 7 のライブラリやコントロール パネルが、開けない英語の名前で並んでいた）。デスクトップ、コンピューター、ドキュメント、ごみ箱は、LocalizedString が読めなければ shell32 自身の訳した名前にする | なし |
+| 0097 | comdlg32: ファイルのダイアログ（古い形）で、作ったビューを UIActivate して表示する（Windows の shell32 のビューは隠れた状態で作られる。Windows 7 の shell32 で一覧が空だった） | なし |
+| 0098 | comctl32: ほかの comctl32 のイメージ リストを IImageList で描く（HIMAGELIST はリストの IUnknown。Windows 7 の shell32 のシステムのイメージ リストのアイコンが、Wine の部品に出なかった） | なし |
+| 0099 | advapi32: SaferiIsExecutableFileType を足す（Windows 7 の ShellExecute が呼ぶ。無くてファイルを開くとプロセスが終わった） | なし |
+| 0100 | uxtheme: DrawThemeParentBackgroundEx を足す（Windows 7 の comctl32 が呼ぶ） | なし |
 
 ## 並び順の考え方
 
