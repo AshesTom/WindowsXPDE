@@ -112,13 +112,15 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - システム アイコン（アプリの既定のアイコン、メッセージ ボックスのエラー・警告・情報・質問、盾）は Windows 7 のものです。Windows 7 の
   user32.dll をデータとしてだけ `C:\w7\res\user32-w7.dll` に置き、Wine の user32 がそこから読みます（Wine の 0106。名前を変えて
   いるのは、Wine の user32 と取り違えないため）。
+- メッセージ ボックスは Windows 7 の形（白地に下のボタン帯、右寄せのボタン）で、既定のボタンは Windows 7 と同じく脈動します
+  （Wine の 0107）。
 - Windows のアプリのコントロール（Wine の Common Controls 6）は、ドロップダウン リスト、ステータス バー、タブ、プログレス バー、
   エディットの枠、トラック バー、リスト ビュー（詳細表示、Explorer テーマの選択と列の線）、フォーカスの点線、文字の位置を Windows 7 に合わせています（Wine の
   0104、0105）。
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
-Windows 7 のシェルのために足した Wine のパッチは 0078〜0106 です（[patches.md](patches.md)）。
+Windows 7 のシェルのために足した Wine のパッチは 0078〜0107 です（[patches.md](patches.md)）。
 
 ## 制限
 
