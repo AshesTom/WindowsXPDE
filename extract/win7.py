@@ -25,7 +25,7 @@ import media  # noqa: E402
 RT_GROUP_ICON = 14
 
 # Bump when the extracted files change; setup.sh then extracts again.
-EXTRACT_VERSION = 2
+EXTRACT_VERSION = 3
 # The image's language -> our language (the session's and the prefix's).
 LANGUAGES = {'ja-JP': 'ja', 'en-US': 'en'}
 # Windows 7's shell and the DLLs it uses from Windows 7 (prefix/win7.py says which
@@ -52,8 +52,10 @@ COMPONENTS = ('microsoft-windows-explorer', 'microsoft-windows-explorerframe', '
               'microsoft-windows-shell-client', 'microsoft-windows-networkexplorer',
               # Text files' type, icon and verbs (Wine's Notepad opens them).
               'microsoft-windows-notepad')
-# Fonts: Segoe UI, and Meiryo for Japanese.
-FONTS = {'ja': r'(segoeui\w*\.ttf|meiryo\w*\.ttc)$', 'en': r'segoeui\w*\.ttf$'}
+# Fonts: Segoe UI, Tahoma and Microsoft Sans Serif (MS Shell Dlg 2, MS Shell Dlg),
+# and Meiryo and MS UI Gothic (msgothic.ttc) for Japanese.
+FONTS = {'ja': r'(segoeui\w*\.ttf|tahoma\w*\.ttf|micross\.ttf|meiryo\w*\.ttc|msgothic\.ttc)$',
+         'en': r'(segoeui\w*\.ttf|tahoma\w*\.ttf|micross\.ttf)$'}
 # The localized names of the Start menu's folders.
 START_MENU = ('Start Menu', 'Start Menu/Programs', 'Start Menu/Programs/Startup',
               'Start Menu/Programs/Administrative Tools')

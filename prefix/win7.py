@@ -68,9 +68,23 @@ RESOURCES = ('imageres', 'sud', 'DeviceCenter')
 # Windows 7's interface proxies, under another name: Wine's own actxprxy.dll
 # keeps the proxies of Wine's builtin DLLs.
 PROXIES = ('actxprxy', 'w7actxprxy', '{C90250F3-4D7D-4991-9B69-A5C5BC1C2AE6}')
-# Japanese text in the UI fonts' fallback (Windows 7 links Meiryo UI too).
-FONT_LINKS = ('Segoe UI', 'Tahoma', 'MS Shell Dlg', 'MS Shell Dlg 2', 'Microsoft Sans Serif', 'MS UI Gothic')
-FONT_SUBSTITUTES = ('MS Shell Dlg', 'MS Shell Dlg 2', 'MS UI Gothic')
+# Japanese Windows 7's font links and dialog fonts (read on the reference machine), for
+# the fonts that extract/win7.py takes: MS Shell Dlg is MS UI Gothic, MS Shell Dlg 2 Tahoma.
+FONT_LINKS = {
+    'Segoe UI': r'TAHOMA.TTF\0MEIRYO.TTC,Meiryo,128,85\0MEIRYO.TTC,Meiryo\0MSGOTHIC.TTC,MS UI Gothic',
+    'Tahoma': 'MSGOTHIC.TTC,MS UI Gothic',
+    'Microsoft Sans Serif': 'MSGOTHIC.TTC,MS UI Gothic',
+    'Lucida Sans Unicode': 'MSGOTHIC.TTC,MS UI Gothic',
+    'Meiryo': r'SEGOEUI.TTF,133,83\0SEGOEUI.TTF\0MSGOTHIC.TTC,MS UI Gothic',
+    'Meiryo UI': r'SEGOEUI.TTF,133,83\0SEGOEUI.TTF\0MSGOTHIC.TTC,MS UI Gothic',
+    'Meiryo Bold': r'SEGOEUIB.TTF,133,83\0SEGOEUIB.TTF\0MSGOTHIC.TTC,MS UI Gothic',
+    'Meiryo UI Bold': r'SEGOEUIB.TTF,133,83\0SEGOEUIB.TTF\0MSGOTHIC.TTC,MS UI Gothic',
+    'MS UI Gothic': r'MICROSS.TTF,128,142\0MICROSS.TTF',
+}
+FONT_SUBSTITUTES = {'MS Shell Dlg': 'MS UI Gothic', 'MS Shell Dlg 2': 'Tahoma'}
+# Prefixes of extracted files without MS UI Gothic and Tahoma: Meiryo UI stands in.
+OLD_FONT_LINKS = ('Segoe UI', 'Tahoma', 'MS Shell Dlg', 'MS Shell Dlg 2', 'Microsoft Sans Serif', 'MS UI Gothic')
+OLD_FONT_SUBSTITUTES = ('MS Shell Dlg', 'MS Shell Dlg 2', 'MS UI Gothic')
 X11_DRIVER = (('Managed', 'Y'), ('Decorated', 'N'))
 # Wine's own desktop items that Windows 7's desktop does not show: My Documents,
 # the Unix root folder and Internet Explorer.
@@ -176,12 +190,24 @@ class Prefix:
         # Wine frames the proxy windows itself (the WM does not decorate them).
         for name, value in X11_DRIVER:
             self.reg(r'HKCU\Software\Wine\X11 Driver', name, value)
-        if self.lang == 'ja':
-            nt = r'HKLM\Software\Microsoft\Windows NT\CurrentVersion'
-            for name in FONT_LINKS:
+        nt = r'HKLM\Software\Microsoft\Windows NT\CurrentVersion'
+        if self.lang == 'ja' and windows_fonts(self.path):
+            for name in ('MS Shell Dlg', 'MS Shell Dlg 2'):
+                self.run('reg', 'delete', nt + r'\FontLink\SystemLink', '/v', name, '/f', check=False)
+            self.run('reg', 'delete', nt + r'\FontSubstitutes', '/v', 'MS UI Gothic', '/f', check=False)
+            for name, value in FONT_LINKS.items():
+                self.reg(nt + r'\FontLink\SystemLink', name, value, 'REG_MULTI_SZ')
+            for name, value in FONT_SUBSTITUTES.items():
+                self.reg(nt + r'\FontSubstitutes', name, value)
+        elif self.lang == 'ja':
+            for name in OLD_FONT_LINKS:
                 self.reg(nt + r'\FontLink\SystemLink', name, r'MEIRYO.TTC,Meiryo UI\0MEIRYO.TTC,Meiryo', 'REG_MULTI_SZ')
-            for name in FONT_SUBSTITUTES:
+            for name in OLD_FONT_SUBSTITUTES:
                 self.reg(nt + r'\FontSubstitutes', name, 'Meiryo UI')
+        elif windows_fonts(self.path):
+            # English Windows 7's dialog fonts
+            self.reg(nt + r'\FontSubstitutes', 'MS Shell Dlg', 'Microsoft Sans Serif')
+            self.reg(nt + r'\FontSubstitutes', 'MS Shell Dlg 2', 'Tahoma')
         for clsid, name in NAMES:
             for view in ('/reg:64', '/reg:32'):
                 self.run('reg', 'add', rf'HKCR\CLSID\{clsid}', '/v', 'LocalizedString', '/t', 'REG_EXPAND_SZ',
@@ -375,6 +401,19 @@ def registry_values(path, key):
     return values
 
 
+def windows_fonts(dest):
+    """Whether the prefix has Windows 7's Tahoma (and, for Japanese, MS UI Gothic)."""
+    return (dest / 'drive_c/windows/Fonts/tahoma.ttf').is_file()
+
+
+def copy_fonts(dest, assets):
+    """The extracted fonts that the prefix does not have yet (files extracted later add some)."""
+    fonts = dest / 'drive_c/windows/Fonts'
+    for font in sorted((assets / 'fonts').glob('*')):
+        if not (fonts / font.name).exists() and not (fonts / font.name.lower()).exists():
+            shutil.copyfile(font, fonts / font.name)
+
+
 def fonts_current(dest, lang):
     """Whether Japanese text still falls back to Meiryo.
 
@@ -385,7 +424,9 @@ def fonts_current(dest, lang):
     if lang != 'ja':
         return True
     links = registry_values(dest / 'system.reg', r'Software\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink')
-    return all('MEIRYO' in links.get(face, '') for face in FONT_LINKS)
+    if windows_fonts(dest):
+        return all(value.split('\\0')[0].upper() in links.get(face, '').upper() for face, value in FONT_LINKS.items())
+    return all('MEIRYO' in links.get(face, '') for face in OLD_FONT_LINKS)
 
 
 def stage(dest, wine=None):
@@ -399,6 +440,7 @@ def stage(dest, wine=None):
     applied = version.read_text().split() if version.is_file() else []
     if config.get('assets'):
         system_icons(dest, Path(config['assets']))
+        copy_fonts(dest, Path(config['assets']))
     if wine_current and applied == [str(VERSION), current] and fonts_current(dest, prefix.lang):
         # Nothing changed, but a first wineboot or an update may have replaced files.
         prefix.place_files()

@@ -32,7 +32,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | 上の DLL と `imageres` の 32bit 版（`SysWOW64`） | 32bit のプログラムのファイルのダイアログ、アイコンと名前 |
 | Common Controls 6（amd64 と x86） | Windows 7 の DLL だけが使う comctl32。`C:\w7\comctl32.dll`（32bit は `C:\w7\wow64\comctl32.dll`） |
 | user32.dll（データ） | システム アイコンだけを読む。`C:\w7\res\user32-w7.dll`（Wine の 0106） |
-| Segoe UI、メイリオ（日本語のとき） | Windows 7 の UI のフォント |
+| Segoe UI、Tahoma、Microsoft Sans Serif、メイリオと MS UI Gothic（日本語のとき） | Windows 7 の UI とダイアログのフォント |
 | `Resources\Themes\Aero` | Aero のテーマ（形式 4 の msstyles。Wine の 0079 で読みます） |
 | `img0.jpg`、User Account Pictures、スタートメニューの `desktop.ini` | 壁紙、利用者の画像、スタートメニューのフォルダの日本語の名前 |
 
@@ -65,7 +65,9 @@ Windows 7 の comdlg32 の部品が登録する `FileOpenDialog`（シェルの�
   Common Controls 6 のままです（Wine のパッチ 0092。Windows 7 の comctl32 をプログラムに使わせると Wine のアプリが壊れるため）。
   サムネイルを作る `dllhost.exe` は、Wine の Common Controls 6 のままにします。
 - `HKLM\...\Winlogon` の `Shell` を `w7-explorer.exe` にします。
-- 日本語では、Segoe UI や Tahoma などの UI のフォントにメイリオを FontLink でつなぎます。
+- フォントのつなぎ（FontLink）と置き換え（FontSubstitutes）は日本語の Windows 7 と同じです（MS Shell Dlg は MS UI Gothic、
+  MS Shell Dlg 2 は Tahoma、Segoe UI には Tahoma とメイリオ。参照用の実機で読んだ値）。古い形のダイアログの文字も Windows 7 と
+  同じフォントです。以前に取り出したファイル（MS UI Gothic と Tahoma が無い）では、これまでどおりメイリオ UI で代わりにします。
 - 見た目: ClearType（Windows 7 の既定）、Aero のテーマ（`prefix/theme-settings.c`）。テーマのフォント（メイリオ 9pt）を利用者の
   フォントとして保存します（`prefix/theme-fonts.c`。Windows でテーマを当てたときと同じ。日本語のフォント名はテーマの MUI にあるので、
   prefix の言語で動かします）。壁紙は Windows 7 と同じく `TranscodedWallpaper.bmp` に変換して使います。
