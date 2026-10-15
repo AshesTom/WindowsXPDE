@@ -447,12 +447,16 @@ class Manager:
         self.setprop(w, '_NET_WM_STATE', Xatom.ATOM, list(set(states + [hidden])))
         if self.active == w.id:
             self.active = 0
-            visible = [c for c in self.clients.values() if c['kind'] == 'normal' and not c['hidden']]
-            if visible:
-                self.focus(visible[-1]['w'])
-            else:
-                self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
-                self.setprop(self.root, '_NET_ACTIVE_WINDOW', Xatom.WINDOW, [0])
+            self.focus_visible()
+
+    def focus_visible(self):
+        """Focus the most recently managed client that is shown, or nothing."""
+        visible = [c for c in self.clients.values() if c['kind'] == 'normal' and not c['hidden']]
+        if visible:
+            self.focus(visible[-1]['w'])
+        else:
+            self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
+            self.setprop(self.root, '_NET_ACTIVE_WINDOW', Xatom.WINDOW, [0])
 
     def close(self, w):
         if self.atom('WM_DELETE_WINDOW') in self.prop(w, 'WM_PROTOCOLS'):
@@ -473,8 +477,10 @@ class Manager:
                     frame['w'].unmap()
                 del self.frames[frame_id]
         if self.active == window_id:
+            # Focus the next window still shown, not a minimized one (Wine
+            # withdraws a minimized window that it restores, and maps it again).
             self.active = 0
-            self.cycle()
+            self.focus_visible()
         self.restack()
         self.workarea()
 

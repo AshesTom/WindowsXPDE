@@ -16,24 +16,26 @@ shell32.dll had no strings and the shell ended at once, unless their
 resources were written into copies of them.
 Change: when LdrFindResource_U or LdrFindResourceDirectory_U do not find
 a resource in a language neutral module, the module's MUI file (found
-from its mapped file name) is mapped read-only as a data file, once per
-module, and the resource is looked up there; LdrAccessResource returns
+from its mapped file name, without WoW64 file system redirection: a
+32-bit process that maps a 64-bit system32 DLL through sysnative finds the
+MUI file beside it) is mapped read-only as a data file, once per module, and the resource is looked up there; LdrAccessResource returns
 data of the MUI file for entries found in it. Modules without an RT_MUI
 resource, among them Wine's own, are unchanged.
 Evidence: Windows 7 SP1 x64 explorer.exe, shell32.dll, explorerframe.dll
 and the other shell DLLs with system32\ja-JP\*.mui: the Start menu, the
 taskbar and the folder windows show their Japanese strings, as with the
-merged copies before.
+merged copies before. A 32-bit program that loads sysnative\shell32.dll as
+a data file gets string 4162 ("デスクトップ") from system32\ja-JP.
 Scope: language neutral modules with a MUI file beside them.
 ---
- dlls/ntdll/resource.c | 192 +++++++++++++++++++++++++++++++++++++++++++++++++-
- 1 file changed, 190 insertions(+), 2 deletions(-)
+ dlls/ntdll/resource.c | 200 +++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 198 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/ntdll/resource.c b/dlls/ntdll/resource.c
-index 3de932e..f526a02 100644
+index 3de932e..1c49acc 100644
 --- a/dlls/ntdll/resource.c
 +++ b/dlls/ntdll/resource.c
-@@ -251,6 +251,192 @@ done:
+@@ -251,6 +251,200 @@ done:
  }
  
  
@@ -79,9 +81,17 @@ index 3de932e..f526a02 100644
 +    void *base = NULL;
 +    NTSTATUS status;
 +
++    ULONG redirect = 0;
++
++    /* PATH is beside the module's own file, whose name is already the real one:
++     * a 32-bit process that maps a 64-bit system32 DLL (through sysnative) must
++     * not be sent to syswow64 for its MUI file. */
 +    InitializeObjectAttributes( &attr, path, OBJ_CASE_INSENSITIVE, 0, NULL );
-+    if (NtOpenFile( &file, GENERIC_READ | SYNCHRONIZE, &attr, &io, FILE_SHARE_READ | FILE_SHARE_DELETE,
-+                    FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE )) return 0;
++    RtlWow64EnableFsRedirectionEx( TRUE, &redirect );
++    status = NtOpenFile( &file, GENERIC_READ | SYNCHRONIZE, &attr, &io, FILE_SHARE_READ | FILE_SHARE_DELETE,
++                         FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE );
++    RtlWow64EnableFsRedirectionEx( redirect, &redirect );
++    if (status) return 0;
 +    status = NtCreateSection( &section, SECTION_MAP_READ | SECTION_QUERY, NULL, NULL, PAGE_READONLY, SEC_COMMIT, file );
 +    NtClose( file );
 +    if (status) return 0;
@@ -226,7 +236,7 @@ index 3de932e..f526a02 100644
  /**********************************************************************
   *	LdrFindResourceDirectory_U  (NTDLL.@)
   */
-@@ -267,7 +453,7 @@ NTSTATUS WINAPI DECLSPEC_HOTPATCH LdrFindResourceDirectory_U( HMODULE hmod, cons
+@@ -267,7 +461,7 @@ NTSTATUS WINAPI DECLSPEC_HOTPATCH LdrFindResourceDirectory_U( HMODULE hmod, cons
                       level > 1 ? debugstr_w((LPCWSTR)info->Name) : "",
                       level > 2 ? info->Language : 0, level );
  
@@ -235,7 +245,7 @@ index 3de932e..f526a02 100644
          if (status == STATUS_SUCCESS) *dir = res;
      }
      __EXCEPT_PAGE_FAULT
-@@ -295,7 +481,7 @@ NTSTATUS WINAPI DECLSPEC_HOTPATCH LdrFindResource_U( HMODULE hmod, const LDR_RES
+@@ -295,7 +489,7 @@ NTSTATUS WINAPI DECLSPEC_HOTPATCH LdrFindResource_U( HMODULE hmod, const LDR_RES
                       level > 1 ? debugstr_w((LPCWSTR)info->Name) : "",
                       level > 2 ? info->Language : 0, level );
  
@@ -244,7 +254,7 @@ index 3de932e..f526a02 100644
          if (status == STATUS_SUCCESS) *entry = res;
      }
      __EXCEPT_PAGE_FAULT
-@@ -317,7 +503,9 @@ static inline NTSTATUS access_resource( HMODULE hmod, const IMAGE_RESOURCE_DATA_
+@@ -317,7 +511,9 @@ static inline NTSTATUS access_resource( HMODULE hmod, const IMAGE_RESOURCE_DATA_
  #endif
  {
      NTSTATUS status;

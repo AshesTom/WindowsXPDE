@@ -81,7 +81,10 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - ファイルを開く・保存するダイアログ: Windows のアプリ（64bit・32bit）は Wine のダイアログ、Linux のアプリ（GTK 3・GTK 4・Qt）は
   それぞれのダイアログです。どちらも「ドキュメント」（`H:`）は Linux のホームで、日本語の名前のファイルも開け、保存できます。
   シェルの「ファイル名を指定して実行」の「参照」は、Windows 7 の shell32 で Wine のダイアログを開きます（Wine の 0095）。
-- Windows キー、Ctrl+Esc（Linux の窓からも）、Win+R、Win+E、Alt+Tab（XP の形）が使えます。
+- Windows キー、Ctrl+Esc（Linux の窓からも）、Win+R、Win+E、Alt+Tab が使えます。
+- Alt+Tab は Windows 7 ベーシックの形です。Windows 7 のテーマの `AltTab` クラスで描き（背景、選んだ項目の枠、題の字体と色）、
+  大きさや並びは Windows 7 SP1 の実機に合わせています（1 行に 7 個、行は作業領域に入るだけ）。最初の行の最後に「デスクトップ」が
+  入り、選ぶとすべての窓を最小化します（Windows 7 では、デスクトップを見せたあと元に戻せますが、ここでは窓ごとに戻します）。
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 

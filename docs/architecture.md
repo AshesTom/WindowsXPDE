@@ -129,6 +129,8 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 
 - **Alt+Tab**: WM が Alt を押している間キーボードをつかみ、`switch.tsv` を書きます。proxy が XP の切り替えの窓を描き、
   確定すると `switch XID` を送り、WM がその窓を有効にします。proxy が動いていなければ、WM が順に切り替えます。
+  窓の形はシェルごとに違い（`WIN4WINE_SWITCHER`）、XP（既定）、ReactOS、Windows 7 の形があります。Windows 7 の形は
+  テーマ（aero.msstyles）の `AltTab` クラスの部品で描き、項目に「デスクトップ」が入ります（選ぶとすべての窓を最小化します）。
 - **Windows キーと Ctrl+Esc**: Wine の窓にフォーカスがあるときは、そのまま Wine に渡します（パッチ 0023 でスタートメニューが
   開き、Win+R などのホットキーも Wine が処理します）。Linux の窓にフォーカスがあるときは、WM が Windows キーを離すまでの
   キーを受け取って `shellkeys.tsv` に書き、proxy が `SendInput` で Wine に入れます。

@@ -5,20 +5,23 @@ Purpose: open Windows 7's Start menu with the Windows key, and get
 Windows 7's folder windows (Win+E) further.
 Windows 7 behavior: when its task switcher gets HSHELL_TASKMAN (the
 Windows key, 0023), the taskbar calls dwmapi's DwmpActivateLivePreview
-(ordinal 113) before it opens the Start menu. Opening a folder window,
+(ordinal 113) before it opens the Start menu; clicking or pointing at a
+taskbar button calls DwmpRegisterThumbnail (ordinal 124) for a window
+thumbnail. Opening a folder window,
 explorer registers in the global interface table its own objects'
 interfaces that their QueryInterface does not give (for example
 IBrowserProgressAggregator), and its proxies (actxprxy.dll) import the
 NDR64 names of ole32's user marshal functions (HWND_UserSize64, ...).
 Wine before: DwmpActivateLivePreview was a stub and the shell ended at the
-Windows key; the free-threaded marshaler asks the object for the
+Windows key, and at a click on a taskbar button; the free-threaded marshaler asks the object for the
 interface even within the process and failed with E_NOINTERFACE, which
 explorer showed as "ファイル システムのエラーです"; the NDR64 names were
 missing, so Windows 7's proxies could not marshal.
 Change: on 64-bit, DwmpActivateLivePreview returns S_OK without reading
 its arguments (there is no desktop composition, so no preview; the
 caller passes the arguments in registers and removes them); it stays a
-stub on 32-bit. With WIN4WINE_SHELL=win7, the free-threaded marshaler
+stub on 32-bit. DwmpRegisterThumbnail fails with E_NOTIMPL in the same way
+(as DwmRegisterThumbnail does: there is no thumbnail without composition). With WIN4WINE_SHELL=win7, the free-threaded marshaler
 passes the given pointer within the process when the object's
 QueryInterface does not give the interface, marks it so in the marshaled
 data, and unmarshaling gives that pointer back without asking again
@@ -28,17 +31,17 @@ HACCEL, HBITMAP, HGLOBAL, HICON, HMENU and HWND _UserSize64,
 _UserMarshal64, _UserUnmarshal64 and _UserFree64 as the classic
 functions, as 0078 does for oleaut32.
 Evidence: Windows 7 SP1 x64 explorer.exe opens its Start menu for the
-Windows key and Ctrl+Esc; Win+E creates the folder window (CabinetWClass)
+Windows key and Ctrl+Esc, and stays when taskbar buttons are clicked; Win+E creates the folder window (CabinetWClass)
 with Windows 7's actxprxy.dll loaded for its interfaces. The folder
 window does not show yet.
 Scope: the marshaler change only with WIN4WINE_SHELL=win7; the other
 changes are new 64-bit exports.
 ---
  dlls/combase/marshal.c    | 32 +++++++++++++++++++++++++++++++-
- dlls/dwmapi/dwmapi.spec   |  3 ++-
- dlls/dwmapi/dwmapi_main.c | 15 +++++++++++++++
+ dlls/dwmapi/dwmapi.spec   |  6 ++++--
+ dlls/dwmapi/dwmapi_main.c | 29 +++++++++++++++++++++++++++++
  dlls/ole32/ole32.spec     | 24 ++++++++++++++++++++++++
- 4 files changed, 72 insertions(+), 2 deletions(-)
+ 4 files changed, 88 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/combase/marshal.c b/dlls/combase/marshal.c
 index f638604..1e1315f 100644
@@ -98,10 +101,10 @@ index f638604..1e1315f 100644
          IUnknown_Release(data.object);
  
 diff --git a/dlls/dwmapi/dwmapi.spec b/dlls/dwmapi/dwmapi.spec
-index d899a7a..0c07842 100644
+index d899a7a..a6e82ef 100644
 --- a/dlls/dwmapi/dwmapi.spec
 +++ b/dlls/dwmapi/dwmapi.spec
-@@ -10,7 +10,8 @@
+@@ -10,14 +10,16 @@
  109 stub -noname DwmpOpenGraphicsStream
  110 stub -noname DwmpCloseGraphicsStream
  112 stub -noname DwmpSetGraphicsStreamTransformHint
@@ -111,11 +114,20 @@ index d899a7a..0c07842 100644
  114 stub -noname DwmpQueryThumbnailType
  115 stub -noname DwmpStartupViaUserInit
  118 stub -noname DwmpGetAssessment
+ 119 stub -noname DwmpGetAssessmentUsage
+ 120 stub -noname DwmpSetAssessmentUsage
+ 121 stub -noname DwmpIsSessionDWM
+-124 stub -noname DwmpRegisterThumbnail
++124 stdcall -noname -arch=win64 DwmpRegisterThumbnail()
++124 stub -noname -arch=win32 DwmpRegisterThumbnail
+ 125 stub DwmpDxBindSwapChain
+ 126 stub DwmpDxUnbindSwapChain
+ 127 stdcall -noname DwmpGetColorizationParameters(ptr)
 diff --git a/dlls/dwmapi/dwmapi_main.c b/dlls/dwmapi/dwmapi_main.c
-index 4b881b4..1037dd7 100644
+index 4b881b4..8b01e93 100644
 --- a/dlls/dwmapi/dwmapi_main.c
 +++ b/dlls/dwmapi/dwmapi_main.c
-@@ -376,3 +376,18 @@ HRESULT WINAPI DwmpGetColorizationParameters(void *params)
+@@ -376,3 +376,32 @@ HRESULT WINAPI DwmpGetColorizationParameters(void *params)
      FIXME("(%p) stub\n", params);
      return E_NOTIMPL;
  }
@@ -133,6 +145,20 @@ index 4b881b4..1037dd7 100644
 +{
 +    TRACE( "\n" );
 +    return S_OK;
++}
++
++/**********************************************************************
++ *           DwmpRegisterThumbnail         (DWMAPI.124)
++ *
++ * Windows 7's taskbar calls it for the thumbnail of a window when a button
++ * is pointed at or clicked. Without desktop composition there is no
++ * thumbnail; DwmRegisterThumbnail fails the same way. Its arguments have no
++ * public description and are not read (see DwmpActivateLivePreview).
++ */
++HRESULT WINAPI DwmpRegisterThumbnail(void)
++{
++    TRACE( "\n" );
++    return E_NOTIMPL;
 +}
 diff --git a/dlls/ole32/ole32.spec b/dlls/ole32/ole32.spec
 index c600bc3..1359493 100644

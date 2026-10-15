@@ -8,6 +8,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#include <uxtheme.h>
+#include <vssym32.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -756,15 +758,58 @@ static void shell_layout(void)
 #define SWITCH_COLUMNS 7
 #define SWITCH_ROWS 3
 #define SWITCH_CELL 43
+#define SWITCH_MAX (SWITCH_COLUMNS * 12)
 static struct
 {
     unsigned session;
-    int steps, count, selected;
+    int steps, count, selected, limit;
     char state;
-    HWND window, items[SWITCH_COLUMNS * SWITCH_ROWS];
+    HWND window, items[SWITCH_MAX];
     HFONT font;
-    BOOL reactos;
+    BOOL reactos, win7;
 } switcher;
+
+/* Windows 7's Alt+Tab window without desktop composition (WIN4WINE_SWITCHER=win7),
+ * as measured on a Windows 7 SP1 reference machine (Basic theme, 1024x768):
+ * the visual style's AltTab class draws it. The window is the background part
+ * (3), 360 px wide (seven 48 px cells and 12 px margins) and 45 + 56 px per row
+ * high, centred in the work area; the cells start 45 px from the top, rows are
+ * 56 px apart, a short first row is centred, and the selected cell has the
+ * selection part (2) behind its 32 px icon (8 px in). The title is centred above
+ * in part 3's font and text colour. The desktop is an item too, last in the
+ * first row (after at most six windows), with imageres.dll's icon 110 and
+ * shell32's name for the desktop; choosing it minimises the windows. */
+#define W7_CELL 48
+#define W7_ROW 56
+#define W7_MARGIN 12
+#define W7_TOP 45
+#define W7_TITLE_TOP 14
+#define W7_PART_BACKGROUND 3
+#define W7_PART_SELECTED 2
+#define W7_DESKTOP_INDEX 6
+#define SWITCH_DESKTOP ((HWND)(INT_PTR)-2)
+static struct
+{
+    HTHEME theme;
+    HICON desktop_icon;
+    WCHAR desktop_name[64];
+    BOOL loaded;
+} w7;
+
+static void w7_resources(void)
+{
+    /* Windows 7's own 64-bit DLLs, read for their resources only (the proxy is
+     * a 32-bit program; their MUI files hold the strings). A plain data file:
+     * Wine maps its builtin DLL of the same name for LOAD_LIBRARY_AS_IMAGE_RESOURCE. */
+    HMODULE module;
+    if (w7.loaded) return;
+    w7.loaded = TRUE;
+    if ((module = LoadLibraryExW(L"C:\\windows\\sysnative\\imageres.dll", NULL, LOAD_LIBRARY_AS_DATAFILE)))
+        w7.desktop_icon = LoadImageW(module, MAKEINTRESOURCEW(110), IMAGE_ICON, 32, 32, 0);
+    if ((module = LoadLibraryExW(L"C:\\windows\\sysnative\\shell32.dll", NULL, LOAD_LIBRARY_AS_DATAFILE)))
+        LoadStringW(module, 4162, w7.desktop_name, ARRAYSIZE(w7.desktop_name));
+    if (!w7.desktop_name[0]) wcscpy(w7.desktop_name, L"Desktop");
+}
 
 /* ReactOS's Alt+Tab window (win32ss/user/user32/controls/appswitch.c), for the
  * ReactOS shell (WIN4WINE_SWITCHER=reactos): 48 px cells in a bordered dialog
@@ -828,7 +873,7 @@ static BOOL CALLBACK switch_candidate(HWND hwnd, LPARAM param)
     DWORD style = GetWindowLongW(hwnd, GWL_STYLE), ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
     WCHAR name[64];
     (void)param;
-    if (switcher.count >= SWITCH_COLUMNS * SWITCH_ROWS) return FALSE;
+    if (switcher.count >= switcher.limit) return FALSE;
     if (hwnd == switcher.window || !(style & WS_VISIBLE) || (style & WS_DISABLED)) return TRUE;
     if (!(ex & WS_EX_APPWINDOW) && ((ex & WS_EX_TOOLWINDOW) || GetWindow(hwnd, GW_OWNER))) return TRUE;
     if (ex & WS_EX_NOACTIVATE) return TRUE;
@@ -842,7 +887,18 @@ static void switch_collect(void)
 {
     HWND foreground = GetForegroundWindow();
     int i;
+    RECT area;
     switcher.count = 0;
+    switcher.limit = SWITCH_COLUMNS * SWITCH_ROWS;
+    if (switcher.win7)
+    {
+        /* As many rows as the work area holds, and a cell for the desktop. */
+        int rows;
+        SystemParametersInfoW(SPI_GETWORKAREA, 0, &area, 0);
+        rows = (area.bottom - area.top - W7_TOP) / W7_ROW;
+        rows = rows < 1 ? 1 : rows > SWITCH_MAX / SWITCH_COLUMNS ? SWITCH_MAX / SWITCH_COLUMNS : rows;
+        switcher.limit = rows * SWITCH_COLUMNS - 1;
+    }
     EnumWindows(switch_candidate, 0);
     /* Start from the active window, which is not always the topmost one. */
     for (i = 0; i < switcher.count; ++i)
@@ -852,11 +908,19 @@ static void switch_collect(void)
             switcher.items[0] = foreground;
             break;
         }
+    if (switcher.win7)
+    {
+        i = switcher.count < W7_DESKTOP_INDEX ? switcher.count : W7_DESKTOP_INDEX;
+        memmove(switcher.items + i + 1, switcher.items + i, (switcher.count - i) * sizeof(HWND));
+        switcher.items[i] = SWITCH_DESKTOP;
+        switcher.count++;
+    }
 }
 
 static HICON switch_icon(HWND hwnd)
 {
     DWORD_PTR icon = 0;
+    if (hwnd == SWITCH_DESKTOP) return w7.desktop_icon ? w7.desktop_icon : default_icon;
     if (!SendMessageTimeoutW(hwnd, WM_GETICON, ICON_BIG, 0, SMTO_ABORTIFHUNG, 100, &icon)) icon = 0;
     if (!icon) icon = GetClassLongPtrW(hwnd, GCLP_HICON);
     if (!icon && !SendMessageTimeoutW(hwnd, WM_GETICON, ICON_SMALL2, 0, SMTO_ABORTIFHUNG, 100, &icon)) icon = 0;
@@ -867,6 +931,48 @@ static HICON switch_icon(HWND hwnd)
 static int switch_rows(void)
 {
     return switcher.count > SWITCH_COLUMNS ? (switcher.count + SWITCH_COLUMNS - 1) / SWITCH_COLUMNS : 1;
+}
+
+static void w7_switch_paint(HDC dc, const RECT *rect)
+{
+    int shown = switcher.count < SWITCH_COLUMNS ? switcher.count : SWITCH_COLUMNS, i;
+    int left = W7_MARGIN + (SWITCH_COLUMNS - shown) * W7_CELL / 2;
+    WCHAR title[512] = L"";
+    RECT text;
+    LOGFONTW lf;
+    COLORREF color = 0;
+    HFONT font = NULL;
+    HGDIOBJ old_font = NULL;
+
+    if (!w7.theme) w7.theme = OpenThemeData(switcher.window, L"AltTab");
+    if (w7.theme) DrawThemeBackground(w7.theme, dc, W7_PART_BACKGROUND, 0, rect, NULL);
+    else FillRect(dc, rect, GetSysColorBrush(COLOR_3DFACE));
+    for (i = 0; i < switcher.count; ++i)
+    {
+        int x = left + i % SWITCH_COLUMNS * W7_CELL, y = W7_TOP + i / SWITCH_COLUMNS * W7_ROW;
+        if (i == switcher.selected)
+        {
+            RECT cell = {x, y, x + W7_CELL, y + W7_CELL};
+            if (w7.theme) DrawThemeBackground(w7.theme, dc, W7_PART_SELECTED, 0, &cell, NULL);
+            else FrameRect(dc, &cell, GetSysColorBrush(COLOR_HIGHLIGHT));
+        }
+        DrawIconEx(dc, x + 8, y + 8, switch_icon(switcher.items[i]), 32, 32, 0, NULL, DI_NORMAL);
+    }
+    if (switcher.selected < switcher.count)
+    {
+        if (switcher.items[switcher.selected] == SWITCH_DESKTOP) lstrcpynW(title, w7.desktop_name, ARRAYSIZE(title));
+        else GetWindowTextW(switcher.items[switcher.selected], title, ARRAYSIZE(title));
+    }
+    if (w7.theme && SUCCEEDED(GetThemeFont(w7.theme, dc, W7_PART_BACKGROUND, 0, TMT_FONT, &lf)))
+        font = CreateFontIndirectW(&lf);
+    if (w7.theme) GetThemeColor(w7.theme, W7_PART_BACKGROUND, 0, TMT_TEXTCOLOR, &color);
+    old_font = SelectObject(dc, font ? font : GetStockObject(DEFAULT_GUI_FONT));
+    SetTextColor(dc, color);
+    SetBkMode(dc, TRANSPARENT);
+    SetRect(&text, W7_MARGIN, W7_TITLE_TOP, rect->right - W7_MARGIN, W7_TOP);
+    DrawTextW(dc, title, -1, &text, DT_CENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    SelectObject(dc, old_font);
+    if (font) DeleteObject(font);
 }
 
 static void switch_paint(HWND hwnd)
@@ -883,6 +989,12 @@ static void switch_paint(HWND hwnd)
     if (switcher.reactos)
     {
         ros_switch_paint(dc, &rect);
+        EndPaint(hwnd, &ps);
+        return;
+    }
+    if (switcher.win7)
+    {
+        w7_switch_paint(dc, &rect);
         EndPaint(hwnd, &ps);
         return;
     }
@@ -933,7 +1045,13 @@ static void switch_show(void)
         metrics.lfCaptionFont.lfWeight = FW_BOLD;
         switcher.font = CreateFontIndirectW(&metrics.lfCaptionFont);
     }
-    if (switcher.reactos)
+    if (switcher.win7)
+    {
+        width = 2 * W7_MARGIN + SWITCH_COLUMNS * W7_CELL;
+        height = W7_TOP + W7_ROW * switch_rows();
+        w7_resources();
+    }
+    else if (switcher.reactos)
     {
         /* Centred on the screen, as ReactOS does. */
         int rows = switch_rows();
@@ -971,6 +1089,14 @@ static void switch_commit(void)
     unsigned i;
     if (switcher.window) ShowWindow(switcher.window, SW_HIDE);
     if (!target) return;
+    if (target == SWITCH_DESKTOP)
+    {
+        int j;
+        for (j = 0; j < switcher.count; ++j)
+            if (switcher.items[j] != SWITCH_DESKTOP && !IsIconic(switcher.items[j]))
+                ShowWindowAsync(switcher.items[j], SW_MINIMIZE);
+        return;
+    }
     /* The WM activates the chosen window as for a click; Wine gives a
      * managed window X focus only through the WM. Linux windows are named by
      * their own X window, Wine windows by the one Wine created. */
@@ -1788,6 +1914,7 @@ int wmain(int argc, WCHAR **argv)
         WCHAR style[16];
         DWORD len = GetEnvironmentVariableW(L"WIN4WINE_SWITCHER", style, ARRAYSIZE(style));
         switcher.reactos = len && len < ARRAYSIZE(style) && !wcscmp(style, L"reactos");
+        switcher.win7 = len && len < ARRAYSIZE(style) && !wcscmp(style, L"win7");
     }
     shell_message = RegisterWindowMessageW(L"SHELLHOOK");
     default_icon = LoadIconW(NULL, IDI_APPLICATION);

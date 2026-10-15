@@ -35,7 +35,7 @@ SHELLS = {
                     switcher='reactos'),
     # Experimental: Windows 7's x64 explorer (prefix/win7.py).
     'win7': dict(marker='win7-shell.json', module='w7-explorer', command=r'C:\w7\w7-explorer.exe',
-                 stage=('prefix/win7.py', 'stage'), welcome=False, folders=True, name='win7', switcher=None),
+                 stage=('prefix/win7.py', 'stage'), welcome=False, folders=True, name='win7', switcher='win7'),
 }
 IM_VARIABLES = ('XMODIFIERS', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'SDL_IM_MODULE', 'CLUTTER_IM_MODULE')
 
