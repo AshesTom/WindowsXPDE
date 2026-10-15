@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 95 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 96 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -183,6 +183,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0093 | server: HKCU\Software を 32bit と 64bit で共有する（Windows と同じ。Classes の下だけが分かれる）。64bit のソフト（Windows 7 の explorer）が HKCU\Software\Wow6432Node を作ると、32bit のプログラムから利用者の設定（Wine の X11 の設定、テーマ）が見えなくなっていた | なし |
 | 0094 | comdlg32: ファイルを開く・保存するダイアログ（XP の形）で、ファイルの一覧に Wine のダイアログの字体を設定したあと描き直す。一覧が先に別の字体（アイコンの名前の字体）の行の高さで描かれ、高さの違う prefix（Windows 7 のメイリオ）では、クリックした行の下のファイルが選ばれていた | なし |
 | 0095 | comdlg32: Vista の形のダイアログ（IFileDialog）で、既定の操作（ダブルクリック・Enter）が来たフォルダを開き、結果を絶対の ID リストから作る（SHCreateShellItemArrayFromIDLists）。Windows 7 の shell32 の中では（Windows 7 のシェルの「ファイル名を指定して実行」の「参照」）、フォルダに入れず、選んだファイルがデスクトップのものとして返っていた | なし |
+| 0096 | shell32: ほかのシェルの登録だけが名指すものを省く。デスクトップの名前空間の拡張は、サーバーの DLL があり、shell32 の（またはサーバーの無い）ものはこの shell32 が作れるクラスのときだけ並べる（Windows 7 のライブラリやコントロール パネルが、開けない英語の名前で並んでいた）。デスクトップ、コンピューター、ドキュメント、ごみ箱は、LocalizedString が読めなければ shell32 自身の訳した名前にする | なし |
 
 ## 並び順の考え方
 

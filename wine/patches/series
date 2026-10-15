@@ -93,3 +93,4 @@
 0093-server-hkcu-software-shared.patch
 0094-comdlg32-view-font-redraw.patch
 0095-comdlg32-item-dialog-windows-browser.patch
+0096-shell32-other-shell-registrations.patch

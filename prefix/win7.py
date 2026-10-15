@@ -38,7 +38,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 6
+VERSION = 7
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -57,6 +57,8 @@ NATIVE = ('explorerframe', 'shell32', 'shlwapi', 'propsys', 'shdocvw', 'dui70', 
           'sndvolsso', 'winbrand', 'shacct', 'thumbcache', 'authui', 'linkinfo')
 # Read only for their resources (strings and icons): placed in system32, no override.
 RESOURCES = ('imageres', 'sud', 'DeviceCenter')
+# Read only for their resources by 32-bit programs (placed in syswow64, no override).
+WOW64_RESOURCES = ('shell32', 'imageres')
 # Windows 7's interface proxies, under another name: Wine's own actxprxy.dll
 # keeps the proxies of Wine's builtin DLLs.
 PROXIES = ('actxprxy', 'w7actxprxy', '{C90250F3-4D7D-4991-9B69-A5C5BC1C2AE6}')
@@ -123,16 +125,25 @@ class Prefix:
             shutil.copyfile(mui, target.parent / mui.parent.name / f'{target.name}.mui')
 
     def place_files(self):
-        native = self.path / 'drive_c/w7/native'
-        for source in sorted(native.glob('*.dll')):
-            self.place(source, self.system / source.name)
-        for source in sorted(native.glob('*/*.mui')):
-            self.place(source, self.system / source.parent.name / source.name)
+        # C:\w7\native: 64-bit, into system32; C:\w7\wow64: 32-bit, into syswow64
+        for folder, system in (('native', self.system), ('wow64', self.path / 'drive_c/windows/syswow64')):
+            native = self.path / 'drive_c/w7' / folder
+            for source in sorted(native.glob('*.dll')):
+                self.place(source, system / source.name)
+            for source in sorted(native.glob('*/*.mui')):
+                self.place(source, system / source.parent.name / source.name)
         # Wine's own Common Controls 6, for every other program.
         wine_controls = self.wine.parent.parent / 'lib/wine/x86_64-windows/comctl32_v6.dll'
         assembly = self.path / f'drive_c/windows/winsxs/{SXS}/comctl32.dll'
         if wine_controls.is_file() and assembly.is_file():
             self.place(wine_controls, assembly)
+
+    def wow64_registry(self, assets):
+        """The 32-bit view of the components' registrations (32-bit programs: icons, file types)."""
+        reg = assets / 'registry-wow64.reg'
+        if reg.is_file():
+            self.run(r'C:\windows\syswow64\regedit.exe', '/s', windows_path(reg), timeout=600)
+            self.wait()
 
     def registrations(self):
         """What a Wine update of the prefix, or Wine's font setup, rewrites."""
@@ -202,9 +213,12 @@ def create(assets, dest, home, wine):
         for name in RESOURCES:
             prefix.copy(assets / f'system32/{name}.dll', assets / f'system32/{ui}/{name}.dll.mui',
                         prefix.system / f'{name}.dll')
-        # The 32-bit imageres.dll, whose icons 32-bit programs show for file types.
-        if (assets / 'syswow64/imageres.dll').is_file():
-            shutil.copyfile(assets / 'syswow64/imageres.dll', c / 'windows/syswow64/imageres.dll')
+        # 32-bit shell32.dll and imageres.dll, read for their icons and strings by
+        # 32-bit programs (which keep Wine's shell32), as system32's are by 64-bit ones.
+        for name in WOW64_RESOURCES:
+            if (assets / f'syswow64/{name}.dll').is_file():
+                prefix.copy(assets / f'syswow64/{name}.dll', assets / f'syswow64/{ui}/{name}.dll.mui',
+                            c / f'w7/wow64/{name}.dll')
         prefix.copy(assets / 'sxs/comctl32.dll', assets / f'sxs/{ui}/comctl32.dll.mui', c / 'w7/comctl32.dll')
         for font in (assets / 'fonts').iterdir():
             shutil.copyfile(font, c / 'windows/Fonts' / font.name)
@@ -221,6 +235,7 @@ def create(assets, dest, home, wine):
         start_menu(prefix, assets, user)
         (dest / 'dosdevices/h:').symlink_to(home)
         prefix.run('regedit', '/s', windows_path(assets / 'registry.reg'), timeout=600)
+        prefix.wow64_registry(assets)
         prefix.wait()
         settings(prefix, lang)
         prefix.wait()
@@ -345,6 +360,15 @@ def stage(dest, wine=None):
     try:
         if not wine_current:
             prefix.run('wineboot', '-u', timeout=900)
+        if applied[:1] != [str(VERSION)] and config.get('assets'):
+            # Prefixes made before the 32-bit view was extracted (VERSION 7)
+            assets = Path(config['assets'])
+            prefix.wow64_registry(assets)
+            ui = json.loads((assets / 'media.json').read_text())['ui_language']
+            for name in WOW64_RESOURCES:
+                if (assets / f'syswow64/{name}.dll').is_file():
+                    prefix.copy(assets / f'syswow64/{name}.dll', assets / f'syswow64/{ui}/{name}.dll.mui',
+                                dest / f'drive_c/w7/wow64/{name}.dll')
         prefix.registrations()
     finally:
         prefix.stop()

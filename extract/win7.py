@@ -42,7 +42,9 @@ COMPONENTS = ('microsoft-windows-explorer', 'microsoft-windows-explorerframe', '
               'microsoft-windows-activexproxy', 'microsoft-windows-imageres', 'microsoft-windows-sud',
               'microsoft-windows-devicecenter',
               # The shell's settings (Explorer\Advanced) and the Network folder's registration.
-              'microsoft-windows-shell-client', 'microsoft-windows-networkexplorer')
+              'microsoft-windows-shell-client', 'microsoft-windows-networkexplorer',
+              # Text files' type, icon and verbs (Wine's Notepad opens them).
+              'microsoft-windows-notepad')
 # Fonts: Segoe UI, and Meiryo for Japanese.
 FONTS = {'ja': r'(segoeui\w*\.ttf|meiryo\w*\.ttc)$', 'en': r'segoeui\w*\.ttf$'}
 # The localized names of the Start menu's folders.
@@ -118,21 +120,28 @@ def select(paths, lang_dir, lang):
             wanted[real] = 'themes/' + real[len('Windows/Resources/Themes/'):]
         elif path.startswith('programdata/microsoft/user account pictures/'):
             wanted[real] = 'pictures/' + real[len('ProgramData/Microsoft/User Account Pictures/'):]
-    # The icons that file types and folders name in imageres.dll, for 32-bit programs.
-    want('Windows/SysWOW64/imageres.dll', 'syswow64/imageres.dll')
+    # The icons and names that registrations give in shell32.dll and imageres.dll,
+    # for 32-bit programs.
+    for name in ('shell32.dll', 'imageres.dll'):
+        want(f'Windows/SysWOW64/{name}', f'syswow64/{name}')
+        want(f'Windows/SysWOW64/{lang_dir}/{name}.mui', f'syswow64/{lang_dir}/{name}.mui', required=False)
     want('Windows/Resources/Themes/aero.theme', 'themes/aero.theme')
     want('Windows/Web/Wallpaper/Windows/img0.jpg', 'web/img0.jpg')
     for folder in START_MENU:
         want(f'ProgramData/Microsoft/Windows/{folder}/desktop.ini', f'startmenu/{folder}/desktop.ini',
              required=False)
     # Component manifests, for the registry (not kept).
-    for component in COMPONENTS:
-        found = sorted((p for p in paths if re.match(
-            rf'windows/winsxs/manifests/amd64_{re.escape(component)}_31bf3856ad364e35_[\d.]+_[a-z-]+_[0-9a-f]+\.manifest$', p)),
-            key=version)
-        if not found:
-            raise SystemExit(f'Not in this Windows 7 image: the manifest of {component}')
-        wanted[paths[found[-1]]] = f'manifests/{component}.manifest'
+    # The 32-bit view of a component has a manifest of its own (wow64_), for
+    # the components that also have 32-bit files.
+    for arch in ('amd64', 'wow64'):
+        for component in COMPONENTS:
+            found = sorted((p for p in paths if re.match(
+                rf'windows/winsxs/manifests/{arch}_{re.escape(component)}_31bf3856ad364e35_[\d.]+_[a-z-]+_[0-9a-f]+\.manifest$', p)),
+                key=version)
+            if found:
+                wanted[paths[found[-1]]] = f'manifests/{arch}/{component}.manifest'
+            elif arch == 'amd64':
+                raise SystemExit(f'Not in this Windows 7 image: the manifest of {component}')
     return wanted
 
 
@@ -163,13 +172,13 @@ def extract(iso, output):
         run('7z', 'x', '-y', f'-o{files}', str(wim), f'@{listfile}', stdout=subprocess.DEVNULL)
         output.mkdir(parents=True)
         manifest = []
-        manifest_paths = []
+        manifest_paths = {'amd64': [], 'wow64': []}
         for source, target in sorted(wanted.items(), key=lambda item: item[1]):
             if (files / index / source).is_dir():
                 continue
             data = (files / index / source).read_bytes()
             if target.startswith('manifests/'):
-                manifest_paths.append(files / index / source)
+                manifest_paths[target.split('/')[1]].append(files / index / source)
                 continue
             dest = output / target
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -177,10 +186,12 @@ def extract(iso, output):
             manifest.append({'name': target, 'source': f'{index}/{source}',
                              'sha256': hashlib.sha256(data).hexdigest()})
         icons = {'shell32.dll': media.resource_ids(output / 'system32/shell32.dll', RT_GROUP_ICON)}
-        text, missing = manifests.convert(manifest_paths, icons)
-        (output / 'registry.reg').write_text(text, encoding='utf-16')
-        for item in missing:
-            print('Registry entry left out:', item, file=sys.stderr)
+        # registry.reg: the 64-bit view; registry-wow64.reg: the 32-bit view
+        for arch, name in (('amd64', 'registry.reg'), ('wow64', 'registry-wow64.reg')):
+            text, missing = manifests.convert(manifest_paths[arch], icons)
+            (output / name).write_text(text, encoding='utf-16')
+            for item in missing:
+                print(f'Registry entry left out ({arch}):', item, file=sys.stderr)
         (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
         (output / 'media.json').write_text(json.dumps(
             {'lang': lang, 'ui_language': lang_dir, 'image': int(index), 'edition': edition}, indent=2) + '\n')
