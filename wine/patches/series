@@ -102,3 +102,4 @@
 0102-win32u-themed-menus.patch
 0103-winex11-win7-shadow-rounding.patch
 0104-comctl32-win7-control-details.patch
+0105-comctl32-win7-listview.patch
