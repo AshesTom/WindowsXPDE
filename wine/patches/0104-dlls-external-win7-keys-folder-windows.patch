@@ -29,7 +29,7 @@ data, and unmarshaling gives that pointer back without asking again
 was taken from the global interface table). On 64-bit, ole32 exports
 HACCEL, HBITMAP, HGLOBAL, HICON, HMENU and HWND _UserSize64,
 _UserMarshal64, _UserUnmarshal64 and _UserFree64 as the classic
-functions, as 0078 does for oleaut32.
+functions, as 0076 does for oleaut32.
 Evidence: Windows 7 SP1 x64 explorer.exe opens its Start menu for the
 Windows key and Ctrl+Esc, and stays when taskbar buttons are clicked; Win+E creates the folder window (CabinetWClass)
 with Windows 7's actxprxy.dll loaded for its interfaces. The folder

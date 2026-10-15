@@ -12,7 +12,7 @@ wParam is the caller's window. Measured by a decoy taskbar window on XP.
 Wine before: Wine's own layout, with the icon's bitmaps instead of the
 handle, which the XP taskbar rejects, so every icon was refused.
 Change: with the external shell, send the XP layout and keep the caller's
-icon handle; the taskbar reads it as another process's icon (0021).
+icon handle; the taskbar reads it as another process's icon (0022).
 Evidence: tests/notify-icon.c adds, checks and removes an icon on XP and
 on Wine.
 Scope: only with WIN4WINE_EXTERNAL_SHELL. The layout has 32-bit handles and

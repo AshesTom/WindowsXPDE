@@ -22,10 +22,10 @@ Scope: only with WIN4WINE_EXTERNAL_SHELL; the setting itself is kept.
  1 file changed, 4 insertions(+)
 
 diff --git a/dlls/win32u/sysparams.c b/dlls/win32u/sysparams.c
-index 5628367..00cbb6b 100644
+index 411eb4a..ff1014f 100644
 --- a/dlls/win32u/sysparams.c
 +++ b/dlls/win32u/sysparams.c
-@@ -6697,6 +6697,10 @@ BOOL WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT w
+@@ -6693,6 +6693,10 @@ BOOL WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT w
          break;
      case SPI_GETSELECTIONFADE:
          ret = get_entry( &entry_SELECTIONFADE, val, ptr );

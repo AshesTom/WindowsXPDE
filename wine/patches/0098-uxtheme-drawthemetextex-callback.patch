@@ -18,10 +18,10 @@ Scope: callers that pass these flags.
  1 file changed, 65 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 3bd25f9..7e93681 100644
+index 2b27139..c6dc530 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
-@@ -2085,6 +2085,65 @@ static void draw_continuous_shadow(HDC hdc, LPCWSTR text, int count, DWORD flags
+@@ -2083,6 +2083,65 @@ static void draw_continuous_shadow(HDC hdc, LPCWSTR text, int count, DWORD flags
      if (shadow_dc) DeleteDC(shadow_dc);
  }
  
@@ -87,7 +87,7 @@ index 3bd25f9..7e93681 100644
  HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId,
      LPCWSTR pszText, int iCharCount, DWORD flags, RECT *rect, const DTTOPTS *options)
  {
-@@ -2104,7 +2163,7 @@ HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId
+@@ -2102,7 +2161,7 @@ HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId
          return E_HANDLE;
  
      if(options) {
@@ -96,7 +96,7 @@ index 3bd25f9..7e93681 100644
              FIXME("unsupported flags 0x%08lx\n", options->dwFlags);
          if(options->dwFlags & DTT_FONTPROP)
              fontProp = options->iFontPropId;
-@@ -2131,7 +2190,7 @@ HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId
+@@ -2129,7 +2188,7 @@ HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId
      oldBkMode = SetBkMode(hdc, TRANSPARENT);
      if (win4wine_external_shell() &&
          !(flags & (DT_CALCRECT | DT_MODIFYSTRING)) &&
@@ -105,7 +105,7 @@ index 3bd25f9..7e93681 100644
      {
          int shadow_type;
          POINT offset;
-@@ -2154,7 +2213,10 @@ HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId
+@@ -2152,7 +2211,10 @@ HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId
                   SUCCEEDED(GetThemeColor(hTheme, iPartId, iStateId, TMT_TEXTSHADOWCOLOR, &shadow_color)))
              draw_continuous_shadow(hdc, pszText, iCharCount, flags, rect, offset, shadow_color);
      }

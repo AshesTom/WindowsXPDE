@@ -20,10 +20,10 @@ Scope: a new export.
  3 files changed, 35 insertions(+)
 
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 9eaf89c..3bd25f9 100644
+index 0f7a00f..2b27139 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
-@@ -196,6 +196,34 @@ HRESULT WINAPI DrawThemeParentBackground(HWND hwnd, HDC hdc, RECT *prc)
+@@ -194,6 +194,34 @@ HRESULT WINAPI DrawThemeParentBackground(HWND hwnd, HDC hdc, RECT *prc)
  }
  
  
@@ -71,7 +71,7 @@ index cb07007..35531f1 100644
  @ stdcall DrawThemeTextEx(ptr ptr long long wstr long long ptr ptr)
  @ stdcall EnableThemeDialogTexture(ptr long)
 diff --git a/include/uxtheme.h b/include/uxtheme.h
-index d17b616..ff8cd3a 100644
+index 2df94e9..508362b 100644
 --- a/include/uxtheme.h
 +++ b/include/uxtheme.h
 @@ -55,6 +55,12 @@ THEMEAPI DrawThemeBackgroundEx(HTHEME,HDC,int,int,const RECT*, const DTBGOPTS*);

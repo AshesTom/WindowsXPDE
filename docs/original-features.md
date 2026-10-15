@@ -35,14 +35,14 @@ Wine の窓にも、Linux のアプリの窓（XP の枠を付けたもの）に
 
 - **キー**: proxy（`bridge-wm/proxy.c`）が Win+矢印を `RegisterHotKey` で受け取ります。Linux の窓にフォーカスがあるときは、
   WM（Wayland では labwc）が Win+R などと同じ経路で矢印キーを proxy に渡します。
-- **X11 のドラッグ**: タイトルバーのドラッグは Wine の移動のループが行います。Wine のパッチ 0073 で、ループが
+- **X11 のドラッグ**: タイトルバーのドラッグは Wine の移動のループが行います。Wine のパッチ 0032 で、ループが
   EVENT_SYSTEM_MOVESIZESTART/END（Windows と同じ通知）を送るようにし、proxy がそれを受けて行き先の枠を出し、離したときに寄せます。
   寄せた窓の大きさを引き剥がしたときに戻すのと、最大化した窓を元の大きさに戻すのは、ドラッグ中の窓を外から変えられないので
   Wine のループの中で行います。
 - **Wayland**: 元の大きさの窓のドラッグは labwc が行い、labwc 自身の寄せ（snapping）を使います。どの窓を寄せたかは labwc だけが
   覚え、proxy は Win+矢印を labwc に頼みます。ドラッグ中の行き先は labwc が proxy に知らせ、proxy が X11 と同じ網掛けの枠で示します。
 
-詳しくは [architecture.md](architecture.md) の「キー操作」と、[patches.md](patches.md) の 0073 にあります。
+詳しくは [architecture.md](architecture.md) の「キー操作」と、[patches.md](patches.md) の 0032 にあります。
 
 ### 制限
 

@@ -70,7 +70,7 @@ index 5d6cbb7..38fe9dd 100644
  
      if (dce->clip_rgn) NtGdiCombineRgn( vis_rgn, vis_rgn, dce->clip_rgn,
 diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
-index 1d4e6a4..1e55a34 100644
+index e8ebf9e..7333a83 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
 @@ -2172,6 +2172,100 @@ static BOOL is_fullscreen( const MONITORINFO *info, const RECT *rect )

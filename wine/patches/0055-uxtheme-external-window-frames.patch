@@ -540,10 +540,10 @@ index d059a85..15af1cd 100644
 +    return TRUE;
 +}
 diff --git a/dlls/win32u/defwnd.c b/dlls/win32u/defwnd.c
-index 4b647c9..f4bd4f2 100644
+index 4268708..42fc315 100644
 --- a/dlls/win32u/defwnd.c
 +++ b/dlls/win32u/defwnd.c
-@@ -1391,6 +1391,25 @@ void draw_menu_button( HWND hwnd, HDC dc, RECT *r, enum NONCLIENT_BUTTON_TYPE ty
+@@ -1482,6 +1482,25 @@ void draw_menu_button( HWND hwnd, HDC dc, RECT *r, enum NONCLIENT_BUTTON_TYPE ty
      KeUserModeCallback( NtUserDrawNonClientButton, &params, sizeof(params), &ret_ptr, &ret_len );
  }
  
@@ -569,7 +569,7 @@ index 4b647c9..f4bd4f2 100644
  BOOL draw_frame_menu( HDC dc, RECT *r, UINT flags )
  {
      RECT rect;
-@@ -1495,7 +1514,7 @@ static void draw_close_button( HWND hwnd, HDC hdc, BOOL down, BOOL grayed )
+@@ -1586,7 +1605,7 @@ static void draw_close_button( HWND hwnd, HDC hdc, BOOL down, BOOL grayed )
  
      if (down) flags |= DFCS_PUSHED;
      if (grayed) flags |= DFCS_INACTIVE;
@@ -578,7 +578,7 @@ index 4b647c9..f4bd4f2 100644
  }
  
  static void draw_max_button( HWND hwnd, HDC hdc, BOOL down, BOOL grayed )
-@@ -1518,7 +1537,7 @@ static void draw_max_button( HWND hwnd, HDC hdc, BOOL down, BOOL grayed )
+@@ -1609,7 +1628,7 @@ static void draw_max_button( HWND hwnd, HDC hdc, BOOL down, BOOL grayed )
      rect.right -= 2;
      if (down) flags |= DFCS_PUSHED;
      if (grayed) flags |= DFCS_INACTIVE;
@@ -587,7 +587,7 @@ index 4b647c9..f4bd4f2 100644
  }
  
  static void draw_min_button( HWND hwnd, HDC hdc, BOOL down, BOOL grayed )
-@@ -1544,7 +1563,7 @@ static void draw_min_button( HWND hwnd, HDC hdc, BOOL down, BOOL grayed )
+@@ -1635,7 +1654,7 @@ static void draw_min_button( HWND hwnd, HDC hdc, BOOL down, BOOL grayed )
      rect.right -= 2;
      if (down) flags |= DFCS_PUSHED;
      if (grayed) flags |= DFCS_INACTIVE;

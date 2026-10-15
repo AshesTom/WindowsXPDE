@@ -10,9 +10,9 @@ two lines. Windows 7's TrayNotify background image is translucent, so the
 taskbar's background must be under it. The taskbar also uses buffered
 painting with BP_PAINTPARAMS (BeginBufferedPaint).
 Wine before: two XP shell changes applied to Windows 7's taskbar too.
-0053 made DrawThemeParentBackground under the taskbar draw only the
+0065 made DrawThemeParentBackground under the taskbar draw only the
 TrayNotify background (opaque on XP), so the notification area was black;
-0054 subclassed the clock and drew one line of time over it, so the time
+0066 subclassed the clock and drew one line of time over it, so the time
 appeared twice. BeginBufferedPaint ignored BP_PAINTPARAMS, and
 BufferedPaintClear and BufferedPaintSetAlpha were stubs.
 Change: with WIN4WINE_SHELL=win7 neither XP change applies. As documented
@@ -209,7 +209,7 @@ index 5646972..80abf7a 100644
          !GetClassNameW(hwnd, name, ARRAY_SIZE(name)) || lstrcmpW(name, L"TrayClockWClass") ||
          !GetClassNameW(parent, name, ARRAY_SIZE(name)) || lstrcmpW(name, L"TrayNotifyWnd") ||
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 0f7a00f..9eaf89c 100644
+index c4b4d7e..6263960 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
 @@ -108,7 +108,9 @@ static BOOL external_shell_taskbar_background(HWND hwnd, HDC dc, const RECT *cli
@@ -224,10 +224,10 @@ index 0f7a00f..9eaf89c 100644
      {
          if (GetClassNameW(tray, name, ARRAY_SIZE(name)))
 diff --git a/dlls/uxtheme/uxthemedll.h b/dlls/uxtheme/uxthemedll.h
-index 7b13893..cdfedbb 100644
+index e10a34a..d9989a2 100644
 --- a/dlls/uxtheme/uxthemedll.h
 +++ b/dlls/uxtheme/uxthemedll.h
-@@ -126,4 +126,13 @@ LRESULT WINAPI UXTHEME_ScrollbarWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
+@@ -126,6 +126,15 @@ LRESULT WINAPI UXTHEME_ScrollbarWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
  /* Full alpha blending */
  #define ALPHABLEND_FULL             2
  
@@ -240,12 +240,14 @@ index 7b13893..cdfedbb 100644
 +    return len && len < ARRAY_SIZE(value) && !wcsicmp(value, L"win7");
 +}
 +
- #endif /* __WINE_UXTHEMEDLL_H */
+ BOOL MSSTYLES_ActiveThemeFormat4(void);
+ int MSSTYLES_AppliedPaddedBorder(void);
+ 
 diff --git a/include/uxtheme.h b/include/uxtheme.h
-index b7fa3f9..3ee3b39 100644
+index 508362b..ff8cd3a 100644
 --- a/include/uxtheme.h
 +++ b/include/uxtheme.h
-@@ -241,6 +241,10 @@ typedef enum _BP_BUFFERFORMAT
+@@ -259,6 +259,10 @@ typedef enum _BP_BUFFERFORMAT
  	BPBF_TOPDOWNMONODIB
  } BP_BUFFERFORMAT;
  

@@ -26,7 +26,7 @@ Scope: only with WIN4WINE_EXTERNAL_SHELL.
  1 file changed, 39 insertions(+)
 
 diff --git a/dlls/win32u/sysparams.c b/dlls/win32u/sysparams.c
-index 411eb4a..5628367 100644
+index ff1014f..00cbb6b 100644
 --- a/dlls/win32u/sysparams.c
 +++ b/dlls/win32u/sysparams.c
 @@ -5953,6 +5953,10 @@ void sysparams_init(void)
@@ -40,7 +40,7 @@ index 411eb4a..5628367 100644
  }
  
  static BOOL update_desktop_wallpaper(void)
-@@ -6885,6 +6889,35 @@ BOOL WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT w
+@@ -6889,6 +6893,35 @@ BOOL WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT w
  #undef WINE_SPI_WARN
  }
  
@@ -76,7 +76,7 @@ index 411eb4a..5628367 100644
  int get_system_metrics( int index )
  {
      NONCLIENTMETRICSW ncm;
-@@ -6893,6 +6926,9 @@ int get_system_metrics( int index )
+@@ -6897,6 +6930,9 @@ int get_system_metrics( int index )
      RECT rect;
      UINT ret;
      HDC hdc;
@@ -86,7 +86,7 @@ index 411eb4a..5628367 100644
  
      /* some metrics are dynamic */
      switch (index)
-@@ -7137,6 +7173,9 @@ static int get_system_metrics_for_dpi( int index, unsigned int dpi )
+@@ -7141,6 +7177,9 @@ static int get_system_metrics_for_dpi( int index, unsigned int dpi )
      ICONMETRICSW im;
      UINT ret;
      HDC hdc;

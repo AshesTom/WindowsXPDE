@@ -184,10 +184,10 @@ index a8f3a0a..d4b51a9 100644
      {
          rc.left++;
 diff --git a/dlls/win32u/defwnd.c b/dlls/win32u/defwnd.c
-index 61e3cc6..4b647c9 100644
+index f3b81dc..4268708 100644
 --- a/dlls/win32u/defwnd.c
 +++ b/dlls/win32u/defwnd.c
-@@ -1714,7 +1714,7 @@ BOOL WINAPI NtUserDrawCaptionTemp( HWND hwnd, HDC hdc, const RECT *rect, HFONT f
+@@ -1805,7 +1805,7 @@ BOOL WINAPI NtUserDrawCaptionTemp( HWND hwnd, HDC hdc, const RECT *rect, HFONT f
  }
  
  /* Paint the non-client area for windows */
@@ -196,7 +196,7 @@ index 61e3cc6..4b647c9 100644
  {
      HDC hdc;
      RECT rfuzz, rect, clip_rect;
-@@ -1724,6 +1724,7 @@ static void nc_paint( HWND hwnd, HRGN clip )
+@@ -1815,6 +1815,7 @@ static void nc_paint( HWND hwnd, HRGN clip )
      WORD flags;
      HRGN hrgn;
      RECT rectClient;
@@ -204,7 +204,7 @@ index 61e3cc6..4b647c9 100644
  
      if (!(win = get_win_ptr( hwnd )) || win == WND_OTHER_PROCESS) return;
      style = win->dwStyle;
-@@ -1735,24 +1736,34 @@ static void nc_paint( HWND hwnd, HRGN clip )
+@@ -1826,24 +1827,34 @@ static void nc_paint( HWND hwnd, HRGN clip )
  
      TRACE( "%p %d\n", hwnd, active );
  
@@ -252,7 +252,7 @@ index 61e3cc6..4b647c9 100644
      }
  
      get_window_rect_rel( hwnd, COORDS_WINDOW, &rect, get_thread_dpi() );
-@@ -1818,7 +1829,8 @@ static void nc_paint( HWND hwnd, HRGN clip )
+@@ -1909,7 +1920,8 @@ static void nc_paint( HWND hwnd, HRGN clip )
          fill_rect( hdc, &r, get_sys_color_brush( COLOR_BTNFACE ) );
      }
  
@@ -262,7 +262,7 @@ index 61e3cc6..4b647c9 100644
  }
  
  static LRESULT handle_nc_paint( HWND hwnd , HRGN clip )
-@@ -1828,7 +1840,7 @@ static LRESULT handle_nc_paint( HWND hwnd , HRGN clip )
+@@ -1919,7 +1931,7 @@ static LRESULT handle_nc_paint( HWND hwnd , HRGN clip )
  
      if (style & WS_VISIBLE)
      {
@@ -271,7 +271,7 @@ index 61e3cc6..4b647c9 100644
  
          if (parent == get_desktop_window())
              NtUserPostMessage( parent, WM_PARENTNOTIFY, WM_NCPAINT, (LPARAM)hwnd );
-@@ -1851,7 +1863,7 @@ static LRESULT handle_nc_activate( HWND hwnd, WPARAM wparam, LPARAM lparam )
+@@ -1942,7 +1954,7 @@ static LRESULT handle_nc_activate( HWND hwnd, WPARAM wparam, LPARAM lparam )
       */
      if (lparam != -1)
      {
@@ -280,7 +280,7 @@ index 61e3cc6..4b647c9 100644
  
          if (NtUserGetAncestor( hwnd, GA_PARENT ) == get_desktop_window())
              NtUserPostMessage( get_desktop_window(), WM_PARENTNOTIFY, WM_NCACTIVATE, (LPARAM)hwnd );
-@@ -2940,6 +2952,9 @@ LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam,
+@@ -3031,6 +3043,9 @@ LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam,
          if ((lparam & PRF_CHECKVISIBLE) && !is_window_visible ( hwnd )) break;
          result = 1;
  

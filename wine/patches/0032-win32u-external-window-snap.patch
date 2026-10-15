@@ -41,10 +41,10 @@ manager, go through this loop there too.
  1 file changed, 93 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/win32u/defwnd.c b/dlls/win32u/defwnd.c
-index f4bd4f2..42fc315 100644
+index 58c7004..280f1f3 100644
 --- a/dlls/win32u/defwnd.c
 +++ b/dlls/win32u/defwnd.c
-@@ -668,6 +668,68 @@ static BOOL on_bottom_border( int hit )
+@@ -667,6 +667,68 @@ static BOOL on_bottom_border( int hit )
      return hit == HTBOTTOM || hit == HTBOTTOMLEFT || hit == HTBOTTOMRIGHT;
  }
  
@@ -113,7 +113,7 @@ index f4bd4f2..42fc315 100644
  /***********************************************************************
   *           sys_command_size_move
   *
-@@ -676,7 +738,7 @@ static BOOL on_bottom_border( int hit )
+@@ -675,7 +737,7 @@ static BOOL on_bottom_border( int hit )
  static void sys_command_size_move( HWND hwnd, WPARAM wparam )
  {
      DWORD msg_pos = NtUserGetThreadInfo()->message_pos;
@@ -122,7 +122,7 @@ index f4bd4f2..42fc315 100644
      RECT sizing_rect, mouse_rect, orig_rect;
      UINT hittest = wparam & 0x0f;
      UINT syscommand = wparam & 0xfff0;
-@@ -688,7 +750,10 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
+@@ -687,7 +749,10 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
      HDC hdc;
      MSG msg;
  
@@ -134,7 +134,7 @@ index f4bd4f2..42fc315 100644
  
      thickframe = (style & WS_THICKFRAME) && !((style & (WS_DLGFRAME | WS_BORDER)) == WS_DLGFRAME);
  
-@@ -780,6 +845,13 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
+@@ -779,6 +844,13 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
      send_message( hwnd, WM_ENTERSIZEMOVE, 0, 0 );
      set_capture_window( hwnd, GUI_INMOVESIZE, NULL );
  
@@ -148,7 +148,7 @@ index f4bd4f2..42fc315 100644
      for (;;)
      {
          int dx = 0, dy = 0;
-@@ -844,11 +916,22 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
+@@ -843,11 +915,22 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
          dx = pt.x - capture_point.x;
          dy = pt.y - capture_point.y;
  
@@ -171,7 +171,7 @@ index f4bd4f2..42fc315 100644
                  if (!drag_full_windows)
                      draw_moving_frame( parent, hdc, &sizing_rect, thickframe );
              }
-@@ -929,6 +1012,14 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
+@@ -928,6 +1011,14 @@ static void sys_command_size_move( HWND hwnd, WPARAM wparam )
          }
      }
  

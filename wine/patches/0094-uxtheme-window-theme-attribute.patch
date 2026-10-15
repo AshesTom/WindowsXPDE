@@ -14,7 +14,7 @@ and the caption is empty.
 Wine before: the function was a stub (E_NOTIMPL), and the frame showed
 the window text and its icon.
 Change: the options are kept in a window property and the frame is
-redrawn; the external shell's themed frame (0043) leaves out the text
+redrawn; the external shell's themed frame (0055) leaves out the text
 with WTNCA_NODRAWCAPTION and the icon with WTNCA_NODRAWICON. uxtheme.h
 gets WTA_OPTIONS and the WTNCA_* flags.
 Evidence: Windows 7 SP1 x64 explorer.exe calls it with 8 bytes for its
@@ -97,7 +97,7 @@ index a9ab39d..e7fea6b 100644
      text.bottom = text.top + GetSystemMetrics(SM_CYCAPTION);
      DrawThemeText(theme, dc, maximized ? WP_MAXCAPTION : WP_CAPTION, state, title, -1,
 diff --git a/include/uxtheme.h b/include/uxtheme.h
-index 3ee3b39..d17b616 100644
+index b7fa3f9..2df94e9 100644
 --- a/include/uxtheme.h
 +++ b/include/uxtheme.h
 @@ -212,6 +212,18 @@ THEMEAPI_(HTHEME) GetWindowTheme(HWND);

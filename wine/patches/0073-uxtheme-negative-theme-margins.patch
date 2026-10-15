@@ -20,10 +20,10 @@ Scope: all processes; only themes with negative margins are affected.
  1 file changed, 24 insertions(+), 4 deletions(-)
 
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
-index 3bf3a0b..6e6ec8f 100644
+index 601b3d2..85abac6 100644
 --- a/dlls/uxtheme/msstyles.c
 +++ b/dlls/uxtheme/msstyles.c
-@@ -1782,15 +1782,35 @@ HRESULT MSSTYLES_GetPropertyRect(PTHEME_PROPERTY tp, RECT *pRect)
+@@ -1822,15 +1822,35 @@ HRESULT MSSTYLES_GetPropertyRect(PTHEME_PROPERTY tp, RECT *pRect)
   *
   * Retrieve a margins value for a property 
   */

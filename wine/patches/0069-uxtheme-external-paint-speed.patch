@@ -3,10 +3,10 @@ Subject: [PATCH] uxtheme, user32: paint Luna frames and theme parts with fewer b
 
 Purpose: let the XP shell's windows (Luna) and the bridge's frames resize
 smoothly, also in virtual machines without a GPU.
-Wine before (with 0049-0053): each step of a resize painted the frame
-twice: on WM_NCPAINT, then all of it again when 0050 updated the caption
+Wine before (with 0055-0059): each step of a resize painted the frame
+twice: on WM_NCPAINT, then all of it again when 0056 updated the caption
 region on WM_WINDOWPOSCHANGED. DefWindowProc drew the classic caption, with
-themed buttons, under the Luna caption that covered it right after. 0053's
+themed buttons, under the Luna caption that covered it right after. 0059's
 XP stretch copied an enlarged part one source column and one row at a time,
 each a blit that converted the 8-bpp part again: about 2,500 conversions
 for one step of resizing Mousepad's frame. Every other blit of an 8- or
@@ -37,7 +37,7 @@ pixel for pixel with and without the patch: the desktop, Notepad and
 Mousepad's frame active and inactive, the Start menu, My Computer moved, a
 menu, Notepad maximized, restored, made smaller and larger, Mousepad made
 smaller and larger. Dragging the bottom-right corner 100 steps of 16 ms on
-Xvfb (with 0074): Mousepad's frame took 71-99 sizes growing and all 100
+Xvfb (with 0033): Mousepad's frame took 71-99 sizes growing and all 100
 shrinking (38-51 and 55 before), Notepad 71-75 and 87-94 (28-29 and
 39-41). In the test VM (QEMU, standard VGA), of 80 steps: Mousepad 68-72
 and 72-77 (40-41 and 42-46), My Computer 29-33 (18-20).
@@ -220,7 +220,7 @@ index 0935d11..ef5f26f 100644
      return ret;
  }
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
-index 50a65a5..85abac6 100644
+index 4e92c09..601b3d2 100644
 --- a/dlls/uxtheme/msstyles.c
 +++ b/dlls/uxtheme/msstyles.c
 @@ -1489,6 +1489,40 @@ static CRITICAL_SECTION_DEBUG images_section_debug =

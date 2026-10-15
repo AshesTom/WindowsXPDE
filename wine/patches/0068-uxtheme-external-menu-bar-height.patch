@@ -24,7 +24,7 @@ applied.
  1 file changed, 5 insertions(+)
 
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
-index 6e6ec8f..50a65a5 100644
+index 3bf3a0b..4e92c09 100644
 --- a/dlls/uxtheme/msstyles.c
 +++ b/dlls/uxtheme/msstyles.c
 @@ -797,6 +797,11 @@ static inline void parse_init_nonclient (struct PARSENONCLIENTSTATE* state)

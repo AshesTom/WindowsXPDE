@@ -8,7 +8,10 @@ tests/menu-theme-layout.c through public APIs and screenshots): a
 version 4 visual style's Menu class draws the bar's background, the
 pushed bar item, the popup's border, background and gutter, the hot
 item, the check mark on its background, the submenu arrow and the
-separator. A popup item is as tall as the check background (22 with
+separator. While the window is active and no menu is open, the bar
+item under the mouse is drawn with MENU_BARITEM's hot state; an
+inactive window's bar has no hot item and gray text (109,109,109).
+A popup item is as tall as the check background (22 with
 Aero), a separator the separator part and the item margins (8); the
 text starts after the gutter and the background's border size; the
 shortcuts start 33 pixels after the longest text and end 19 pixels
@@ -16,28 +19,36 @@ before the item's end. Menu bar items fill the bar's 20 pixels from
 its top. With keyboard cues off, access keys are underlined only while
 the menu is used from the keyboard; DrawText's DT_HIDEPREFIX drops the
 underscore.
-Wine before: XP's flat menus; DT_HIDEPREFIX was ignored.
+Wine before: XP's flat menus, with no hot bar item and the active text
+color in inactive windows; DT_HIDEPREFIX was ignored.
 Change: a MenuTheme user32 callback asks Wine's uxtheme
 (Win4WineMenuTheme) for the part sizes and margins and has it draw
 the parts; win32u lays the menus out with them and draws the text;
 the keyboard menu mode shows the access keys; user32's DrawText honors
-DT_HIDEPREFIX.
+DT_HIDEPREFIX. DefWindowProc's WM_NCMOUSEMOVE and WM_NCMOUSELEAVE follow
+the bar item under the mouse (TME_NONCLIENT | TME_LEAVE) and redraw it
+with MBI_HOT or MBI_DISABLEDHOT; selecting a bar item clears it. An
+inactive bar's items use the disabled text color.
 Evidence: a test window's menus, opened with Alt+F, left with Esc and
 opened with the mouse, match Windows 7's at the same place to the
-pixel apart from ClearType's colors.
+pixel apart from ClearType's colors; w7cmp.exe's menu bar with the
+mouse over an item of the active window and of an inactive one is the
+same as Windows 7's apart from the known glyph differences.
 Scope: opted-in external shell with a version 4 style that has the
 popup menu parts (Windows 7's Aero); XP's and ReactOS's styles keep
 the current menus.
 ---
- dlls/user32/text.c        |   4 +-
- dlls/user32/user_main.c   |  18 +++
- dlls/uxtheme/Makefile.in  |   1 +
- dlls/uxtheme/menu.c       |  86 +++++++++++
- dlls/uxtheme/uxtheme.spec |   1 +
- dlls/win32u/menu.c        | 361 +++++++++++++++++++++++++++++++++++++++++++++-
- dlls/wow64win/user.c      |  23 +++
- include/ntuser.h          |  35 ++++-
- 8 files changed, 520 insertions(+), 9 deletions(-)
+ dlls/user32/text.c           |   4 +-
+ dlls/user32/user_main.c      |  18 ++
+ dlls/uxtheme/Makefile.in     |   1 +
+ dlls/uxtheme/menu.c          |  86 +++++++++
+ dlls/uxtheme/uxtheme.spec    |   1 +
+ dlls/win32u/defwnd.c         |   5 +
+ dlls/win32u/menu.c           | 403 ++++++++++++++++++++++++++++++++++++++++++-
+ dlls/win32u/win32u_private.h |   1 +
+ dlls/wow64win/user.c         |  23 +++
+ include/ntuser.h             |  35 +++-
+ 10 files changed, 568 insertions(+), 9 deletions(-)
 
 diff --git a/dlls/user32/text.c b/dlls/user32/text.c
 index 8b18023..ede816e 100644
@@ -196,8 +207,31 @@ index 35531f1..dcabd54 100644
  @ stdcall Win4WineCaptionBand(ptr ptr)
  @ stdcall Win4WineNcHitTest(ptr long long)
 +@ stdcall Win4WineMenuTheme(long ptr ptr long long ptr ptr)
+diff --git a/dlls/win32u/defwnd.c b/dlls/win32u/defwnd.c
+index 42fc315..f807738 100644
+--- a/dlls/win32u/defwnd.c
++++ b/dlls/win32u/defwnd.c
+@@ -2494,6 +2494,10 @@ static LRESULT handle_nc_mouse_move( HWND hwnd, WPARAM wparam, LPARAM lparam )
+ 
+     TRACE( "hwnd=%p wparam=%#lx lparam=%#lx\n", hwnd, (long)wparam, lparam );
+ 
++    pt.x = (short)LOWORD( lparam );
++    pt.y = (short)HIWORD( lparam );
++    track_menu_bar_hot_item( hwnd, wparam == HTMENU ? &pt : NULL );
++
+     if (wparam != HTHSCROLL && wparam != HTVSCROLL)
+         return 0;
+ 
+@@ -2515,6 +2519,7 @@ static LRESULT handle_nc_mouse_leave( HWND hwnd )
+ 
+     TRACE( "hwnd=%p\n", hwnd );
+ 
++    track_menu_bar_hot_item( hwnd, NULL );
+     if (style & WS_HSCROLL)
+         handle_scroll_event( hwnd, SB_HORZ, WM_NCMOUSELEAVE, pt );
+     if (style & WS_VSCROLL)
 diff --git a/dlls/win32u/menu.c b/dlls/win32u/menu.c
-index 09e7984..ed7b9ff 100644
+index 09e7984..d71fdb9 100644
 --- a/dlls/win32u/menu.c
 +++ b/dlls/win32u/menu.c
 @@ -29,6 +29,7 @@
@@ -208,7 +242,23 @@ index 09e7984..ed7b9ff 100644
  
  WINE_DEFAULT_DEBUG_CHANNEL(menu);
  WINE_DECLARE_DEBUG_CHANNEL(accel);
-@@ -1985,6 +1986,8 @@ static HFONT get_menu_font( BOOL bold )
+@@ -63,6 +64,7 @@ struct menu
+     UINT        nItems;         /* number of items in the menu */
+     HWND        hWnd;           /* window containing the menu */
+     UINT        FocusedItem;    /* currently focused item */
++    UINT        hot_item;       /* menu bar item under the mouse (see track_menu_bar_hot_item) */
+     HWND        hwndOwner;      /* window receiving the messages for ownerdraw */
+     BOOL        bScrolling;     /* scroll arrows are active */
+     UINT        nScrollPos;     /* current scroll position */
+@@ -603,6 +605,7 @@ static HMENU create_menu( BOOL is_popup )
+ 
+     if (!(menu = calloc( 1, sizeof(*menu) ))) return 0;
+     menu->FocusedItem = NO_SELECTED_ITEM;
++    menu->hot_item = NO_SELECTED_ITEM;
+     menu->refcount = 1;
+     if (is_popup) menu->wFlags |= MF_POPUP;
+ 
+@@ -1985,6 +1988,8 @@ static HFONT get_menu_font( BOOL bold )
      return ret;
  }
  
@@ -217,7 +267,7 @@ index 09e7984..ed7b9ff 100644
  static HBITMAP get_arrow_bitmap(void)
  {
      static HBITMAP arrow_bitmap;
-@@ -2000,7 +2003,91 @@ static HBITMAP get_arrow_bitmap(void)
+@@ -2000,7 +2005,91 @@ static HBITMAP get_arrow_bitmap(void)
   * the reference XP machine. */
  static BOOL xp_popup_menus(void)
  {
@@ -310,7 +360,7 @@ index 09e7984..ed7b9ff 100644
  }
  
  static HBITMAP get_xp_arrow_bitmap(void)
-@@ -2075,6 +2162,43 @@ static void get_bitmap_item_size( struct menu_item *item, SIZE *size, HWND owner
+@@ -2075,6 +2164,43 @@ static void get_bitmap_item_size( struct menu_item *item, SIZE *size, HWND owner
      }
  }
  
@@ -354,7 +404,7 @@ index 09e7984..ed7b9ff 100644
  /* Calculate the size of the menu item and store it in item->rect */
  static void calc_menu_item_size( HDC hdc, struct menu_item *item, HWND owner, INT org_x, INT org_y,
                                   BOOL menu_bar, struct menu *menu )
-@@ -2127,6 +2251,12 @@ static void calc_menu_item_size( HDC hdc, struct menu_item *item, HWND owner, IN
+@@ -2127,6 +2253,12 @@ static void calc_menu_item_size( HDC hdc, struct menu_item *item, HWND owner, IN
          return;
      }
  
@@ -367,7 +417,7 @@ index 09e7984..ed7b9ff 100644
      if (item->fType & MF_SEPARATOR)
      {
          item->rect.bottom += get_system_metrics( SM_CYMENUSIZE ) / 2;
-@@ -2234,8 +2364,10 @@ static void calc_menu_bar_size( HDC hdc, RECT *rect, struct menu *menu, HWND own
+@@ -2234,8 +2366,10 @@ static void calc_menu_bar_size( HDC hdc, RECT *rect, struct menu *menu, HWND own
  
      TRACE( "rect %p %s\n", rect, wine_dbgstr_rect( rect ));
      /* Start with a 1 pixel top border.
@@ -380,7 +430,7 @@ index 09e7984..ed7b9ff 100644
      start = 0;
      help_pos = ~0u;
      menu->textOffset = 0;
-@@ -2270,7 +2402,8 @@ static void calc_menu_bar_size( HDC hdc, RECT *rect, struct menu *menu, HWND own
+@@ -2270,7 +2404,8 @@ static void calc_menu_bar_size( HDC hdc, RECT *rect, struct menu *menu, HWND own
      OffsetRect( &menu->items_rect, rect->left, rect->top );
      menu->Width = menu->items_rect.right - menu->items_rect.left;
      menu->Height = menu->items_rect.bottom - menu->items_rect.top;
@@ -390,7 +440,7 @@ index 09e7984..ed7b9ff 100644
  
      /* Flush right all items between the MF_RIGHTJUSTIFY and */
      /* the last item (if several lines, only move the last line) */
-@@ -2465,6 +2598,157 @@ got_bitmap:
+@@ -2465,6 +2600,160 @@ got_bitmap:
      NtGdiDeleteObjectApp( mem_hdc );
  }
  
@@ -426,7 +476,10 @@ index 09e7984..ed7b9ff 100644
 +                                  UINT odaction )
 +{
 +    BOOL grayed = item->fState & MF_GRAYED, hilite = item->fState & MF_HILITE;
-+    int state = grayed ? (hilite ? MBI_DISABLEDPUSHED : MBI_DISABLED) : (hilite ? MBI_PUSHED : MBI_NORMAL);
++    BOOL active = win_get_flags( hwnd ) & WIN_NCACTIVATED;
++    BOOL hot = !hilite && item - menu->items == menu->hot_item && active;
++    int state = grayed ? (hilite ? MBI_DISABLEDPUSHED : hot ? MBI_DISABLEDHOT : MBI_DISABLED) :
++                         (hilite ? MBI_PUSHED : hot ? MBI_HOT : MBI_NORMAL);
 +    RECT bar = menu->items_rect;
 +    HRGN clip;
 +
@@ -437,9 +490,8 @@ index 09e7984..ed7b9ff 100644
 +        NtGdiExtSelectClipRgn( hdc, clip, RGN_AND );
 +        NtGdiDeleteObjectApp( clip );
 +    }
-+    draw_menu_part( hwnd, hdc, MENU_BARBACKGROUND,
-+                    (win_get_flags( hwnd ) & WIN_NCACTIVATED) ? MB_ACTIVE : MB_INACTIVE, &bar );
-+    if (hilite) draw_menu_part( hwnd, hdc, MENU_BARITEM, state, &rect );
++    draw_menu_part( hwnd, hdc, MENU_BARBACKGROUND, active ? MB_ACTIVE : MB_INACTIVE, &bar );
++    if (hilite || hot) draw_menu_part( hwnd, hdc, MENU_BARITEM, state, &rect );
 +    if (item->hbmpItem)
 +    {
 +        RECT bmprc;
@@ -454,8 +506,9 @@ index 09e7984..ed7b9ff 100644
 +        set_viewport_org( hdc, org.x, org.y, NULL );
 +        rect.left += item->bmpsize.cx;
 +    }
++    /* an inactive window's bar has gray text, like disabled items */
 +    draw_themed_item_text( hdc, item, rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE,
-+                           menu_theme.bar_text[state - 1], 0 );
++                           menu_theme.bar_text[(active || hilite ? state : MBI_DISABLED) - 1], 0 );
 +}
 +
 +static void draw_themed_popup_item( HWND hwnd, struct menu *menu, HDC hdc, struct menu_item *item, RECT rect,
@@ -548,7 +601,7 @@ index 09e7984..ed7b9ff 100644
  /* Draw a single menu item */
  static void draw_menu_item( HWND hwnd, struct menu *menu, HWND owner, HDC hdc,
                              struct menu_item *item, BOOL menu_bar, UINT odaction )
-@@ -2579,6 +2863,13 @@ static void draw_menu_item( HWND hwnd, struct menu *menu, HWND owner, HDC hdc,
+@@ -2579,6 +2868,13 @@ static void draw_menu_item( HWND hwnd, struct menu *menu, HWND owner, HDC hdc,
          goto done;
      }
  
@@ -562,7 +615,7 @@ index 09e7984..ed7b9ff 100644
      if (menu_bar && (item->fType & MF_SEPARATOR)) goto done;
  
      if (item->fState & MF_HILITE)
-@@ -2842,11 +3133,15 @@ DWORD WINAPI NtUserDrawMenuBarTemp( HWND hwnd, HDC hdc, RECT *rect, HMENU handle
+@@ -2842,11 +3138,15 @@ DWORD WINAPI NtUserDrawMenuBarTemp( HWND hwnd, HDC hdc, RECT *rect, HMENU handle
  
      prev_font = NtGdiSelectFont( hdc, font );
  
@@ -578,7 +631,7 @@ index 09e7984..ed7b9ff 100644
  
      NtGdiSelectPen( hdc, get_sys_color_pen( COLOR_3DFACE ));
      NtGdiMoveTo( hdc, rect->left, rect->bottom, NULL );
-@@ -2955,7 +3250,19 @@ static void draw_popup_menu( HWND hwnd, HDC hdc, HMENU hmenu )
+@@ -2955,7 +3255,19 @@ static void draw_popup_menu( HWND hwnd, HDC hdc, HMENU hmenu )
      {
          HPEN prev_pen;
  
@@ -599,7 +652,7 @@ index 09e7984..ed7b9ff 100644
  
          prev_pen = NtGdiSelectPen( hdc, GetStockObject( NULL_PEN ));
          if (prev_pen)
-@@ -2963,7 +3270,8 @@ static void draw_popup_menu( HWND hwnd, HDC hdc, HMENU hmenu )
+@@ -2963,7 +3275,8 @@ static void draw_popup_menu( HWND hwnd, HDC hdc, HMENU hmenu )
              BOOL flat_menu = FALSE;
  
              NtUserSystemParametersInfo( SPI_GETFLATMENU, 0, &flat_menu, 0 );
@@ -609,7 +662,7 @@ index 09e7984..ed7b9ff 100644
                  frame_rect( hdc, &rect, get_sys_color_brush( COLOR_BTNSHADOW ));
              else
                  draw_rect_edge( hdc, &rect, EDGE_RAISED, BF_RECT, 1 );
-@@ -3078,6 +3386,20 @@ static void calc_popup_menu_size( struct menu *menu, UINT max_height )
+@@ -3078,6 +3391,20 @@ static void calc_popup_menu_size( struct menu *menu, UINT max_height )
      start = 0;
      menu->textOffset = 0;
  
@@ -630,7 +683,7 @@ index 09e7984..ed7b9ff 100644
      while (start < menu->nItems)
      {
          item = &menu->items[start];
-@@ -3123,7 +3445,7 @@ static void calc_popup_menu_size( struct menu *menu, UINT max_height )
+@@ -3123,7 +3450,7 @@ static void calc_popup_menu_size( struct menu *menu, UINT max_height )
       * least one item with both text and bitmap then bitmaps are
       * on the left and texts left aligned with the right hand side
       * of the bitmaps */
@@ -639,7 +692,58 @@ index 09e7984..ed7b9ff 100644
  
      menu->nTotalHeight = menu->items_rect.bottom;
  
-@@ -4527,6 +4849,21 @@ void track_mouse_menu_bar( HWND hwnd, INT ht, int x, int y )
+@@ -3259,6 +3586,42 @@ static void ensure_menu_item_visible( struct menu *menu, UINT index, HDC hdc )
+     }
+ }
+ 
++/* Windows 7's themed menu bars light the item under the mouse while the
++ * window is active and no menu is open (seen on Windows 7 SP1); pt (screen
++ * coordinates) is NULL when the mouse is elsewhere */
++void track_menu_bar_hot_item( HWND hwnd, const POINT *pt )
++{
++    struct menu *menu;
++    UINT index = NO_SELECTED_ITEM, old;
++    HDC hdc;
++
++    if (!themed_menus() || is_win_menu_disallowed( hwnd ) || is_menu_active()) return;
++    if (!(menu = unsafe_menu_ptr( get_menu( hwnd ) )) || menu->hWnd != hwnd) return;
++    if (pt && (win_get_flags( hwnd ) & WIN_NCACTIVATED) && menu->FocusedItem == NO_SELECTED_ITEM)
++    {
++        TRACKMOUSEEVENT tme = { sizeof(tme), TME_QUERY };
++
++        find_item_by_coords( menu, *pt, &index );
++        if (index != NO_SELECTED_ITEM && (menu->items[index].fType & MF_SEPARATOR)) index = NO_SELECTED_ITEM;
++        NtUserTrackMouseEvent( &tme );
++        if ((tme.dwFlags & (TME_NONCLIENT | TME_LEAVE)) != (TME_NONCLIENT | TME_LEAVE) || tme.hwndTrack != hwnd)
++        {
++            tme.dwFlags = TME_NONCLIENT | TME_LEAVE;
++            tme.hwndTrack = hwnd;
++            NtUserTrackMouseEvent( &tme );
++        }
++    }
++    if ((old = menu->hot_item) == index) return;
++    menu->hot_item = index;
++    if (!(hdc = NtUserGetDCEx( hwnd, 0, DCX_CACHE | DCX_WINDOW ))) return;
++    NtGdiSelectFont( hdc, get_menu_font( FALSE ));
++    if (old != NO_SELECTED_ITEM && old < menu->nItems)
++        draw_menu_item( hwnd, menu, hwnd, hdc, &menu->items[old], TRUE, ODA_SELECT );
++    if (index != NO_SELECTED_ITEM)
++        draw_menu_item( hwnd, menu, hwnd, hdc, &menu->items[index], TRUE, ODA_SELECT );
++    NtUserReleaseDC( hwnd, hdc );
++}
++
+ static void select_item( HWND owner, HMENU hmenu, UINT index, BOOL send_select, HMENU topmenu )
+ {
+     struct menu *menu;
+@@ -3270,6 +3633,7 @@ static void select_item( HWND owner, HMENU hmenu, UINT index, BOOL send_select,
+     if (!menu || !menu->nItems || !menu->hWnd) return;
+ 
+     if (menu->FocusedItem == index) return;
++    menu->hot_item = NO_SELECTED_ITEM;
+     if (menu->wFlags & MF_POPUP) hdc = NtUserGetDC( menu->hWnd );
+     else hdc = NtUserGetDCEx( menu->hWnd, 0, DCX_CACHE | DCX_WINDOW);
+     if (!top_popup)
+@@ -4527,6 +4891,21 @@ void track_mouse_menu_bar( HWND hwnd, INT ht, int x, int y )
      }
  }
  
@@ -661,7 +765,7 @@ index 09e7984..ed7b9ff 100644
  void track_keyboard_menu_bar( HWND hwnd, UINT wparam, WCHAR ch )
  {
      UINT flags = TPM_LEFTALIGN | TPM_LEFTBUTTON;
-@@ -4553,6 +4890,11 @@ void track_keyboard_menu_bar( HWND hwnd, UINT wparam, WCHAR ch )
+@@ -4553,6 +4932,11 @@ void track_keyboard_menu_bar( HWND hwnd, UINT wparam, WCHAR ch )
      if (!is_menu( menu )) return;
  
      init_tracking( hwnd, menu, FALSE, flags );
@@ -673,7 +777,7 @@ index 09e7984..ed7b9ff 100644
  
      /* fetch the window menu again, it may have changed */
      menu = (wparam & HTSYSMENU) ? get_win_sys_menu( hwnd ) : get_menu( hwnd );
-@@ -4582,6 +4924,11 @@ void track_keyboard_menu_bar( HWND hwnd, UINT wparam, WCHAR ch )
+@@ -4582,6 +4966,11 @@ void track_keyboard_menu_bar( HWND hwnd, UINT wparam, WCHAR ch )
  track_menu:
      track_menu( menu, flags, 0, 0, hwnd, NULL );
      exit_tracking( hwnd, FALSE );
@@ -685,6 +789,18 @@ index 09e7984..ed7b9ff 100644
  }
  
  /**********************************************************************
+diff --git a/dlls/win32u/win32u_private.h b/dlls/win32u/win32u_private.h
+index 71b4976..e21de9c 100644
+--- a/dlls/win32u/win32u_private.h
++++ b/dlls/win32u/win32u_private.h
+@@ -120,6 +120,7 @@ extern LRESULT popup_menu_window_proc( HWND hwnd, UINT message, WPARAM wparam, L
+ extern BOOL set_window_menu( HWND hwnd, HMENU handle );
+ extern void track_keyboard_menu_bar( HWND hwnd, UINT wparam, WCHAR ch );
+ extern void track_mouse_menu_bar( HWND hwnd, INT ht, int x, int y );
++extern void track_menu_bar_hot_item( HWND hwnd, const POINT *pt );
+ 
+ /* message.c */
+ extern NTSTATUS send_hardware_message( HWND hwnd, UINT flags, const INPUT *input, LPARAM lparam );
 diff --git a/dlls/wow64win/user.c b/dlls/wow64win/user.c
 index 8304517..4ab6e92 100644
 --- a/dlls/wow64win/user.c

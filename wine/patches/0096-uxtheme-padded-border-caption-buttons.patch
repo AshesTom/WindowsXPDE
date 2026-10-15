@@ -214,12 +214,12 @@ index b5e2192..4ff4f24 100644
                            &metrics->icon_title_font, SPIF_UPDATEINIFILE);
      SystemParametersInfoW(SPI_SETGRADIENTCAPTIONS, 0, (void *)(INT_PTR)metrics->gradient_caption,
 diff --git a/dlls/uxtheme/uxthemedll.h b/dlls/uxtheme/uxthemedll.h
-index cdfedbb..d9989a2 100644
+index 7b13893..e10a34a 100644
 --- a/dlls/uxtheme/uxthemedll.h
 +++ b/dlls/uxtheme/uxthemedll.h
-@@ -135,4 +135,7 @@ static inline BOOL windows7_shell(void)
-     return len && len < ARRAY_SIZE(value) && !wcsicmp(value, L"win7");
- }
+@@ -126,4 +126,7 @@ LRESULT WINAPI UXTHEME_ScrollbarWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
+ /* Full alpha blending */
+ #define ALPHABLEND_FULL             2
  
 +BOOL MSSTYLES_ActiveThemeFormat4(void);
 +int MSSTYLES_AppliedPaddedBorder(void);

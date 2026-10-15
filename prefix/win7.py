@@ -10,8 +10,8 @@ prefix's: Japanese or English).
 Windows 7's x64 explorer runs as C:\\w7\\w7-explorer.exe, a 64-bit process.
 Its shell DLLs are kept in C:\\w7\\native and placed in system32, each with
 its MUI file in the language's folder (system32\\ja-JP\\shell32.dll.mui), as
-Windows 7 keeps them; Wine reads MUI files (patch 0091). Windows 7's Common
-Controls 6 is C:\\w7\\comctl32.dll, beside the shell (patch 0092); Wine's own
+Windows 7 keeps them; Wine reads MUI files (patch 0084). Windows 7's Common
+Controls 6 is C:\\w7\\comctl32.dll, beside the shell (patch 0105); Wine's own
 assembly stays every other program's. The files are placed as they are on
 the media, under the names the prefix uses. The prefix keeps Wine's DLLs for
 every other program (DllOverrides builtin) and gives w7-explorer.exe the
@@ -54,7 +54,7 @@ NAMES = (
 # Windows 7's shell DLLs, 64-bit and 32-bit: native in every program of the
 # session (the shell, and the file dialogs of Windows applications), but for
 # Wine's own programs (WINE_PROGRAMS). Windows 7's DLLs get Windows 7's
-# Common Controls 6 from C:\w7 (Wine 0092); the programs keep Wine's.
+# Common Controls 6 from C:\w7 (Wine 0105); the programs keep Wine's.
 NATIVE = ('explorerframe', 'shell32', 'shlwapi', 'propsys', 'shdocvw', 'dui70', 'duser', 'profapi',
           'sndvolsso', 'winbrand', 'shacct', 'thumbcache', 'authui', 'linkinfo')
 # Wine's programs that keep Wine's shell DLLs: its desktop and services, the
