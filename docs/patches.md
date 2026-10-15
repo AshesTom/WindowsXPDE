@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 117 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 119 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -205,6 +205,8 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0115 | windowscodecs: 拡大縮小の Fant（覆う範囲の面積で平均）。Windows 7 のシェルがアイコンを元の大きさ以外（詳細ペインなど）に縮めるときに使い、最近傍になっていた | なし |
 | 0116 | comctl32: Windows 7 の Explorer テーマのリスト ビューで、マウスの下の項目を光らせる（LISS_HOT、選択中は LISS_HOTSELECTED。実機で比較） | `WIN4WINE_SHELL=win7` |
 | 0117 | win32u: Windows 7 のメニュー バーで、有効な窓のマウスの下の項目を光らせ（MBI_HOT）、無効な窓の文字を灰色にする（実機で比較） | テーマ付きメニュー（Windows 7）のときだけ |
+| 0118 | comctl32: Windows 7 のヘッダーの最後の項目より右を HP_HEADERITEMRIGHT で描く（実機と同じ。0105 の鏡写しの近似を置き換え） | `WIN4WINE_SHELL=win7` |
+| 0119 | win32u: Windows 7 のリンク先フォント（Tahoma の中の日本語など）の大きさと字形。基のフォントの em から決め、em 11・13 は 12・15（実機で測定）。埋め込みビットマップのある大きさはそのビットマップで描く | `WIN4WINE_SHELL=win7` |
 
 ## 並び順の考え方
 

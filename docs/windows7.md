@@ -115,6 +115,8 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - 詳細ペインなど、アイコンを元の大きさ以外で出すところは Windows 7 と同じく面積平均で縮めます（Wine の 0115）。
 - リスト ビュー（Explorer テーマ）とメニュー バーは、実機と同じくマウスの下の項目を光らせます。無効な窓のメニュー バーの文字は
   灰色です（Wine の 0116、0117）。
+- Tahoma（MS Shell Dlg 2）などの中の日本語は、実機と同じ大きさと字形です（8 pt のダイアログの文字は MS UI Gothic の
+  12 px のビットマップ。Wine の 0119）。
 - 種類の列のテキスト ファイルは「テキスト ドキュメント」です（Windows 7 のメモ帳の MUI の文字列。メモ帳そのものは Wine のもの）。
 - Alt+Tab は Windows 7 ベーシックの形です。Windows 7 のテーマの `AltTab` クラスで描き（背景、選んだ項目の枠、題の字体と色）、
   大きさや並びは Windows 7 SP1 の実機に合わせています（1 行に 7 個、行は作業領域に入るだけ）。最初の行の最後に「デスクトップ」が
@@ -136,7 +138,7 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
-Windows 7 のシェルのために足した Wine のパッチは 0078〜0117 です（[patches.md](patches.md)）。
+Windows 7 のシェルのために足した Wine のパッチは 0078〜0119 です（[patches.md](patches.md)）。
 
 ## 制限
 
