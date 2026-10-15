@@ -80,6 +80,7 @@ class Manager:
         # exposures, and they and their frames change size often; a
         # redirected window's every resize costs a new off-screen image,
         # which made resizing a native client several times slower in a VM.
+        # Their frames are redirected only while they move (frame_moves).
         self.redirect = redirect and self.d.has_extension('Composite')
         self.previous_classes = None
         self.overlays = {}  # override-redirect Windows 7 shell windows kept above the taskbar and Start menu
@@ -230,7 +231,9 @@ class Manager:
         self.workarea()
 
     def update_redirect(self, c):
-        wanted = self.redirect and bool(c['hwnd']) and c['kind'] != 'proxy'
+        # Frames only while they move (frame_moves)
+        wanted = self.redirect and (c['kind'] == 'proxy' and c.get('moving', False) or
+                                    bool(c['hwnd']) and c['kind'] != 'proxy')
         if wanted != c.get('redirected', False):
             c['redirected'] = wanted
             (composite.redirect_window if wanted else composite.unredirect_window)(c['w'], composite.RedirectAutomatic)
@@ -746,6 +749,22 @@ class Manager:
             self.restack()
         self.write_geometry()
 
+    def frame_moves(self, frame, values):
+        """Keep a frame's pixels off screen while it moves, not while it changes size.
+
+        Its client moves first (follow_frame) and covers the frame's leading
+        edge for a moment; the frame's move then cannot copy that edge, and
+        it stayed black until Wine painted it again, about 5 ms in each step
+        of a drag (wide frames such as Windows 7's showed it). A redirected
+        frame moves from its off-screen image. Redirected, each size change
+        would cost a new image, so a size change ends it; the switch costs
+        one repaint, without black."""
+        x, y, width, height, _ = frame['geometry']
+        resized = values.get('width', width) != width or values.get('height', height) != height
+        if resized or values.get('x', x) != x or values.get('y', y) != y:
+            frame['moving'] = not resized
+            self.update_redirect(frame)
+
     def follow_frame(self, frame_id, values):
         """Move a native client with its frame, in the same pass.
 
@@ -924,6 +943,7 @@ class Manager:
             if c:
                 moves = e.value_mask & (X.CWX | X.CWY | X.CWWidth | X.CWHeight)
                 if moves and e.window.id in self.frames:
+                    self.frame_moves(c, values)
                     self.follow_frame(e.window.id, values)
                 self.configure(c, **values)
                 if moves and c['kind'] == 'normal' and not c['hwnd']:
