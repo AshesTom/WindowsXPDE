@@ -25,7 +25,7 @@ import media  # noqa: E402
 RT_GROUP_ICON = 14
 
 # Bump when the extracted files change; setup.sh then extracts again.
-EXTRACT_VERSION = 3
+EXTRACT_VERSION = 4
 # The image's language -> our language (the session's and the prefix's).
 LANGUAGES = {'ja-JP': 'ja', 'en-US': 'en'}
 # Windows 7's shell and the DLLs it uses from Windows 7 (prefix/win7.py says which
@@ -147,6 +147,8 @@ def select(paths, lang_dir, lang):
     want('Windows/Branding/Basebrd/basebrd.dll', 'branding/basebrd.dll')
     # Read for its I-beam and crosshair cursors only (greeter/cursors.py --win7)
     want('Windows/System32/user32.dll', 'cursors/user32.dll')
+    # Read for the text file's type names only ("Text Document", prefix/win7.py)
+    want(f'Windows/System32/{lang_dir}/notepad.exe.mui', f'res/{lang_dir}/notepad.exe.mui', required=False)
     want('Windows/Resources/Themes/aero.theme', 'themes/aero.theme')
     want('Windows/Web/Wallpaper/Windows/img0.jpg', 'web/img0.jpg')
     for folder in START_MENU:

@@ -32,6 +32,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | 上の DLL と `imageres` の 32bit 版（`SysWOW64`） | 32bit のプログラムのファイルのダイアログ、アイコンと名前 |
 | Common Controls 6（amd64 と x86） | Windows 7 の DLL だけが使う comctl32。`C:\w7\comctl32.dll`（32bit は `C:\w7\wow64\comctl32.dll`） |
 | user32.dll（データ） | システム アイコンだけを読む。`C:\w7\res\user32-w7.dll`（Wine の 0106） |
+| `ja-JP\notepad.exe.mui`（データ） | テキスト ファイルの種類名（「テキスト ドキュメント」、新規作成の名前）だけを読む。`C:\w7\res\notepad.exe.mui`。メモ帳そのものは Wine のもの |
 | Segoe UI、Tahoma、Microsoft Sans Serif、メイリオと MS UI Gothic（日本語のとき） | Windows 7 の UI とダイアログのフォント |
 | `Resources\Themes\Aero` | Aero のテーマ（形式 4 の msstyles。Wine の 0079 で読みます） |
 | `img0.jpg`、User Account Pictures、スタートメニューの `desktop.ini` | 壁紙、利用者の画像、スタートメニューのフォルダの日本語の名前 |
@@ -110,6 +111,7 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - フォルダーウィンドウのナビゲーション ウィンドウは実機と同じです: 「お気に入り」のダウンロード・デスクトップ・最近表示した場所
   （prefix の `profile-links.exe` が Links フォルダーに作るリンクと日本語の名前）、ライブラリごとのアイコン（Wine の 0113）。
   ダウンロードが Linux のフォルダーへのリンクのときは、そこに desktop.ini を置かないため、アイコンは普通のフォルダーです。
+- 種類の列のテキスト ファイルは「テキスト ドキュメント」です（Windows 7 のメモ帳の MUI の文字列。メモ帳そのものは Wine のもの）。
 - Alt+Tab は Windows 7 ベーシックの形です。Windows 7 のテーマの `AltTab` クラスで描き（背景、選んだ項目の枠、題の字体と色）、
   大きさや並びは Windows 7 SP1 の実機に合わせています（1 行に 7 個、行は作業領域に入るだけ）。最初の行の最後に「デスクトップ」が
   入り、選ぶとすべての窓を最小化します（Windows 7 では、デスクトップを見せたあと元に戻せますが、ここでは窓ごとに戻します）。

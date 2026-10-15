@@ -38,7 +38,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 12
+VERSION = 13
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -217,6 +217,14 @@ class Prefix:
         # implements it; the component's files are Wine's, so it is not extracted.
         self.reg(r'HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer', 'FileOpenDialog',
                  '{DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7}')
+        # The text file's type names: Windows 7 reads them from its Notepad,
+        # whose strings are kept as data (notepad_strings).
+        if (self.path / 'drive_c/w7/res/notepad.exe.mui').is_file():
+            for view in ('/reg:64', '/reg:32'):
+                self.run('reg', 'add', r'HKCR\txtfile', '/v', 'FriendlyTypeName', '/t', 'REG_EXPAND_SZ',
+                         '/d', r'@C:\w7\res\notepad.exe.mui,-469', '/f', view)
+                self.run('reg', 'add', r'HKCR\.txt\ShellNew', '/v', 'ItemName', '/t', 'REG_EXPAND_SZ',
+                         '/d', r'@C:\w7\res\notepad.exe.mui,-470', '/f', view)
         # Linux tray icons and the input method's mode stay in the notification
         # area (Windows 7's "always show all icons and notifications").
         self.reg(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer', 'EnableAutoTray', 0, 'REG_DWORD')
@@ -270,6 +278,7 @@ def create(assets, dest, home, wine):
         wow64_files(prefix, assets, ui)
         prefix.copy(assets / 'sxs/comctl32.dll', assets / f'sxs/{ui}/comctl32.dll.mui', c / 'w7/comctl32.dll')
         system_icons(dest, assets)
+        notepad_strings(dest, assets)
         for font in (assets / 'fonts').iterdir():
             shutil.copyfile(font, c / 'windows/Fonts' / font.name)
         shutil.copytree(assets / 'themes', c / 'windows/Resources/Themes', dirs_exist_ok=True)
@@ -310,6 +319,16 @@ def system_icons(dest, assets):
     than Wine's user32.dll and not beside a program."""
     source, target = assets / 'cursors/user32.dll', dest / 'drive_c/w7/res/user32-w7.dll'
     if source.is_file() and not target.is_file():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+
+
+def notepad_strings(dest, assets):
+    """Windows 7's notepad.exe.mui, only read for the text file's type names (Notepad
+    itself is Wine's, whose resources have no such strings), not beside a program."""
+    lang_dir = json.loads((assets / 'media.json').read_text()).get('ui_language', '')
+    source, target = assets / f'res/{lang_dir}/notepad.exe.mui', dest / 'drive_c/w7/res/notepad.exe.mui'
+    if lang_dir and source.is_file() and not target.is_file():
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
 
@@ -511,6 +530,7 @@ def stage(dest, wine=None):
     applied = version.read_text().split() if version.is_file() else []
     if config.get('assets'):
         system_icons(dest, Path(config['assets']))
+        notepad_strings(dest, Path(config['assets']))
         copy_fonts(dest, Path(config['assets']))
     if wine_current and applied == [str(VERSION), current] and fonts_current(dest, prefix.lang):
         # Nothing changed, but a first wineboot or an update may have replaced files.
