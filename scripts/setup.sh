@@ -377,19 +377,26 @@ case $shell in
 esac
 config=${XDG_CONFIG_HOME:-$HOME/.config}/win4wine/$config_name
 if [[ -f $config ]]; then
-    # Kept, with the language of the prefix (a new prefix may be in another one)
-    python3 - "$config" "$locale" <<'EOF'
+    # Kept, with the Wine and the language of the prefix (a new prefix may be
+    # made with another Wine, or be in another language)
+    python3 - "$config" "$locale" "$wine" <<'EOF'
 import json, sys
-config, locale = sys.argv[1:]
+config, locale, wine = sys.argv[1:]
 settings = json.load(open(config))
+changes = []
+if settings.get('wine') != wine:
+    settings['wine'] = wine
+    changes.append(f'Wine {wine}')
 if settings.get('locale') != locale:
     settings['locale'] = locale
     if locale.startswith('ja'):
         settings['input_method'] = 'fcitx5'
     else:
         settings.pop('input_method', None)
+    changes.append(f'locale {locale}')
+if changes:
     open(config, 'w').write(json.dumps(settings, indent=2) + '\n')
-    print(f'Updated {config}: locale {locale}')
+    print(f'Updated {config}: {", ".join(changes)}')
 else:
     print(f'Keeping {config}')
 EOF
