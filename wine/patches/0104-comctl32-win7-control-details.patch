@@ -1,0 +1,414 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] comctl32, user32: Windows 7's drop-down lists, status bar and text offsets
+
+Purpose: draw the common controls of programs in the Windows 7 shell
+session as Windows 7's comctl32 6 does.
+Windows behavior (measured on Windows 7 SP1 with screenshots of the
+same test window and tests/status-height.c):
+- a drop-down list (CBS_DROPDOWNLIST) is drawn with the style's
+  CP_READONLY part over the whole box, hot under the mouse anywhere,
+  and its arrow alone (CP_DROPDOWNBUTTONRIGHT, normal state) in a 17
+  pixel column at the right edge, inset a pixel at the top and bottom;
+  the text and the focus rectangle sit three pixels in, up to three
+  pixels before the arrow; no highlight when focused;
+- a status bar is as tall as its default font plus the borders and its
+  vertical border on both sides (24 pixels), whatever font WM_SETFONT
+  gave; its text starts two pixels into a part;
+- a group box's frame is a pixel lower and its caption a pixel further
+  right, check box and radio button labels a pixel further left (as XP
+  measured before); list box text starts two pixels into the item;
+- DrawFocusRect inverts a checkerboard aligned to the DC, its pixel
+  (0, 0) left alone.
+Wine before: an XP-style drop-down list, a status bar 4 pixels taller,
+text a pixel off, and a focus rectangle dotted from its corner.
+Change: as above, for the Windows 7 shell session (WIN4WINE_SHELL=win7;
+the drop-down list for a version 4 style with CP_READONLY).
+Evidence: those parts of the test window are pixel-identical to
+Windows 7's apart from ClearType's colors, also hot and focused.
+Scope: Windows 7 shell session only; XP and ReactOS shells unchanged.
+---
+ dlls/comctl32/comctl32.h   |  1 +
+ dlls/comctl32/commctrl.c   | 17 ++++++++-
+ dlls/comctl32/status.c     |  9 +++++
+ dlls/comctl32_v6/button.c  | 11 +++---
+ dlls/comctl32_v6/combo.c   | 92 +++++++++++++++++++++++++++++++++++++++++++---
+ dlls/comctl32_v6/listbox.c | 11 ++++--
+ dlls/user32/uitools.c      | 56 ++++++++++++++++++++++++++++
+ 7 files changed, 182 insertions(+), 15 deletions(-)
+
+diff --git a/dlls/comctl32/comctl32.h b/dlls/comctl32/comctl32.h
+index 918a303..f662266 100644
+--- a/dlls/comctl32/comctl32.h
++++ b/dlls/comctl32/comctl32.h
+@@ -261,6 +261,7 @@ extern void STATIC_Register(void);
+ extern void STATIC_Register_Name(const WCHAR *name);
+ extern BOOL COMCTL32_IsExternalAlias(void);
+ #endif
++extern BOOL COMCTL32_IsWin7Shell(void);
+ extern void ANIMATE_Register(void);
+ extern void COMBOEX_Register(void);
+ extern void DATETIME_Register(void);
+diff --git a/dlls/comctl32/commctrl.c b/dlls/comctl32/commctrl.c
+index b5e3814..c919a4b 100644
+--- a/dlls/comctl32/commctrl.c
++++ b/dlls/comctl32/commctrl.c
+@@ -167,6 +167,20 @@ static void unregister_classes(void)
+     }
+ }
+ 
++/* Whether the process runs in the Windows 7 shell session (win4wine): the
++ * controls then follow Windows 7's comctl32 where it differs from XP's. */
++BOOL COMCTL32_IsWin7Shell(void)
++{
++    static int win7 = -1;
++    if (win7 < 0)
++    {
++        WCHAR shell[16];
++        DWORD length = GetEnvironmentVariableW(L"WIN4WINE_SHELL", shell, ARRAY_SIZE(shell));
++        win7 = win4wine_external_shell() && length && length < ARRAY_SIZE(shell) && !wcscmp(shell, L"win7");
++    }
++    return win7;
++}
++
+ #if __WINE_COMCTL32_VERSION == 6
+ /* For the opted-in external XP shell, whose native comctl32 runs without its
+  * SxS activation context: register Wine's themed version of a user control as
+@@ -534,7 +548,8 @@ void COMCTL32_DrawStatusText(HDC hdc, LPCRECT lprc, LPCWSTR text, UINT style, BO
+         oldtextcolor = SetTextColor (hdc, comctl32_color.clrBtnText);
+         if (style & SBT_RTLREADING)
+             FIXME("Unsupported RTL style!\n");
+-        r.left += 3;
++        /* a pixel less on Windows 7 SP1 */
++        r.left += COMCTL32_IsWin7Shell() ? 2 : 3;
+         do {
+             if (*text == '\t') {
+                 if (strCnt) {
+diff --git a/dlls/comctl32/status.c b/dlls/comctl32/status.c
+index f27453a..b98c049 100644
+--- a/dlls/comctl32/status.c
++++ b/dlls/comctl32/status.c
+@@ -102,6 +102,15 @@ STATUSBAR_ComputeHeight(STATUS_INFO *infoPtr)
+     TEXTMETRICW tm;
+     int margin;
+ 
++    /* Windows 7's comctl32 (measured on SP1 with tests/status-height.c): the
++     * default font's height, the borders and the vertical border on both
++     * sides, whatever font WM_SETFONT gave */
++    if (COMCTL32_IsWin7Shell())
++    {
++        COMCTL32_GetFontMetrics(infoPtr->hDefaultFont, &tm);
++        return max(tm.tmHeight + 2 * GetSystemMetrics(SM_CYBORDER), infoPtr->minHeight) + 2 * infoPtr->verticalBorder;
++    }
++
+     COMCTL32_GetFontMetrics(infoPtr->hFont ? infoPtr->hFont : infoPtr->hDefaultFont, &tm);
+     margin = (tm.tmInternalLeading ? tm.tmInternalLeading : 2);
+     height = max(tm.tmHeight + margin + 2*GetSystemMetrics(SM_CYBORDER), infoPtr->minHeight) + infoPtr->verticalBorder;
+diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
+index 97e0b5e..ab0ac20 100644
+--- a/dlls/comctl32_v6/button.c
++++ b/dlls/comctl32_v6/button.c
+@@ -2985,8 +2985,8 @@ static void CB_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
+         label_rect.left += box_size.cx + text_offset;
+     /* XP starts the label at the offset itself; the label's one pixel text
+      * margin below would put it a pixel further right. Measured in the XP
+-     * shell's Folder Options. */
+-    if (COMCTL32_IsExternalAlias() && !(dwStyle & BS_LEFTTEXT || ex_style & WS_EX_RIGHT))
++     * shell's Folder Options, and the same on Windows 7 SP1. */
++    if ((COMCTL32_IsExternalAlias() || COMCTL32_IsWin7Shell()) && !(dwStyle & BS_LEFTTEXT || ex_style & WS_EX_RIGHT))
+         label_rect.left--;
+ 
+     old_label_rect = label_rect;
+@@ -3091,11 +3091,12 @@ static void GB_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
+     bgRect = clientRect;
+     GetTextMetricsW(hDC, &textMetric);
+     /* XP draws the frame's top line a pixel lower and starts the caption a
+-     * pixel further right, as measured in the XP shell's Folder Options. */
+-    bgRect.top += (textMetric.tmHeight / 2) - (COMCTL32_IsExternalAlias() ? 0 : 1);
++     * pixel further right, as measured in the XP shell's Folder Options; so
++     * does Windows 7 SP1. */
++    bgRect.top += (textMetric.tmHeight / 2) - (COMCTL32_IsExternalAlias() || COMCTL32_IsWin7Shell() ? 0 : 1);
+ 
+     labelRect = clientRect;
+-    InflateRect(&labelRect, COMCTL32_IsExternalAlias() ? -8 : -7, 1);
++    InflateRect(&labelRect, COMCTL32_IsExternalAlias() || COMCTL32_IsWin7Shell() ? -8 : -7, 1);
+     dtFlags = BUTTON_CalcLayoutRects(infoPtr, hDC, &labelRect, &imageRect, &textRect);
+     if (dtFlags != (UINT)-1 && !show_image_only(infoPtr))
+     {
+diff --git a/dlls/comctl32_v6/combo.c b/dlls/comctl32_v6/combo.c
+index 5b95b92..36fa3f3 100644
+--- a/dlls/comctl32_v6/combo.c
++++ b/dlls/comctl32_v6/combo.c
+@@ -33,6 +33,7 @@
+ #include "wine/debug.h"
+ 
+ #include "comctl32.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(combo);
+ 
+@@ -84,6 +85,17 @@ static BOOL is_external_alias(HWND hwnd)
+     return COMCTL32_IsExternalAlias();
+ }
+ 
++/* Windows 7's (a version 4 style's) drop-down lists are drawn as a button
++ * with the arrow alone, the whole box hot under the mouse; the text sits in
++ * the box three pixels in, up to three pixels before the 17 pixel arrow,
++ * with the focus rectangle around it. Measured on Windows 7 SP1 against
++ * its comctl32 6. */
++static BOOL is_themed_drop_list(const HEADCOMBO *lphc, HTHEME theme)
++{
++    return theme && CB_GETTYPE(lphc) == CBS_DROPDOWNLIST && win4wine_external_shell() &&
++           IsThemePartDefined(theme, CP_READONLY, 0);
++}
++
+ /***********************************************************************
+  *           COMBO_Init
+  *
+@@ -346,7 +358,14 @@ static void CBCalcPlacement(HEADCOMBO *combo)
+ 
+         /* XP's themed ComboBox insets its button only by the one pixel frame
+          * and lets it fill the client height; measured on the folder address bar. */
+-        if (is_external_alias(combo->self) && GetWindowTheme(combo->self))
++        if (is_themed_drop_list(combo, GetWindowTheme(combo->self)))
++        {
++            RECT client;
++            GetClientRect(combo->self, &client);
++            SetRect(&combo->buttonRect, client.right - GetSystemMetrics(SM_CXVSCROLL), client.top + 1,
++                    client.right, client.bottom - 1);
++        }
++        else if (is_external_alias(combo->self) && GetWindowTheme(combo->self))
+         {
+             RECT client;
+             GetClientRect(combo->self, &client);
+@@ -662,6 +681,11 @@ static void CBPaintText(HEADCOMBO *lphc, HDC hdc_paint)
+ 	if( lphc->wState & CBF_FOCUSED )
+            SendMessageW(lphc->hWndEdit, EM_SETSEL, 0, MAXLONG);
+    }
++   else if (!hdc_paint && !(lphc->wState & CBF_NOREDRAW) && !CB_OWNERDRAWN(lphc) &&
++            is_themed_drop_list(lphc, GetWindowTheme(lphc->self)))
++   {
++     InvalidateRect(lphc->self, NULL, FALSE);
++   }
+    else if(!(lphc->wState & CBF_NOREDRAW) && IsWindowVisible( lphc->self ))
+    {
+      /* paint text field ourselves */
+@@ -769,11 +793,66 @@ static void CBPaintBorder(const HEADCOMBO *lphc, HDC hdc)
+   DrawEdge(hdc, &clientRect, EDGE_SUNKEN, BF_RECT);
+ }
+ 
++static void COMBO_ThemedPaintDropList(HTHEME theme, HEADCOMBO *lphc, HDC hdc)
++{
++    int state, id, size;
++    WCHAR *text = NULL;
++    RECT client, rect;
++    HFONT old_font = 0;
++
++    if (!IsWindowEnabled(lphc->self))
++        state = CBRO_DISABLED;
++    else if (lphc->wState & (CBF_BUTTONDOWN | CBF_DROPPED))
++        state = CBRO_PRESSED;
++    else if (lphc->wState & CBF_HOT)
++        state = CBRO_HOT;
++    else
++        state = CBRO_NORMAL;
++    GetClientRect(lphc->self, &client);
++    if (IsThemeBackgroundPartiallyTransparent(theme, CP_READONLY, state))
++        DrawThemeParentBackground(lphc->self, hdc, &client);
++    DrawThemeBackground(theme, hdc, CP_READONLY, state, &client, NULL);
++    /* the arrow stays as it is; its hot and pressed states are the button of an editable box */
++    DrawThemeBackground(theme, hdc, CP_DROPDOWNBUTTONRIGHT, state == CBRO_DISABLED ? CBXSR_DISABLED : CBXSR_NORMAL,
++                        &lphc->buttonRect, NULL);
++
++    SetRect(&rect, client.left + 3, client.top + 3, lphc->buttonRect.left - 3, client.bottom - 3);
++    if (CB_OWNERDRAWN(lphc))
++    {
++        CBPaintText(lphc, hdc);
++        return;
++    }
++    if ((id = SendMessageW(lphc->hWndLBox, LB_GETCURSEL, 0, 0)) != LB_ERR &&
++        (size = SendMessageW(lphc->hWndLBox, LB_GETTEXTLEN, id, 0)) != LB_ERR &&
++        (text = Alloc((size + 1) * sizeof(WCHAR))))
++    {
++        RECT text_rect = rect;
++
++        size = SendMessageW(lphc->hWndLBox, LB_GETTEXT, id, (LPARAM)text);
++        if (lphc->hFont) old_font = SelectObject(hdc, lphc->hFont);
++        SetBkMode(hdc, TRANSPARENT);
++        SetTextColor(hdc, GetSysColor(state == CBRO_DISABLED ? COLOR_GRAYTEXT : COLOR_WINDOWTEXT));
++        text_rect.left++;
++        DrawTextW(hdc, text, size, &text_rect, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
++        if (old_font) SelectObject(hdc, old_font);
++        Free(text);
++    }
++    if ((lphc->wState & CBF_FOCUSED) && !(lphc->wState & CBF_DROPPED) &&
++        !(SendMessageW(lphc->self, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS))
++        DrawFocusRect(hdc, &rect);
++}
++
+ static LRESULT COMBO_ThemedPaint(HTHEME theme, HEADCOMBO *lphc, HDC hdc)
+ {
+     int button_state;
+     RECT frame;
+ 
++    if (is_themed_drop_list(lphc, theme))
++    {
++        COMBO_ThemedPaintDropList(theme, lphc, hdc);
++        return 0;
++    }
++
+     /* paint border */
+     if (CB_GETTYPE(lphc) != CBS_SIMPLE)
+         GetClientRect(lphc->self, &frame);
+@@ -1651,7 +1730,8 @@ static void COMBO_MouseMove( LPHEADCOMBO lphc, WPARAM wParam, LPARAM lParam )
+ static LRESULT COMBO_MouseLeave(LPHEADCOMBO lphc)
+ {
+     lphc->wState &= ~CBF_HOT;
+-    RedrawWindow(lphc->self, &lphc->buttonRect, 0, RDW_INVALIDATE | RDW_UPDATENOW);
++    RedrawWindow(lphc->self, is_themed_drop_list(lphc, GetWindowTheme(lphc->self)) ? NULL : &lphc->buttonRect, 0,
++                 RDW_INVALIDATE | RDW_UPDATENOW);
+     return 0;
+ }
+ 
+@@ -1895,17 +1975,19 @@ static LRESULT CALLBACK COMBO_WindowProc( HWND hwnd, UINT message, WPARAM wParam
+         if (!IsRectEmpty(&lphc->buttonRect))
+         {
+             TRACKMOUSEEVENT event;
++            RECT hot = lphc->buttonRect;
+             POINT pt;
+ 
+             pt.x = (short)LOWORD(lParam);
+             pt.y = (short)HIWORD(lParam);
++            if (is_themed_drop_list(lphc, GetWindowTheme(hwnd))) GetClientRect(hwnd, &hot);
+ 
+-            if (PtInRect(&lphc->buttonRect, pt))
++            if (PtInRect(&hot, pt))
+             {
+                 if (!(lphc->wState & CBF_HOT))
+                 {
+                     lphc->wState |= CBF_HOT;
+-                    RedrawWindow(hwnd, &lphc->buttonRect, 0, RDW_INVALIDATE | RDW_UPDATENOW);
++                    RedrawWindow(hwnd, &hot, 0, RDW_INVALIDATE | RDW_UPDATENOW);
+ 
+                     event.cbSize = sizeof(TRACKMOUSEEVENT);
+                     event.dwFlags = TME_QUERY;
+@@ -1920,7 +2002,7 @@ static LRESULT CALLBACK COMBO_WindowProc( HWND hwnd, UINT message, WPARAM wParam
+             else if (lphc->wState & CBF_HOT)
+             {
+                 lphc->wState &= ~CBF_HOT;
+-                RedrawWindow(hwnd, &lphc->buttonRect, 0, RDW_INVALIDATE | RDW_UPDATENOW);
++                RedrawWindow(hwnd, &hot, 0, RDW_INVALIDATE | RDW_UPDATENOW);
+             }
+         }
+ 
+diff --git a/dlls/comctl32_v6/listbox.c b/dlls/comctl32_v6/listbox.c
+index cdd5d5f..28225a3 100644
+--- a/dlls/comctl32_v6/listbox.c
++++ b/dlls/comctl32_v6/listbox.c
+@@ -672,6 +672,7 @@ static void LISTBOX_PaintItem( LB_DESCR *descr, HDC hdc, const RECT *rect,
+     else
+     {
+         COLORREF oldText = 0, oldBk = 0;
++        int text_x;
+ 
+         if (action == ODA_FOCUS)
+         {
+@@ -687,19 +688,21 @@ static void LISTBOX_PaintItem( LB_DESCR *descr, HDC hdc, const RECT *rect,
+         TRACE("[%p]: painting %d (%s) action=%02x rect=%s\n",
+               descr->self, index, debugstr_w(item_str), action,
+               wine_dbgstr_rect(rect) );
++        /* Windows 7 SP1 starts the text a pixel further right */
++        text_x = rect->left + (COMCTL32_IsWin7Shell() ? 2 : 1);
+         if (!item_str)
+-            ExtTextOutW( hdc, rect->left + 1, rect->top,
++            ExtTextOutW( hdc, text_x, rect->top,
+                            ETO_OPAQUE | ETO_CLIPPED, rect, NULL, 0, NULL );
+         else if (!(descr->style & LBS_USETABSTOPS))
+-            ExtTextOutW( hdc, rect->left + 1, rect->top,
++            ExtTextOutW( hdc, text_x, rect->top,
+                          ETO_OPAQUE | ETO_CLIPPED, rect, item_str,
+                          lstrlenW(item_str), NULL );
+         else
+ 	{
+ 	    /* Output empty string to paint background in the full width. */
+-            ExtTextOutW( hdc, rect->left + 1, rect->top,
++            ExtTextOutW( hdc, text_x, rect->top,
+                          ETO_OPAQUE | ETO_CLIPPED, rect, NULL, 0, NULL );
+-            TabbedTextOutW( hdc, rect->left + 1 , rect->top,
++            TabbedTextOutW( hdc, text_x, rect->top,
+                             item_str, lstrlenW(item_str),
+                             descr->nb_tabs, descr->tabs, 0);
+ 	}
+diff --git a/dlls/user32/uitools.c b/dlls/user32/uitools.c
+index a219b95..4cd7e24 100644
+--- a/dlls/user32/uitools.c
++++ b/dlls/user32/uitools.c
+@@ -1500,6 +1500,56 @@ INT WINAPI FrameRect( HDC hdc, const RECT *rect, HBRUSH hbrush )
+  *
+  * FIXME: PatBlt(PATINVERT) with background brush.
+  */
++/* Windows 7 inverts the focus rectangle with a gray checkerboard aligned to
++ * the DC's brush origin, its pixel (0, 0) left alone (measured on SP1);
++ * Wine's dotted pen starts at the rectangle's corner instead. For the
++ * Windows 7 shell session (WIN4WINE_SHELL=win7). */
++static void draw_focus_pattern( HDC hdc, const RECT *rc )
++{
++    static const WORD bits[8] = { 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa };
++    UINT width = 1, height = 1;
++    HBITMAP bitmap;
++    HBRUSH brush, old_brush;
++    COLORREF old_text, old_bk;
++    int cx = rc->right - rc->left, cy = rc->bottom - rc->top;
++
++    SystemParametersInfoW( SPI_GETFOCUSBORDERWIDTH, 0, &width, 0 );
++    SystemParametersInfoW( SPI_GETFOCUSBORDERHEIGHT, 0, &height, 0 );
++    if (cx <= 0 || cy <= 0) return;
++    bitmap = CreateBitmap( 8, 8, 1, 1, bits );
++    brush = CreatePatternBrush( bitmap );
++    old_brush = SelectObject( hdc, brush );
++    old_text = SetTextColor( hdc, RGB(0, 0, 0) );
++    old_bk = SetBkColor( hdc, RGB(255, 255, 255) );
++    PatBlt( hdc, rc->left, rc->top, cx, min( height, cy ), PATINVERT );
++    if (cy > height)
++        PatBlt( hdc, rc->left, rc->bottom - min( height, cy - height ), cx, min( height, cy - height ), PATINVERT );
++    if (cy > 2 * height)
++    {
++        PatBlt( hdc, rc->left, rc->top + height, min( width, cx ), cy - 2 * height, PATINVERT );
++        if (cx > width)
++            PatBlt( hdc, rc->right - min( width, cx - width ), rc->top + height, min( width, cx - width ),
++                    cy - 2 * height, PATINVERT );
++    }
++    SetBkColor( hdc, old_bk );
++    SetTextColor( hdc, old_text );
++    SelectObject( hdc, old_brush );
++    DeleteObject( brush );
++    DeleteObject( bitmap );
++}
++
++static BOOL win7_shell(void)
++{
++    static int win7 = -1;
++    if (win7 < 0)
++    {
++        WCHAR shell[16];
++        DWORD length = GetEnvironmentVariableW( L"WIN4WINE_SHELL", shell, ARRAY_SIZE(shell) );
++        win7 = win4wine_external_shell() && length && length < ARRAY_SIZE(shell) && !wcscmp( shell, L"win7" );
++    }
++    return win7;
++}
++
+ BOOL WINAPI DrawFocusRect( HDC hdc, const RECT* rc )
+ {
+     HBRUSH hOldBrush;
+@@ -1507,6 +1557,12 @@ BOOL WINAPI DrawFocusRect( HDC hdc, const RECT* rc )
+     INT oldDrawMode, oldBkMode;
+     LOGBRUSH lb;
+ 
++    if (win7_shell())
++    {
++        draw_focus_pattern( hdc, rc );
++        return TRUE;
++    }
++
+     hOldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+     lb.lbStyle = BS_SOLID;
+     lb.lbColor = 0;
