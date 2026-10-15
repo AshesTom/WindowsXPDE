@@ -1,5 +1,5 @@
 From: Codex <codex@localhost>
-Subject: [PATCH] user32, comctl32: Windows 7's message boxes and pulsing default buttons
+Subject: [PATCH] user32, comctl32: Windows 7's message boxes, pulsing default buttons and progress glow
 
 Purpose: give message boxes and default buttons of the Windows 7 shell
 session Windows 7's look.
@@ -15,22 +15,111 @@ and screenshots):
   43 pixels below the text (44 below the icon) and 13 above the
   bottom;
 - a default push button in an active window pulses: its defaulted look
-  fades linearly into the animating one and back every two seconds.
+  fades linearly into the animating one and back every two seconds;
+- a progress bar's glow (PP_MOVEOVERLAY) crosses the fill from the left
+  every two seconds at about 280 pixels a second.
 Wine before: the classic layout with centered buttons; still default
 buttons.
 Change: a Windows 7 layout in MSGBOX_OnInit with the band painted on
 WM_ERASEBKGND; comctl32 6 blends PBS_DEFAULTED_ANIMATING over
-PBS_DEFAULTED on a timer. Both for WIN4WINE_SHELL=win7.
+PBS_DEFAULTED on a timer and draws the glow over the fill on another.
+All for WIN4WINE_SHELL=win7.
 Evidence: tests/msgbox-layout.c gives Windows 7's rectangles for one to
 four buttons with and without icons; a test window's message box is
 pixel-identical apart from ClearType's colors and the pulse's phase;
-the pulse spans the same colors as Windows 7's.
+the pulse and the glow span the same colors as Windows 7's.
 Scope: Windows 7 shell session only.
 ---
+ dlls/comctl32/progress.c  |  44 ++++++++++++++-
  dlls/comctl32_v6/button.c |  58 +++++++++++++++++++-
  dlls/user32/msgbox.c      | 133 ++++++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 190 insertions(+), 1 deletion(-)
+ 3 files changed, 233 insertions(+), 2 deletions(-)
 
+diff --git a/dlls/comctl32/progress.c b/dlls/comctl32/progress.c
+index 809d429..bcffd20 100644
+--- a/dlls/comctl32/progress.c
++++ b/dlls/comctl32/progress.c
+@@ -52,6 +52,7 @@ typedef struct
+     COLORREF  ColorBk;      /* Background color */
+     HFONT     Font;         /* Handle to font (not unused) */
+     UINT      State;        /* State of progress bar */
++    DWORD     GlowStart;    /* Windows 7's moving glow: when it began, or 0 */
+ } PROGRESS_INFO;
+ 
+ /* Control configuration constants */
+@@ -59,6 +60,11 @@ typedef struct
+ #define LED_GAP           2
+ #define MARQUEE_LEDS      5
+ #define ID_MARQUEE_TIMER  1
++#define ID_GLOW_TIMER     2
++/* Windows 7 SP1: a glow crosses the fill from the left every two seconds at
++ * about 280 pixels a second (measured on the reference machine) */
++#define GLOW_PERIOD       2000
++#define GLOW_SPEED        280
+ #define DEFAULT_MARQUEE_PERIOD 30
+ 
+ /* Helper to obtain size of a progress bar chunk ("led"). */
+@@ -380,6 +386,31 @@ static const ProgressDrawProc *PROGRESS_GetDrawProcs(HWND hwnd, BOOL smooth, DWO
+     return &drawProcClassic[proc_idx];
+ }
+ 
++#if __WINE_COMCTL32_VERSION == 6
++static void PROGRESS_DrawGlow (PROGRESS_INFO *infoPtr, HDC hdc, const RECT *rect, int end)
++{
++    HTHEME theme = GetWindowTheme (infoPtr->Self);
++    RECT fill = *rect, glow;
++    DWORD time, travel;
++    SIZE size;
++    int x;
++
++    if (FAILED(GetThemePartSize (theme, hdc, PP_MOVEOVERLAY, 0, NULL, TS_TRUE, &size)) || size.cx <= 0) return;
++    if (!infoPtr->GlowStart)
++    {
++        infoPtr->GlowStart = GetTickCount () | 1;
++        SetTimer (infoPtr->Self, ID_GLOW_TIMER, 30, NULL);
++    }
++    fill.right = fill.left + end;
++    travel = (end + size.cx) * 1000 / GLOW_SPEED;
++    time = (GetTickCount () - infoPtr->GlowStart) % max (GLOW_PERIOD, travel);
++    if (time >= travel) return;
++    x = fill.left - size.cx + time * GLOW_SPEED / 1000;
++    SetRect (&glow, x, fill.top, x + size.cx, fill.bottom);
++    DrawThemeBackground (theme, hdc, PP_MOVEOVERLAY, 0, &glow, &fill);
++}
++#endif
++
+ /***********************************************************************
+  * PROGRESS_Draw
+  * Draws the progress bar.
+@@ -464,9 +495,11 @@ static LRESULT PROGRESS_Draw (PROGRESS_INFO *infoPtr, HDC hdc)
+ #if __WINE_COMCTL32_VERSION == 6
+         if (GetWindowTheme (infoPtr->Self) && use_transparent_bar (GetWindowTheme (infoPtr->Self)))
+         {
+-            /* the fill lies over the bar */
++            /* the fill lies over the bar, and the glow crosses the fill */
+             drawProcs[1]( &pdi, 0, barSize);
+             drawProcs[0]( &pdi, 0, barEnd);
++            if (!(dwStyle & PBS_VERTICAL) && barEnd > 0)
++                PROGRESS_DrawGlow( infoPtr, hdc, &pdi.rect, barEnd );
+         }
+         else
+ #endif
+@@ -711,6 +744,15 @@ static LRESULT WINAPI ProgressWindowProc(HWND hwnd, UINT message,
+     case WM_TIMER:
+         if (wParam == ID_MARQUEE_TIMER)
+             PROGRESS_UpdateMarquee (infoPtr);
++        else if (wParam == ID_GLOW_TIMER)
++        {
++            if (infoPtr->CurVal <= infoPtr->MinVal || (GetWindowLongW (hwnd, GWL_STYLE) & PBS_MARQUEE))
++            {
++                KillTimer (hwnd, ID_GLOW_TIMER);
++                infoPtr->GlowStart = 0;
++            }
++            InvalidateRect (hwnd, NULL, FALSE);
++        }
+         return 0;
+ 
+     case WM_THEMECHANGED:
 diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
 index ab0ac20..563e77e 100644
 --- a/dlls/comctl32_v6/button.c

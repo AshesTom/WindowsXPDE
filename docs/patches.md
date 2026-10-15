@@ -194,7 +194,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0104 | comctl32, user32: Windows 7 の comctl32 6 の細部。エディットの枠（EP_EDITBORDER_*、ホバーとフォーカス）、ドロップダウン リスト（CBS_DROPDOWNLIST）はボタンの形（CP_READONLY）と矢印だけ、ステータス バーの高さは既定のフォントから（24 px）、タブ（文字の位置、最後のタブの幅、クリックでフォーカスを取らない）、プログレス バー（半透明のバーの上に塗り）、トラック バー（つまみ 19 px と幅、チャンネル、目盛り）、グループ ボックス・チェック・ラジオ・リスト ボックス・ステータスの文字の位置、DrawFocusRect の市松模様の位相（いずれも Windows 7 SP1 の実機で測定） | `WIN4WINE_SHELL=win7`（タブのフォーカスは外部シェル全体） |
 | 0105 | comctl32: Windows 7 の詳細表示のリスト ビューとヘッダー。行の高さ（フォント + 4）、アイコンと文字の位置、ヘッダーの最小の高さ（テーマの項目の高さ）と残りの部分、Explorer テーマの選択行（LVP_LISTITEM）と列の線（LVP_COLUMNDETAIL）（Windows 7 SP1 の実機で測定） | `WIN4WINE_SHELL=win7` |
 | 0106 | user32: Windows 7 のシステム アイコン（IDI_APPLICATION〜IDI_SHIELD）を、prefix がデータとして置く Windows 7 の user32.dll（`C:\w7\res\user32-w7.dll`）から読む。アイコンの縮小は Windows 7 と同じ間引き | `WIN4WINE_SHELL=win7` |
-| 0107 | user32, comctl32: Windows 7 のメッセージ ボックス（白地と下のボタン帯、アイコン・文字・右寄せのボタンの配置）と、既定のボタンの脈動（2 秒周期、Windows 7 SP1 の実機で測定） | `WIN4WINE_SHELL=win7` |
+| 0107 | user32, comctl32: Windows 7 のメッセージ ボックス（白地と下のボタン帯、アイコン・文字・右寄せのボタンの配置）、既定のボタンの脈動とプログレス バーの光（どちらも 2 秒周期、Windows 7 SP1 の実機で測定） | `WIN4WINE_SHELL=win7` |
 
 ## 並び順の考え方
 
