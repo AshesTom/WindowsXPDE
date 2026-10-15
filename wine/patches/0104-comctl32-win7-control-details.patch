@@ -1,5 +1,5 @@
 From: Codex <codex@localhost>
-Subject: [PATCH] comctl32, user32: Windows 7's drop-down lists, status bar, tabs, progress and track bars
+Subject: [PATCH] comctl32, user32: Windows 7's edit borders, drop-down lists, status bar, tabs, progress and track bars
 
 Purpose: draw the common controls of programs in the Windows 7 shell
 session as Windows 7's comctl32 6 does.
@@ -17,6 +17,8 @@ same test window and tests/status-height.c):
 - a group box's frame is a pixel lower and its caption a pixel further
   right, check box and radio button labels a pixel further left (as XP
   measured before); list box text starts two pixels into the item;
+- an edit control's border is the style's edit border for its scroll
+  bars (EP_EDITBORDER_*), hot under the mouse and focused;
 - DrawFocusRect inverts a checkerboard aligned to the DC, its pixel
   (0, 0) left alone;
 - a tab's text starts at the padding from the item's edge when the tab
@@ -54,9 +56,10 @@ shell.
  dlls/comctl32/trackbar.c   | 68 +++++++++++++++++++++++++++++-----
  dlls/comctl32_v6/button.c  | 11 +++---
  dlls/comctl32_v6/combo.c   | 92 +++++++++++++++++++++++++++++++++++++++++++---
+ dlls/comctl32_v6/edit.c    | 50 ++++++++++++++++++++++++-
  dlls/comctl32_v6/listbox.c | 11 ++++--
  dlls/user32/uitools.c      | 56 ++++++++++++++++++++++++++++
- 10 files changed, 309 insertions(+), 38 deletions(-)
+ 11 files changed, 358 insertions(+), 39 deletions(-)
 
 diff --git a/dlls/comctl32/comctl32.h b/dlls/comctl32/comctl32.h
 index 918a303..f662266 100644
@@ -642,6 +645,98 @@ index 5b95b92..36fa3f3 100644
              }
          }
  
+diff --git a/dlls/comctl32_v6/edit.c b/dlls/comctl32_v6/edit.c
+index 9540bbb..9adaddf 100644
+--- a/dlls/comctl32_v6/edit.c
++++ b/dlls/comctl32_v6/edit.c
+@@ -144,6 +144,7 @@ typedef struct
+ 	 */
+ 	SCRIPT_LOGATTR *logAttr;
+ 	SCRIPT_STRING_ANALYSIS ssa; /* Uniscribe Data for single line controls */
++	BOOL hot;               /* the mouse is over it (Windows 7's border) */
+ } EDITSTATE;
+ 
+ 
+@@ -3639,6 +3640,40 @@ static void EDIT_WM_Paint(EDITSTATE *es, HDC hdc)
+             EndPaint(es->hwndSelf, &ps);
+ }
+ 
++/* Windows 7 SP1 frames a themed edit control with the style's edit border
++ * for its scroll bars, blue under the mouse and when focused */
++static int win7_edit_border(HWND hwnd, HTHEME theme, int *state)
++{
++    DWORD style = GetWindowLongW(hwnd, GWL_STYLE);
++    EDITSTATE *es = (EDITSTATE *)GetWindowLongPtrW(hwnd, 0);
++
++    if (!COMCTL32_IsWin7Shell() || !IsThemePartDefined(theme, EP_EDITBORDER_NOSCROLL, 0)) return 0;
++    if (!IsWindowEnabled(hwnd)) *state = EPSN_DISABLED;
++    else if (GetFocus() == hwnd) *state = EPSN_FOCUSED;
++    else if (es && es->hot) *state = EPSN_HOT;
++    else *state = EPSN_NORMAL;
++    if ((style & (WS_HSCROLL | WS_VSCROLL)) == (WS_HSCROLL | WS_VSCROLL)) return EP_EDITBORDER_HVSCROLL;
++    if (style & WS_VSCROLL) return EP_EDITBORDER_VSCROLL;
++    if (style & WS_HSCROLL) return EP_EDITBORDER_HSCROLL;
++    return EP_EDITBORDER_NOSCROLL;
++}
++
++/* the border's hot state follows the mouse */
++static void EDIT_TrackHot(EDITSTATE *es, BOOL hot)
++{
++    HTHEME theme = GetWindowTheme(es->hwndSelf);
++    int state;
++
++    if (es->hot == hot || !theme || !win7_edit_border(es->hwndSelf, theme, &state)) return;
++    es->hot = hot;
++    if (hot)
++    {
++        TRACKMOUSEEVENT event = { sizeof(event), TME_LEAVE, es->hwndSelf, 0 };
++        TrackMouseEvent(&event);
++    }
++    RedrawWindow(es->hwndSelf, NULL, NULL, RDW_FRAME | RDW_INVALIDATE | RDW_NOCHILDREN);
++}
++
+ static void EDIT_WM_NCPaint(HWND hwnd, HRGN region)
+ {
+     DWORD exStyle = GetWindowLongW(hwnd, GWL_EXSTYLE);
+@@ -3651,7 +3686,7 @@ static void EDIT_WM_NCPaint(HWND hwnd, HRGN region)
+         RECT r;
+         int cxEdge = GetSystemMetrics(SM_CXEDGE),
+             cyEdge = GetSystemMetrics(SM_CYEDGE);
+-        const int part = EP_EDITTEXT;
++        int part = EP_EDITTEXT;
+         int state = ETS_NORMAL;
+         DWORD dwStyle = GetWindowLongW(hwnd, GWL_STYLE);
+ 
+@@ -3661,6 +3696,14 @@ static void EDIT_WM_NCPaint(HWND hwnd, HRGN region)
+             state = ETS_READONLY;
+         else if (GetFocus() == hwnd)
+             state = ETS_FOCUSED;
++        {
++            int border_state, border = win7_edit_border(hwnd, theme, &border_state);
++            if (border)
++            {
++                part = border;
++                state = border_state;
++            }
++        }
+ 
+         GetWindowRect(hwnd, &r);
+ 
+@@ -4866,9 +4909,14 @@ static LRESULT CALLBACK EDIT_WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
+         break;
+ 
+     case WM_MOUSEMOVE:
++        EDIT_TrackHot(es, TRUE);
+         result = EDIT_WM_MouseMove(es, (short)LOWORD(lParam), (short)HIWORD(lParam));
+         break;
+ 
++    case WM_MOUSELEAVE:
++        EDIT_TrackHot(es, FALSE);
++        break;
++
+     case WM_PRINTCLIENT:
+     case WM_PAINT:
+         EDIT_WM_Paint(es, (HDC)wParam);
 diff --git a/dlls/comctl32_v6/listbox.c b/dlls/comctl32_v6/listbox.c
 index cdd5d5f..28225a3 100644
 --- a/dlls/comctl32_v6/listbox.c

@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 105 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 106 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -191,8 +191,9 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0101 | win32u, uxtheme: パッド枠（PaddedBorderWidth）を SM_CXFRAME に足し、版 4 のスタイルのキャプション幅とボタンを閉じるボタンの縦横比にする（Windows 7 の枠 8 px、ボタン 31x17） | Windows 7 のスタイル（PaddedBorderWidth があるとき） |
 | 0102 | win32u, user32, uxtheme: Windows 7 のテーマ付きメニュー。版 4 のスタイルの Menu クラスで、メニュー バーの背景と押された項目、ポップアップの枠・背景・ガター・選んだ項目・チェック・サブメニューの矢印・区切り線を描く（uxtheme の Win4WineMenuTheme を user32 のコールバックで呼ぶ）。項目の高さや文字・ショートカットの位置は Windows 7 SP1 の実機で測った規則。キーボードの手掛かりが切なら、アクセス キーの下線はキーボードでメニューを使う間だけ出す（DrawText の DT_HIDEPREFIX も実装） | Windows 7 のスタイル（ポップアップ メニューの部品があるとき） |
 | 0103 | winex11: Windows 7 のシェルでは、ドロップ シャドウの色を切り捨てでなく四捨五入する（実機の影と画素ごとに同じ） | `WIN4WINE_SHELL=win7` |
-| 0104 | comctl32, user32: Windows 7 の comctl32 6 の細部。ドロップダウン リスト（CBS_DROPDOWNLIST）はボタンの形（CP_READONLY）と矢印だけ、ステータス バーの高さは既定のフォントから（24 px）、タブ（文字の位置、最後のタブの幅、クリックでフォーカスを取らない）、プログレス バー（半透明のバーの上に塗り）、トラック バー（つまみ 19 px と幅、チャンネル、目盛り）、グループ ボックス・チェック・ラジオ・リスト ボックス・ステータスの文字の位置、DrawFocusRect の市松模様の位相（いずれも Windows 7 SP1 の実機で測定） | `WIN4WINE_SHELL=win7`（タブのフォーカスは外部シェル全体） |
+| 0104 | comctl32, user32: Windows 7 の comctl32 6 の細部。エディットの枠（EP_EDITBORDER_*、ホバーとフォーカス）、ドロップダウン リスト（CBS_DROPDOWNLIST）はボタンの形（CP_READONLY）と矢印だけ、ステータス バーの高さは既定のフォントから（24 px）、タブ（文字の位置、最後のタブの幅、クリックでフォーカスを取らない）、プログレス バー（半透明のバーの上に塗り）、トラック バー（つまみ 19 px と幅、チャンネル、目盛り）、グループ ボックス・チェック・ラジオ・リスト ボックス・ステータスの文字の位置、DrawFocusRect の市松模様の位相（いずれも Windows 7 SP1 の実機で測定） | `WIN4WINE_SHELL=win7`（タブのフォーカスは外部シェル全体） |
 | 0105 | comctl32: Windows 7 の詳細表示のリスト ビューとヘッダー。行の高さ（フォント + 4）、アイコンと文字の位置、ヘッダーの最小の高さ（テーマの項目の高さ）と残りの部分、Explorer テーマの選択行（LVP_LISTITEM）と列の線（LVP_COLUMNDETAIL）（Windows 7 SP1 の実機で測定） | `WIN4WINE_SHELL=win7` |
+| 0106 | user32: Windows 7 のシステム アイコン（IDI_APPLICATION〜IDI_SHIELD）を、prefix がデータとして置く Windows 7 の user32.dll（`C:\w7\res\user32-w7.dll`）から読む。アイコンの縮小は Windows 7 と同じ間引き | `WIN4WINE_SHELL=win7` |
 
 ## 並び順の考え方
 

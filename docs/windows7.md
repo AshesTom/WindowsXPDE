@@ -31,6 +31,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | `Branding\Basebrd\basebrd.dll` | ログオン画面のエディションの名前 |
 | 上の DLL と `imageres` の 32bit 版（`SysWOW64`） | 32bit のプログラムのファイルのダイアログ、アイコンと名前 |
 | Common Controls 6（amd64 と x86） | Windows 7 の DLL だけが使う comctl32。`C:\w7\comctl32.dll`（32bit は `C:\w7\wow64\comctl32.dll`） |
+| user32.dll（データ） | システム アイコンだけを読む。`C:\w7\res\user32-w7.dll`（Wine の 0106） |
 | Segoe UI、メイリオ（日本語のとき） | Windows 7 の UI のフォント |
 | `Resources\Themes\Aero` | Aero のテーマ（形式 4 の msstyles。Wine の 0079 で読みます） |
 | `img0.jpg`、User Account Pictures、スタートメニューの `desktop.ini` | 壁紙、利用者の画像、スタートメニューのフォルダの日本語の名前 |
@@ -108,13 +109,16 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - メニュー（メニュー バーとポップアップ）は Windows 7 のテーマで描きます（Wine の 0102、0103）。項目の大きさや文字の位置、影は
   実機と画素ごとに同じです（ClearType の色を除く）。Windows 7 の既定どおりキーボードの手掛かりは隠れ、アクセス キーの下線は
   Alt や F10 でメニューを使う間だけ出ます。
+- システム アイコン（アプリの既定のアイコン、メッセージ ボックスのエラー・警告・情報・質問、盾）は Windows 7 のものです。Windows 7 の
+  user32.dll をデータとしてだけ `C:\w7\res\user32-w7.dll` に置き、Wine の user32 がそこから読みます（Wine の 0106。名前を変えて
+  いるのは、Wine の user32 と取り違えないため）。
 - Windows のアプリのコントロール（Wine の Common Controls 6）は、ドロップダウン リスト、ステータス バー、タブ、プログレス バー、
-  トラック バー、リスト ビュー（詳細表示、Explorer テーマの選択と列の線）、フォーカスの点線、文字の位置を Windows 7 に合わせています（Wine の
+  エディットの枠、トラック バー、リスト ビュー（詳細表示、Explorer テーマの選択と列の線）、フォーカスの点線、文字の位置を Windows 7 に合わせています（Wine の
   0104、0105）。
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
-Windows 7 のシェルのために足した Wine のパッチは 0078〜0105 です（[patches.md](patches.md)）。
+Windows 7 のシェルのために足した Wine のパッチは 0078〜0106 です（[patches.md](patches.md)）。
 
 ## 制限
 

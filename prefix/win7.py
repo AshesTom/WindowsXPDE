@@ -243,6 +243,7 @@ def create(assets, dest, home, wine):
                         prefix.system / f'{name}.dll')
         wow64_files(prefix, assets, ui)
         prefix.copy(assets / 'sxs/comctl32.dll', assets / f'sxs/{ui}/comctl32.dll.mui', c / 'w7/comctl32.dll')
+        system_icons(dest, assets)
         for font in (assets / 'fonts').iterdir():
             shutil.copyfile(font, c / 'windows/Fonts' / font.name)
         shutil.copytree(assets / 'themes', c / 'windows/Resources/Themes', dirs_exist_ok=True)
@@ -273,6 +274,16 @@ def create(assets, dest, home, wine):
     (dest / MARKER).write_text(json.dumps({'assets': str(assets), 'home': str(home), 'wine': str(prefix.wine),
                                            'lang': lang, 'edition': media['edition']}, indent=2) + '\n')
     print(f'Prefix ready: {dest}')
+
+
+def system_icons(dest, assets):
+    """Windows 7's user32.dll, only read for its icons (Wine's user32 takes the system icons,
+    IDI_APPLICATION to IDI_SHIELD, from it in the Windows 7 shell session), under another name
+    than Wine's user32.dll and not beside a program."""
+    source, target = assets / 'cursors/user32.dll', dest / 'drive_c/w7/res/user32-w7.dll'
+    if source.is_file() and not target.is_file():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
 
 
 def start_menu(prefix, assets, user):
@@ -386,6 +397,8 @@ def stage(dest, wine=None):
     current = timestamp.read_text().strip() if timestamp.is_file() else ''
     wine_current = inf.is_file() and current == str(int(inf.stat().st_mtime))
     applied = version.read_text().split() if version.is_file() else []
+    if config.get('assets'):
+        system_icons(dest, Path(config['assets']))
     if wine_current and applied == [str(VERSION), current] and fonts_current(dest, prefix.lang):
         # Nothing changed, but a first wineboot or an update may have replaced files.
         prefix.place_files()
