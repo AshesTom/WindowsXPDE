@@ -12,7 +12,10 @@ state, a resource id and the size of the data that follows, padded to
 eight bytes. With a resource id nothing follows: fonts and some
 rectangles are strings of the theme's string table, in its MUI file
 (ja-JP\aero.msstyles.mui: "Meiryo, 9, Quality:ClearType"), and image
-files are IMAGE resources, PNG with alpha. Enumerations are numbers.
+files are IMAGE resources, PNG with alpha already multiplied into the
+colors (no color of any of aero.msstyles' 600 images exceeds its alpha;
+Windows 7 draws the AltTab class's translucent parts as that data
+blended as is). Enumerations are numbers.
 A class takes the properties it does not define from a base class: BCMAP
 holds, after a count, the base of each class as an index counted from
 "globals" in CMAP, or -1 (Tooltip has TooltipStyle as its base, which
@@ -29,21 +32,24 @@ application's class takes what it lacks from the class of the same name,
 then globals; a class with a base in BCMAP takes it from that base
 instead (a base that would make a loop is ignored, and a class that only
 has a base is created so it can be opened). Images load from the IMAGE resource through WIC as 32 bpp
-DIB sections and go through the same alpha preparation as format 3 ones.
+DIB sections and go through the same alpha preparation as format 3 ones,
+without the multiplication by alpha that they already have.
 Evidence: Windows 7 SP1 explorer.exe draws the Basic taskbar, Start
 button and dialog frames and buttons with aero.msstyles. XP's Luna and
 classic scenes (13 scenes, nested session) are pixel-identical with and
 without the patch. Without base classes, GetThemeColor(Tooltip, 1, 0,
 TMT_TEXTCOLOR) failed and Windows 7's DirectUI stopped building its folder
-windows at the scroll tip; with them it is 0x575757.
+windows at the scroll tip; with them it is 0x575757. DrawThemeBackground
+of the AltTab class's five parts over magenta, and the Basic taskbar's
+background, are pixel-identical to Windows 7 SP1's (a reference VM).
 Scope: format 4 themes only; format 3 themes (XP, ReactOS) read as before.
 ---
  dlls/uxtheme/Makefile.in |   2 +-
- dlls/uxtheme/msstyles.c  | 393 ++++++++++++++++++++++++++++++++++++++++++++++-
+ dlls/uxtheme/msstyles.c  | 402 ++++++++++++++++++++++++++++++++++++++++++++++-
  dlls/uxtheme/msstyles.h  |  15 ++
  dlls/uxtheme/property.c  |  10 +-
  dlls/uxtheme/stylemap.c  |  16 ++
- 5 files changed, 432 insertions(+), 4 deletions(-)
+ 5 files changed, 438 insertions(+), 7 deletions(-)
 
 diff --git a/dlls/uxtheme/Makefile.in b/dlls/uxtheme/Makefile.in
 index e16c2e7..ac2bdad 100644
@@ -59,7 +65,7 @@ index e16c2e7..ac2bdad 100644
  SOURCES = \
  	buffer.c \
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
-index 85abac6..8a4e8c2 100644
+index 85abac6..42f6e8f 100644
 --- a/dlls/uxtheme/msstyles.c
 +++ b/dlls/uxtheme/msstyles.c
 @@ -18,6 +18,8 @@
@@ -143,19 +149,42 @@ index 85abac6..8a4e8c2 100644
      return UXINI_LoadINI(tf->hTheme, L"themes_ini");
  }
  
-@@ -1558,7 +1588,10 @@ HBITMAP MSSTYLES_LoadBitmap (PTHEME_CLASS tc, LPCWSTR lpFilename, BOOL* hasAlpha
+@@ -1343,7 +1373,10 @@ PTHEME_PROPERTY MSSTYLES_FindProperty(PTHEME_CLASS tc, int iPartId, int iStateId
+ }
+ 
+ /* Prepare a bitmap to be used for alpha blending */
+-static BOOL prepare_alpha (HBITMAP bmp, BOOL* hasAlpha, BOOL *hasDefaultTransparentColour)
++/* PREMULTIPLIED: the image's colours are already multiplied by its alpha (the
++ * PNG images of format 4 themes, Vista's and Windows 7's: no colour of theirs
++ * exceeds its alpha). */
++static BOOL prepare_alpha (HBITMAP bmp, BOOL* hasAlpha, BOOL *hasDefaultTransparentColour, BOOL premultiplied)
+ {
+     DIBSECTION dib;
+     int n, stride;
+@@ -1450,7 +1483,7 @@ static BOOL prepare_alpha (HBITMAP bmp, BOOL* hasAlpha, BOOL *hasDefaultTranspar
+             *hasDefaultTransparentColour = TRUE;
+     }
+ 
+-    if (!*hasAlpha)
++    if (!*hasAlpha || premultiplied)
+         return TRUE;
+ 
+     p = dib.dsBm.bmBits;
+@@ -1558,8 +1591,11 @@ HBITMAP MSSTYLES_LoadBitmap (PTHEME_CLASS tc, LPCWSTR lpFilename, BOOL* hasAlpha
      }
      /* Not found? Load from resources */
      img = malloc(sizeof(*img));
 -    img->image = LoadImageW(tc->hTheme, szFile, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION);
+-    prepare_alpha (img->image, hasAlpha, &has_default);
 +    if (tc->tf->version == MSSTYLES_VERSION_V4)
 +        img->image = load_png_image(tc->hTheme, szFile);
 +    else
 +        img->image = LoadImageW(tc->hTheme, szFile, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION);
-     prepare_alpha (img->image, hasAlpha, &has_default);
++    prepare_alpha (img->image, hasAlpha, &has_default, tc->tf->version == MSSTYLES_VERSION_V4);
      img->image = screen_format_image(img->image);
      img->hasAlpha = *hasAlpha;
-@@ -1856,3 +1889,359 @@ HRESULT MSSTYLES_GetPropertyMargins(PTHEME_PROPERTY tp, RECT *prc, MARGINS *pMar
+     img->hasDefaultTransparentColour = has_default;
+@@ -1856,3 +1892,359 @@ HRESULT MSSTYLES_GetPropertyMargins(PTHEME_PROPERTY tp, RECT *prc, MARGINS *pMar
      }
      return S_OK;
  }
