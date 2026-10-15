@@ -108,8 +108,8 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - メニュー（メニュー バーとポップアップ）は Windows 7 のテーマで描きます（Wine の 0102、0103）。項目の大きさや文字の位置、影は
   実機と画素ごとに同じです（ClearType の色を除く）。Windows 7 の既定どおりキーボードの手掛かりは隠れ、アクセス キーの下線は
   Alt や F10 でメニューを使う間だけ出ます。
-- Windows のアプリのコントロール（Wine の Common Controls 6）は、ドロップダウン リスト、ステータス バー、フォーカスの点線、文字の位置を
-  Windows 7 に合わせています（Wine の 0104）。
+- Windows のアプリのコントロール（Wine の Common Controls 6）は、ドロップダウン リスト、ステータス バー、タブ、プログレス バー、
+  トラック バー、フォーカスの点線、文字の位置を Windows 7 に合わせています（Wine の 0104）。
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 

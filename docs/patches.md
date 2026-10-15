@@ -191,7 +191,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0101 | win32u, uxtheme: パッド枠（PaddedBorderWidth）を SM_CXFRAME に足し、版 4 のスタイルのキャプション幅とボタンを閉じるボタンの縦横比にする（Windows 7 の枠 8 px、ボタン 31x17） | Windows 7 のスタイル（PaddedBorderWidth があるとき） |
 | 0102 | win32u, user32, uxtheme: Windows 7 のテーマ付きメニュー。版 4 のスタイルの Menu クラスで、メニュー バーの背景と押された項目、ポップアップの枠・背景・ガター・選んだ項目・チェック・サブメニューの矢印・区切り線を描く（uxtheme の Win4WineMenuTheme を user32 のコールバックで呼ぶ）。項目の高さや文字・ショートカットの位置は Windows 7 SP1 の実機で測った規則。キーボードの手掛かりが切なら、アクセス キーの下線はキーボードでメニューを使う間だけ出す（DrawText の DT_HIDEPREFIX も実装） | Windows 7 のスタイル（ポップアップ メニューの部品があるとき） |
 | 0103 | winex11: Windows 7 のシェルでは、ドロップ シャドウの色を切り捨てでなく四捨五入する（実機の影と画素ごとに同じ） | `WIN4WINE_SHELL=win7` |
-| 0104 | comctl32, user32: Windows 7 の comctl32 6 の細部。ドロップダウン リスト（CBS_DROPDOWNLIST）はボタンの形（CP_READONLY）と矢印だけ、ステータス バーの高さは既定のフォントから（24 px）、グループ ボックス・チェック・ラジオ・リスト ボックス・ステータスの文字の位置、DrawFocusRect の市松模様の位相（いずれも Windows 7 SP1 の実機で測定） | `WIN4WINE_SHELL=win7` |
+| 0104 | comctl32, user32: Windows 7 の comctl32 6 の細部。ドロップダウン リスト（CBS_DROPDOWNLIST）はボタンの形（CP_READONLY）と矢印だけ、ステータス バーの高さは既定のフォントから（24 px）、タブ（文字の位置、最後のタブの幅、クリックでフォーカスを取らない）、プログレス バー（半透明のバーの上に塗り）、トラック バー（つまみ 19 px と幅、チャンネル、目盛り）、グループ ボックス・チェック・ラジオ・リスト ボックス・ステータスの文字の位置、DrawFocusRect の市松模様の位相（いずれも Windows 7 SP1 の実機で測定） | `WIN4WINE_SHELL=win7`（タブのフォーカスは外部シェル全体） |
 
 ## 並び順の考え方
 

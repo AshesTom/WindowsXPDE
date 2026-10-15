@@ -1,5 +1,5 @@
 From: Codex <codex@localhost>
-Subject: [PATCH] comctl32, user32: Windows 7's drop-down lists, status bar and text offsets
+Subject: [PATCH] comctl32, user32: Windows 7's drop-down lists, status bar, tabs, progress and track bars
 
 Purpose: draw the common controls of programs in the Windows 7 shell
 session as Windows 7's comctl32 6 does.
@@ -18,23 +18,45 @@ same test window and tests/status-height.c):
   right, check box and radio button labels a pixel further left (as XP
   measured before); list box text starts two pixels into the item;
 - DrawFocusRect inverts a checkerboard aligned to the DC, its pixel
-  (0, 0) left alone.
+  (0, 0) left alone;
+- a tab's text starts at the padding from the item's edge when the tab
+  is wider than it (minimum width, selected tab) instead of being
+  centered, and an unselected tab's text is a pixel lower; unselected
+  tabs are as tall as the item, the last of a row two pixels narrower;
+  a tab control takes the focus when clicked only with
+  TCS_FOCUSONBUTTONDOWN (tests/tab-focus.c);
+- a progress bar is smooth, drawn with the style's translucent bar
+  (PP_TRANSPARENTBAR, no content margins) and its fill over it, from
+  the client area's edge;
+- a track bar's thumb is 19 pixels long (22 with ticks on both sides,
+  24 with a selection range as well; seven less than a shorter client,
+  six with ticks on both sides), a one-sided thumb as wide as its 11x19
+  part scaled to that, the channel half a thumb plus three pixels from
+  the edges and the ticks a pixel nearer the thumb
+  (tests/trackbar-size.c gives Windows 7's values exactly).
 Wine before: an XP-style drop-down list, a status bar 4 pixels taller,
-text a pixel off, and a focus rectangle dotted from its corner.
+centered tab labels, text a pixel off, a focus rectangle dotted from
+its corner, tab controls focused by any click, a progress fill inset
+a pixel, and XP's 21 pixel track bar thumb.
 Change: as above, for the Windows 7 shell session (WIN4WINE_SHELL=win7;
-the drop-down list for a version 4 style with CP_READONLY).
+the drop-down list for a version 4 style with CP_READONLY; the tab
+focus for the opted-in external shell).
 Evidence: those parts of the test window are pixel-identical to
 Windows 7's apart from ClearType's colors, also hot and focused.
-Scope: Windows 7 shell session only; XP and ReactOS shells unchanged.
+Scope: Windows 7 shell session, and the tab focus for every external
+shell.
 ---
  dlls/comctl32/comctl32.h   |  1 +
  dlls/comctl32/commctrl.c   | 17 ++++++++-
+ dlls/comctl32/progress.c   | 46 +++++++++++++++++++----
  dlls/comctl32/status.c     |  9 +++++
+ dlls/comctl32/tab.c        | 36 +++++++++++++++---
+ dlls/comctl32/trackbar.c   | 68 +++++++++++++++++++++++++++++-----
  dlls/comctl32_v6/button.c  | 11 +++---
  dlls/comctl32_v6/combo.c   | 92 +++++++++++++++++++++++++++++++++++++++++++---
  dlls/comctl32_v6/listbox.c | 11 ++++--
  dlls/user32/uitools.c      | 56 ++++++++++++++++++++++++++++
- 7 files changed, 182 insertions(+), 15 deletions(-)
+ 10 files changed, 309 insertions(+), 38 deletions(-)
 
 diff --git a/dlls/comctl32/comctl32.h b/dlls/comctl32/comctl32.h
 index 918a303..f662266 100644
@@ -83,6 +105,106 @@ index b5e3814..c919a4b 100644
          do {
              if (*text == '\t') {
                  if (strCnt) {
+diff --git a/dlls/comctl32/progress.c b/dlls/comctl32/progress.c
+index 539dacf..809d429 100644
+--- a/dlls/comctl32/progress.c
++++ b/dlls/comctl32/progress.c
+@@ -97,6 +97,22 @@ static inline int get_led_gap ( const PROGRESS_INFO *infoPtr )
+     return LED_GAP;
+ }
+ 
++#if __WINE_COMCTL32_VERSION == 6
++/* Windows 7 SP1 draws its bars with the style's translucent bar, whose
++ * content (the fill) is the whole client area, under the fill as well */
++static BOOL use_transparent_bar (HTHEME theme)
++{
++    return COMCTL32_IsWin7Shell() && IsThemePartDefined (theme, PP_TRANSPARENTBAR, 0);
++}
++
++static int get_bar_part (HTHEME theme, DWORD style)
++{
++    if (use_transparent_bar (theme))
++        return (style & PBS_VERTICAL) ? PP_TRANSPARENTBARVERT : PP_TRANSPARENTBAR;
++    return (style & PBS_VERTICAL) ? PP_BARVERT : PP_BAR;
++}
++#endif
++
+ /* Get client rect. Takes into account that theming needs no adjustment. */
+ static inline void get_client_rect (HWND hwnd, RECT* rect)
+ {
+@@ -106,7 +122,7 @@ static inline void get_client_rect (HWND hwnd, RECT* rect)
+     if (theme)
+     {
+         DWORD dwStyle = GetWindowLongW (hwnd, GWL_STYLE);
+-        int part = (dwStyle & PBS_VERTICAL) ? PP_BARVERT : PP_BAR;
++        int part = get_bar_part (theme, dwStyle);
+         GetClientRect (hwnd, rect);
+         GetThemeBackgroundContentRect (theme, 0, part, 0, rect, rect);
+         return;
+@@ -278,7 +294,9 @@ static void draw_theme_bkg_H (const ProgressDrawInfo* di, int start, int end)
+     MapWindowPoints(di->infoPtr->Self, 0, (POINT *)&bgrect, 2);
+     OffsetRect(&bgrect, -bgrect.left, -bgrect.top);
+ 
+-    DrawThemeBackground (theme, di->hdc, PP_BAR, 0, &bgrect, &r);
++    if (use_transparent_bar (theme) && IsThemeBackgroundPartiallyTransparent (theme, PP_TRANSPARENTBAR, 0))
++        DrawThemeParentBackground (di->infoPtr->Self, di->hdc, &r);
++    DrawThemeBackground (theme, di->hdc, get_bar_part (theme, 0), 0, &bgrect, &r);
+ }
+ 
+ /* draw themed vertical background from 'start' to 'end' */
+@@ -292,7 +310,9 @@ static void draw_theme_bkg_V (const ProgressDrawInfo* di, int start, int end)
+     MapWindowPoints(di->infoPtr->Self, 0, (POINT *)&bgrect, 2);
+     OffsetRect(&bgrect, -bgrect.left, -bgrect.top);
+ 
+-    DrawThemeBackground (theme, di->hdc, PP_BARVERT, 0, &bgrect, &r);
++    if (use_transparent_bar (theme) && IsThemeBackgroundPartiallyTransparent (theme, PP_TRANSPARENTBARVERT, 0))
++        DrawThemeParentBackground (di->infoPtr->Self, di->hdc, &r);
++    DrawThemeBackground (theme, di->hdc, get_bar_part (theme, PBS_VERTICAL), 0, &bgrect, &r);
+ }
+ 
+ /* drawing functions for themed style */
+@@ -317,7 +337,7 @@ static void PROGRESS_DrawBackground (const PROGRESS_INFO *infoPtr, HDC hdc, Prog
+ 
+     if (theme)
+     {
+-        int part = (GetWindowLongW (infoPtr->Self, GWL_STYLE) & PBS_VERTICAL) ? PP_BARVERT : PP_BAR;
++        int part = get_bar_part (theme, GetWindowLongW (infoPtr->Self, GWL_STYLE));
+         RECT content_rect;
+ 
+         GetThemeBackgroundContentRect (theme, hdc, part, 0, &pdi->rect, &content_rect);
+@@ -340,8 +360,9 @@ static void PROGRESS_DrawBackground (const PROGRESS_INFO *infoPtr, HDC hdc, Prog
+ static BOOL PROGRESS_IsSmooth(HWND hwnd)
+ {
+ #if __WINE_COMCTL32_VERSION == 6
++    /* Windows 7's themed bars are smooth */
+     if (GetWindowTheme(hwnd))
+-        return FALSE;
++        return COMCTL32_IsWin7Shell();
+ #endif
+ 
+     return GetWindowLongW(hwnd, GWL_STYLE) & PBS_SMOOTH;
+@@ -440,8 +461,19 @@ static LRESULT PROGRESS_Draw (PROGRESS_INFO *infoPtr, HDC hdc)
+             const int ledW = pdi.ledW + pdi.ledGap;
+             barEnd = min (((barEnd + ledW - 1) / ledW) * ledW, barSize);
+         }
+-        drawProcs[0]( &pdi, 0, barEnd);
+-        drawProcs[1]( &pdi, barEnd, barSize);
++#if __WINE_COMCTL32_VERSION == 6
++        if (GetWindowTheme (infoPtr->Self) && use_transparent_bar (GetWindowTheme (infoPtr->Self)))
++        {
++            /* the fill lies over the bar */
++            drawProcs[1]( &pdi, 0, barSize);
++            drawProcs[0]( &pdi, 0, barEnd);
++        }
++        else
++#endif
++        {
++            drawProcs[0]( &pdi, 0, barEnd);
++            drawProcs[1]( &pdi, barEnd, barSize);
++        }
+     }
+ 
+     /* delete bar brush */
 diff --git a/dlls/comctl32/status.c b/dlls/comctl32/status.c
 index f27453a..b98c049 100644
 --- a/dlls/comctl32/status.c
@@ -103,6 +225,226 @@ index f27453a..b98c049 100644
      COMCTL32_GetFontMetrics(infoPtr->hFont ? infoPtr->hFont : infoPtr->hDefaultFont, &tm);
      margin = (tm.tmInternalLeading ? tm.tmInternalLeading : 2);
      height = max(tm.tmHeight + margin + 2*GetSystemMetrics(SM_CYBORDER), infoPtr->minHeight) + infoPtr->verticalBorder;
+diff --git a/dlls/comctl32/tab.c b/dlls/comctl32/tab.c
+index 3a964c4..af6f3a8 100644
+--- a/dlls/comctl32/tab.c
++++ b/dlls/comctl32/tab.c
+@@ -64,6 +64,7 @@
+ #include "commctrl.h"
+ #include "comctl32.h"
+ #include "wine/debug.h"
++#include "wine/win4wine.h"
+ #include <math.h>
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(tab);
+@@ -641,7 +642,10 @@ TAB_LButtonDown (TAB_INFO *infoPtr, WPARAM wParam, LPARAM lParam)
+     TAB_RelayEvent (infoPtr->hwndToolTip, infoPtr->hwnd,
+ 		    WM_LBUTTONDOWN, wParam, lParam);
+ 
+-  if (!(infoPtr->dwStyle & TCS_FOCUSNEVER)) {
++  /* Windows takes the focus only with TCS_FOCUSONBUTTONDOWN (tests/tab-focus.c
++   * on Windows 7 SP1) */
++  if (!(infoPtr->dwStyle & TCS_FOCUSNEVER) &&
++      (!win4wine_external_shell() || (infoPtr->dwStyle & TCS_FOCUSONBUTTONDOWN))) {
+     SetFocus (infoPtr->hwnd);
+   }
+ 
+@@ -1661,10 +1665,11 @@ TAB_DrawItemInterior(const TAB_INFO *infoPtr, HDC hdc, INT iItem, RECT *drawRect
+   /* Clear interior */
+   TAB_EraseTabInterior (infoPtr, hdc, iItem, drawRect);
+ 
+-  /* Draw the focus rectangle */
++  /* Draw the focus rectangle (Windows 7 hides it until the keyboard is used) */
+   if (!(infoPtr->dwStyle & TCS_FOCUSNEVER) &&
+       (GetFocus() == infoPtr->hwnd) &&
+-      (iItem == infoPtr->uFocus) )
++      (iItem == infoPtr->uFocus) &&
++      !(COMCTL32_IsWin7Shell() && (SendMessageW(infoPtr->hwnd, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS)))
+   {
+     RECT rFocus = *drawRect;
+ 
+@@ -1846,7 +1851,17 @@ TAB_DrawItemInterior(const TAB_INFO *infoPtr, HDC hdc, INT iItem, RECT *drawRect
+       if(infoPtr->dwStyle & TCS_VERTICAL)
+         center_offset_h = ((drawRect->bottom - drawRect->top) - (rcText.right - rcText.left)) / 2;
+       else
++      {
+         center_offset_h = ((drawRect->right - drawRect->left) - (rcText.right - rcText.left)) / 2;
++        /* Windows 7 SP1 starts the text at the padding from the item's
++         * edge in a tab widened to the minimum width instead of centering it
++         * (the selected tab is drawn larger by SELECTED_TAB_OFFSET) */
++        if (COMCTL32_IsWin7Shell())
++        {
++          INT padding = infoPtr->uHItemPadding + (iItem == infoPtr->iSelected ? SELECTED_TAB_OFFSET : 0);
++          center_offset_h = min(center_offset_h, padding);
++        }
++      }
+ 
+     if(infoPtr->dwStyle & TCS_VERTICAL)
+     {
+@@ -1863,11 +1878,12 @@ TAB_DrawItemInterior(const TAB_INFO *infoPtr, HDC hdc, INT iItem, RECT *drawRect
+       center_offset_v = ((drawRect->bottom - drawRect->top) - (rcText.bottom - rcText.top)) / 2;
+     }
+ 
+-    /* if an item is selected, the text is shifted up instead of down */
++    /* if an item is selected, the text is shifted up instead of down
++     * (a pixel further down on Windows 7 SP1) */
+     if (iItem == infoPtr->iSelected)
+         center_offset_v -= infoPtr->uVItemPadding / 2;
+     else
+-        center_offset_v += infoPtr->uVItemPadding / 2;
++        center_offset_v += (infoPtr->uVItemPadding + (COMCTL32_IsWin7Shell() ? 1 : 0)) / 2;
+ 
+     if (center_offset_v < 0)
+       center_offset_v = 0;
+@@ -1985,7 +2001,15 @@ static void TAB_DrawItemThemeBackground(const TAB_INFO *infoPtr, HDC hdc, INT iI
+         stateId = TIS_FOCUSED;
+ 
+     /* Adjust rectangle for bottommost row */
+-    if (TAB_GetItem(infoPtr, iItem)->rect.top == infoPtr->uNumRows - 1)
++    if (COMCTL32_IsWin7Shell() && iItem != infoPtr->iSelected)
++    {
++        /* Windows 7 SP1: unselected tabs as tall as the item, the last of a
++         * row two pixels narrower */
++        if (iItem + 1 == infoPtr->uNumItem ||
++            TAB_GetItem(infoPtr, iItem + 1)->rect.top != TAB_GetItem(infoPtr, iItem)->rect.top)
++            contentRect->right -= 2;
++    }
++    else if (TAB_GetItem(infoPtr, iItem)->rect.top == infoPtr->uNumRows - 1)
+         contentRect->bottom += 3;
+ 
+     DrawThemeBackground(theme, hdc, partIds[partIndex], stateId, contentRect, NULL);
+diff --git a/dlls/comctl32/trackbar.c b/dlls/comctl32/trackbar.c
+index b0b5d24..0dddad2 100644
+--- a/dlls/comctl32/trackbar.c
++++ b/dlls/comctl32/trackbar.c
+@@ -269,20 +269,46 @@ static inline void TRACKBAR_LineDown(TRACKBAR_INFO *infoPtr)
+     notify_with_scroll (infoPtr, TB_LINEDOWN);
+ }
+ 
++
++/* Windows 7 SP1 (tests/trackbar-size.c, themed): a thumb pointing to one
++ * side is as wide as its 11x19 part scaled to its length (up to 19), and the
++ * channel ends half a thumb plus three pixels from the edges */
++static BOOL win7_trackbar(const TRACKBAR_INFO *infoPtr)
++{
++#if __WINE_COMCTL32_VERSION == 6
++    return COMCTL32_IsWin7Shell() && GetWindowTheme(infoPtr->hwndSelf);
++#else
++    return FALSE;
++#endif
++}
++
++static int thumb_width(const TRACKBAR_INFO *infoPtr)
++{
++    if (win7_trackbar(infoPtr) && !(infoPtr->dwStyle & TBS_BOTH))
++        return min(infoPtr->uThumbLen, 19) * 11 / 19;
++    return (infoPtr->uThumbLen / 2) | 1;
++}
++
+ static void
+ TRACKBAR_CalcChannel (TRACKBAR_INFO *infoPtr)
+ {
+-    INT cyChannel, offsetthumb, offsetedge;
++    INT cyChannel, offsetthumb, offsetedge, offsetend;
+     RECT lpRect, *channel = & infoPtr->rcChannel;
+ 
+     GetClientRect (infoPtr->hwndSelf, &lpRect);
+ 
+     offsetthumb = infoPtr->uThumbLen / 4;
+     offsetedge  = offsetthumb + 3;
++    offsetend   = offsetedge;
++    if (win7_trackbar(infoPtr))
++    {
++        offsetedge = (thumb_width(infoPtr) - 1) / 2 + 3;
++        offsetend = thumb_width(infoPtr) / 2 + 3;
++    }
+     cyChannel   = (infoPtr->dwStyle & TBS_ENABLESELRANGE) ? offsetthumb*3 : 4;
+     if (infoPtr->dwStyle & TBS_VERT) {
+         channel->top    = lpRect.top + offsetedge;
+-        channel->bottom = lpRect.bottom - offsetedge;
++        channel->bottom = lpRect.bottom - offsetend;
+         if (infoPtr->dwStyle & TBS_ENABLESELRANGE)
+             channel->left = lpRect.left + ((infoPtr->uThumbLen - cyChannel + 2) / 2);
+         else
+@@ -302,7 +328,7 @@ TRACKBAR_CalcChannel (TRACKBAR_INFO *infoPtr)
+         channel->right = channel->left + cyChannel;
+     } else {
+         channel->left = lpRect.left + offsetedge;
+-        channel->right = lpRect.right - offsetedge;
++        channel->right = lpRect.right - offsetend;
+         if (infoPtr->dwStyle & TBS_ENABLESELRANGE)
+             channel->top = lpRect.top + ((infoPtr->uThumbLen - cyChannel + 2) / 2);
+         else
+@@ -330,7 +356,7 @@ TRACKBAR_CalcThumb (const TRACKBAR_INFO *infoPtr, LONG lPos, RECT *thumb)
+     RECT lpRect;
+ 
+     range = infoPtr->lRangeMax - infoPtr->lRangeMin;
+-    thumbwidth = (infoPtr->uThumbLen / 2) | 1;
++    thumbwidth = thumb_width(infoPtr);
+ 
+     if (!range) range = 1;
+ 
+@@ -485,17 +511,19 @@ static void
+ TRACKBAR_DrawOneTic (const TRACKBAR_INFO *infoPtr, HDC hdc, LONG ticPos, int flags)
+ {
+     int x, y, ox, oy, range, side, indent = 0, len = 3;
+-    int offsetthumb;
++    int offsetthumb, gap;
+     RECT rcTics;
+ 
++    /* Windows 7 SP1 starts the ticks a pixel nearer the thumb */
++    gap = win7_trackbar(infoPtr) ? 1 : 2;
+     if (flags & TBS_VERT) {
+         offsetthumb = (infoPtr->rcThumb.bottom - infoPtr->rcThumb.top)/2;
+-        SetRect(&rcTics, infoPtr->rcThumb.left - 2, infoPtr->rcChannel.top + offsetthumb,
+-                infoPtr->rcThumb.right + 2, infoPtr->rcChannel.bottom - offsetthumb - 1);
++        SetRect(&rcTics, infoPtr->rcThumb.left - gap, infoPtr->rcChannel.top + offsetthumb,
++                infoPtr->rcThumb.right + gap, infoPtr->rcChannel.bottom - offsetthumb - 1);
+     } else {
+         offsetthumb = (infoPtr->rcThumb.right - infoPtr->rcThumb.left)/2;
+-        SetRect(&rcTics, infoPtr->rcChannel.left + offsetthumb, infoPtr->rcThumb.top - 2,
+-                infoPtr->rcChannel.right - offsetthumb - 1, infoPtr->rcThumb.bottom + 2);
++        SetRect(&rcTics, infoPtr->rcChannel.left + offsetthumb, infoPtr->rcThumb.top - gap,
++                infoPtr->rcChannel.right - offsetthumb - 1, infoPtr->rcThumb.bottom + gap);
+     }
+ 
+     if (flags & (TBS_TOP | TBS_LEFT)) {
+@@ -1496,6 +1524,13 @@ TRACKBAR_InitializeThumb (TRACKBAR_INFO *infoPtr)
+     RECT rect;
+ 
+     infoPtr->uThumbLen = get_scaled_metric(infoPtr, infoPtr->dwStyle & TBS_ENABLESELRANGE ? 23 : 21);
++#if __WINE_COMCTL32_VERSION == 6
++    /* Windows 7 SP1 (tests/trackbar-size.c): 19 pixels, three more with
++     * ticks on both sides and two more again with a selection range */
++    if (COMCTL32_IsWin7Shell() && GetWindowTheme(infoPtr->hwndSelf))
++        infoPtr->uThumbLen = get_scaled_metric(infoPtr, !(infoPtr->dwStyle & TBS_BOTH) ? 19 :
++                                               infoPtr->dwStyle & TBS_ENABLESELRANGE ? 24 : 22);
++#endif
+ 
+     if (!(infoPtr->dwStyle & TBS_FIXEDLENGTH))
+     {
+@@ -1505,7 +1540,20 @@ TRACKBAR_InitializeThumb (TRACKBAR_INFO *infoPtr)
+         else
+             client_size = rect.bottom - rect.top;
+ 
+-        if (client_size < infoPtr->uThumbLen)
++        if (win7_trackbar(infoPtr) && (infoPtr->dwStyle & TBS_BOTH))
++        {
++            /* Windows 7 SP1: six pixels less than the client when it is shorter */
++            if (client_size < infoPtr->uThumbLen)
++                infoPtr->uThumbLen = max(client_size - get_scaled_metric(infoPtr, 6), get_scaled_metric(infoPtr, 4));
++        }
++        else if (win7_trackbar(infoPtr) && !(infoPtr->dwStyle & TBS_NOTICKS))
++        {
++            /* seven less with the ticks on one side, down to four pixels */
++            if (client_size < infoPtr->uThumbLen + get_scaled_metric(infoPtr, 7) &&
++                client_size > get_scaled_metric(infoPtr, 10))
++                infoPtr->uThumbLen = client_size - get_scaled_metric(infoPtr, 7);
++        }
++        else if (client_size < infoPtr->uThumbLen)
+             infoPtr->uThumbLen = client_size > get_scaled_metric(infoPtr, 9) ?
+                 client_size - get_scaled_metric(infoPtr, 5) : get_scaled_metric(infoPtr, 4);
+     }
 diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
 index 97e0b5e..ab0ac20 100644
 --- a/dlls/comctl32_v6/button.c
