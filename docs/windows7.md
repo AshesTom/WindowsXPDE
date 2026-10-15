@@ -105,6 +105,8 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
   ものです（Wine の 0097、0098）。Linux のアプリ（GTK 3・GTK 4・Qt）はそれぞれのダイアログです。どちらも「ドキュメント」（`H:`）は
   Linux のホームで、日本語の名前のファイルも開け、保存できます。
 - Windows キー、Ctrl+Esc（Linux の窓からも）、Win+R、Win+E、Alt+Tab が使えます。
+- フォルダーは、Windows のアプリからも、Wine 自身のプログラム（`wine explorer C:\パス`、`wine start C:\パス`）からも Windows 7 の
+  フォルダーウィンドウで開きます（Wine の 0112）。フォルダーウィンドウのアドレス バーと検索欄の高さは実機と同じです（Wine の 0111）。
 - Alt+Tab は Windows 7 ベーシックの形です。Windows 7 のテーマの `AltTab` クラスで描き（背景、選んだ項目の枠、題の字体と色）、
   大きさや並びは Windows 7 SP1 の実機に合わせています（1 行に 7 個、行は作業領域に入るだけ）。最初の行の最後に「デスクトップ」が
   入り、選ぶとすべての窓を最小化します（Windows 7 では、デスクトップを見せたあと元に戻せますが、ここでは窓ごとに戻します）。
@@ -118,13 +120,14 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
   いるのは、Wine の user32 と取り違えないため）。
 - メッセージ ボックスは Windows 7 の形（白地に下のボタン帯、右寄せのボタン）で、既定のボタンの脈動とプログレス バーの光も
   Windows 7 と同じです（Wine の 0107）。
+- スタートメニューの右の列の文字は実機と同じく 1 回だけ描きます（Wine の 0110）。
 - Windows のアプリのコントロール（Wine の Common Controls 6）は、ドロップダウン リスト、ステータス バー、タブ、プログレス バー、
   エディットの枠、トラック バー、リスト ビュー（詳細表示、Explorer テーマの選択と列の線）、フォーカスの点線、文字の位置を Windows 7 に合わせています（Wine の
   0104、0105）。
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
-Windows 7 のシェルのために足した Wine のパッチは 0078〜0110 です（[patches.md](patches.md)）。
+Windows 7 のシェルのために足した Wine のパッチは 0078〜0112 です（[patches.md](patches.md)）。
 
 ## 制限
 

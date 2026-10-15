@@ -43,6 +43,8 @@ compile "$out/tab-focus-test.exe" -municode -mwindows "$root/tests/tab-focus.c" 
 compile "$out/trackbar-size-test.exe" -municode -mwindows "$root/tests/trackbar-size.c" -lcomctl32 -lgdi32 -luser32
 compile "$out/listview-layout-test.exe" -municode -mwindows "$root/tests/listview-layout.c" -lcomctl32 -luxtheme -lgdi32 -luser32
 compile "$out/msgbox-layout-test.exe" -municode -mwindows "$root/tests/msgbox-layout.c" -luser32
+compile "$out/theme-part-sizes-test.exe" -municode "$root/tests/theme-part-sizes.c" -luxtheme -lgdi32 -luser32
+compile "$out/rebar-bands-test.exe" -municode "$root/tests/rebar-bands.c" -luser32
 compile "$out/caption-ncactivate-test.exe" "$root/tests/caption-ncactivate.c" -lgdi32 -luser32
 compile "$out/cleartype-test.exe" -municode "$root/tests/cleartype.c" -luser32 -lgdi32 -ladvapi32
 compile "$out/icon-alpha-test.exe" "$root/tests/icon-alpha.c" -luser32 -lgdi32
