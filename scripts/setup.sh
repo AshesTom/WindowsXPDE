@@ -142,6 +142,8 @@ step 'Packages'
 packages=(
     # Wine build (WoW64: 64-bit Unix libraries, i686 and x86_64 MinGW for the PE modules)
     build-essential flex bison pkg-config git ca-certificates
+    # Wine's translations (msgfmt): Wine's own programs and dialogs in the session's language
+    gettext
     libx11-dev libxext-dev libxrender-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev
     libfreetype-dev libfontconfig-dev libgnutls28-dev libgl-dev libasound2-dev libdbus-1-dev libudev-dev
     gcc-mingw-w64-i686 gcc-mingw-w64-x86-64
