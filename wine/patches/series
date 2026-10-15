@@ -112,3 +112,4 @@
 0112-win7-folder-windows-from-wine-programs.patch
 0113-xmllite-random-access.patch
 0114-kernelbase-number-format-zero.patch
+0115-windowscodecs-fant-scaling.patch

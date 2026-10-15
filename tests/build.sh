@@ -46,6 +46,7 @@ compile "$out/msgbox-layout-test.exe" -municode -mwindows "$root/tests/msgbox-la
 compile "$out/theme-part-sizes-test.exe" -municode "$root/tests/theme-part-sizes.c" -luxtheme -lgdi32 -luser32
 compile "$out/rebar-bands-test.exe" -municode "$root/tests/rebar-bands.c" -luser32
 compile "$out/number-format-test.exe" -municode "$root/tests/number-format.c"
+compile "$out/shell-item-images-test.exe" -municode "$root/tests/shell-item-images.c" -lshell32 -lole32 -luuid -lgdi32
 compile "$out/caption-ncactivate-test.exe" "$root/tests/caption-ncactivate.c" -lgdi32 -luser32
 compile "$out/cleartype-test.exe" -municode "$root/tests/cleartype.c" -luser32 -lgdi32 -ladvapi32
 compile "$out/icon-alpha-test.exe" "$root/tests/icon-alpha.c" -luser32 -lgdi32

@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 114 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 115 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -202,6 +202,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0112 | combase・explorer・shell32: `explorer C:\パス` や `start C:\パス` など Wine 側のプログラムから開いたフォルダーを Windows 7 の explorer で開く（LocalServer32 の REG_EXPAND_SZ 展開、/factory サーバーの待機、DelegateExecute の動詞にファイルを渡す）。ライブラリが開いていた | 一部あり（REG_EXPAND_SZ の展開は常に。Windows と同じ） |
 | 0113 | xmllite: XmlReaderProperty_RandomAccess を受け付ける。Windows 7 の shell32 がライブラリ（*.library-ms）を読めず、アイコンが一般のものになり、フォルダーも空だった | なし |
 | 0114 | kernelbase: GetNumberFormat で、先頭の 0 なし（LeadingZero 0）・小数なしの 0 を「0」に、0 に見える負の数を符号なしに（Windows と同じ）。空のフォルダーの詳細ペインが「 個の項目」になっていた | なし |
+| 0115 | windowscodecs: 拡大縮小の Fant（覆う範囲の面積で平均）。Windows 7 のシェルがアイコンを元の大きさ以外（詳細ペインなど）に縮めるときに使い、最近傍になっていた | なし |
 
 ## 並び順の考え方
 
