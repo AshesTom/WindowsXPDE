@@ -39,16 +39,18 @@ int wmain(void)
     }
     CloseThemeData(theme);
     memset(&metrics, 0, sizeof(metrics));
-    metrics.cbSize = sizeof(metrics);
+    /* Without iPaddedBorderWidth, SET keeps the padded border that Windows 7's
+     * style set (the whole structure would store the padded border as 0). */
+    metrics.cbSize = FIELD_OFFSET(NONCLIENTMETRICSW, iPaddedBorderWidth);
     /* the fonts are stored in 96 DPI units */
     SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE);
-    if (!SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0)) return 1;
+    if (!SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, metrics.cbSize, &metrics, 0)) return 1;
     metrics.lfCaptionFont = fonts[0];
     metrics.lfSmCaptionFont = fonts[1];
     metrics.lfMenuFont = fonts[2];
     metrics.lfStatusFont = fonts[3];
     metrics.lfMessageFont = fonts[4];
-    if (!SystemParametersInfoW(SPI_SETNONCLIENTMETRICS, sizeof(metrics), &metrics, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE) ||
+    if (!SystemParametersInfoW(SPI_SETNONCLIENTMETRICS, metrics.cbSize, &metrics, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE) ||
         !SystemParametersInfoW(SPI_SETICONTITLELOGFONT, sizeof(fonts[5]), &fonts[5], SPIF_UPDATEINIFILE | SPIF_SENDCHANGE))
     {
         fprintf(stderr, "cannot save the fonts\n");

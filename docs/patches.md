@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 100 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 101 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -188,6 +188,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0098 | comctl32: ほかの comctl32 のイメージ リストを IImageList で描く（HIMAGELIST はリストの IUnknown。Windows 7 の shell32 のシステムのイメージ リストのアイコンが、Wine の部品に出なかった） | なし |
 | 0099 | advapi32: SaferiIsExecutableFileType を足す（Windows 7 の ShellExecute が呼ぶ。無くてファイルを開くとプロセスが終わった） | なし |
 | 0100 | uxtheme: DrawThemeParentBackgroundEx を足す（Windows 7 の comctl32 が呼ぶ） | なし |
+| 0101 | win32u, uxtheme: パッド枠（PaddedBorderWidth）を SM_CXFRAME に足し、版 4 のスタイルのキャプション幅とボタンを閉じるボタンの縦横比にする（Windows 7 の枠 8 px、ボタン 31x17） | Windows 7 のスタイル（PaddedBorderWidth があるとき） |
 
 ## 並び順の考え方
 

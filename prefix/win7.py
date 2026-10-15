@@ -38,7 +38,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 8
+VERSION = 9
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -394,6 +394,9 @@ def stage(dest, wine=None):
             wow64_files(prefix, assets, json.loads((assets / 'media.json').read_text())['ui_language'])
             prefix.overrides()
         prefix.registrations()
+        if applied and applied[0].isdigit() and int(applied[0]) < 9:
+            # Prefixes made before Wine kept the style's padded border and caption widths
+            appearance(prefix)
     finally:
         prefix.stop()
     # After every Wine process of the prefix has ended: a Wine update can go on
