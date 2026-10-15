@@ -1,5 +1,11 @@
-/* Make Windows 7's Favorites links for the user (Windows 7's shell prefix).
- * Usage: profile-links
+/* Make what Windows 7 gives a new user: the default libraries and the
+ * Favorites links (Windows 7's shell prefix).
+ * Usage: user-profile
+ *
+ * The libraries (Documents, Pictures, Videos, Music) are made by Windows 7's
+ * shell32 from its own templates when their known folders are asked for with
+ * KF_FLAG_CREATE, with the Libraries folder's desktop.ini; without them
+ * folder windows show no libraries.
  *
  * Windows 7 gives a new user three links in the Links folder, which its
  * folder windows show under Favorites: the desktop, Downloads and Recent
@@ -29,7 +35,7 @@ static int make_link(const WCHAR *folder, const WCHAR *name, PIDLIST_ABSOLUTE ta
     if (SUCCEEDED(hr)) hr = IPersistFile_Save(file, path, TRUE);
     if (file) IPersistFile_Release(file);
     if (link) IShellLinkW_Release(link);
-    if (FAILED(hr)) fwprintf(stderr, L"profile-links: %ls: %08lx\n", path, hr);
+    if (FAILED(hr)) fwprintf(stderr, L"user-profile: %ls: %08lx\n", path, hr);
     return FAILED(hr);
 }
 
@@ -39,7 +45,18 @@ int wmain(void)
     WCHAR *links = NULL;
     int failed = 0;
 
+    static const KNOWNFOLDERID *libraries[] = { &FOLDERID_DocumentsLibrary, &FOLDERID_PicturesLibrary,
+                                                &FOLDERID_VideosLibrary, &FOLDERID_MusicLibrary };
+    unsigned int i;
+
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    for (i = 0; i < ARRAYSIZE(libraries); i++)
+    {
+        WCHAR *path = NULL;
+        HRESULT hr = SHGetKnownFolderPath(libraries[i], KF_FLAG_CREATE, NULL, &path);
+        if (FAILED(hr)) fwprintf(stderr, L"user-profile: library %u: %08lx\n", i, hr), failed = 1;
+        CoTaskMemFree(path);
+    }
     if (FAILED(SHGetKnownFolderPath(&FOLDERID_Links, KF_FLAG_CREATE, NULL, &links))) return 1;
     SHGetKnownFolderIDList(&FOLDERID_Desktop, 0, NULL, &desktop);
     SHGetKnownFolderIDList(&FOLDERID_Downloads, 0, NULL, &downloads);

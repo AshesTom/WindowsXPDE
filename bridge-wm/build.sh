@@ -25,7 +25,7 @@ compile "$root/.local/bridge/theme-settings.exe" "$root/prefix/theme-settings.c"
 compile "$root/.local/bridge/wallpaper-convert.exe" -municode "$root/prefix/wallpaper-convert.c" -lole32 -luuid -lwindowscodecs
 # Windows 7's shell prefix (prefix/win7.py).
 compile "$root/.local/bridge/theme-fonts.exe" "$root/prefix/theme-fonts.c" -luxtheme
-compile "$root/.local/bridge/profile-links.exe" -municode "$root/prefix/profile-links.c" -lole32 -lshell32 -luuid
+compile "$root/.local/bridge/user-profile.exe" -municode "$root/prefix/user-profile.c" -lole32 -lshell32 -luuid
 # Linux applications in the XP Start menu (session/linux_apps.py).
 compile "$root/.local/bridge/linux-launch.exe" "$root/session/linux-launch.c" -mwindows -luser32
 compile "$root/.local/bridge/linux-links.exe" "$root/session/linux-links.c" -lole32 -lshell32 -luuid
