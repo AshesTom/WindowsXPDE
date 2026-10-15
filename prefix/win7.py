@@ -57,10 +57,12 @@ NAMES = (
 # Common Controls 6 from C:\w7 (Wine 0092); the programs keep Wine's.
 NATIVE = ('explorerframe', 'shell32', 'shlwapi', 'propsys', 'shdocvw', 'dui70', 'duser', 'profapi',
           'sndvolsso', 'winbrand', 'shacct', 'thumbcache', 'authui', 'linkinfo')
-# Wine's programs that keep Wine's shell DLLs: its desktop and services, and the
-# programs that link Wine to Linux (menus, the browser).
+# Wine's programs that keep Wine's shell DLLs: its desktop and services, the
+# programs that link Wine to Linux (menus, the browser, start for `wine NAME`
+# and Linux launchers) and those built on Wine's shell32 (its Control Panel).
 WINE_PROGRAMS = ('explorer.exe', 'winemenubuilder.exe', 'winebrowser.exe', 'wineboot.exe', 'services.exe',
-                 'plugplay.exe', 'winedevice.exe', 'rpcss.exe', 'svchost.exe', 'conhost.exe')
+                 'plugplay.exe', 'winedevice.exe', 'rpcss.exe', 'svchost.exe', 'conhost.exe', 'start.exe',
+                 'control.exe', 'rundll32.exe', 'winecfg.exe', 'uninstaller.exe', 'winefile.exe')
 # Read only for their resources (strings and icons): placed in system32, no override.
 RESOURCES = ('imageres', 'sud', 'DeviceCenter')
 # Windows 7's interface proxies, under another name: Wine's own actxprxy.dll
