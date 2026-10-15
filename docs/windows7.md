@@ -105,10 +105,13 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
   入り、選ぶとすべての窓を最小化します（Windows 7 では、デスクトップを見せたあと元に戻せますが、ここでは窓ごとに戻します）。
 - 窓の枠とキャプションのボタンは Windows 7 ベーシックと同じ大きさです（枠 8 px、最小化・最大化・閉じるのボタン 31x17。Wine の
   0101。Windows 7 SP1 の実機で同じ位置・大きさの Notepad と画素ごとに比べています）。
+- メニュー（メニュー バーとポップアップ）は Windows 7 のテーマで描きます（Wine の 0102、0103）。項目の大きさや文字の位置、影は
+  実機と画素ごとに同じです（ClearType の色を除く）。Windows 7 の既定どおりキーボードの手掛かりは隠れ、アクセス キーの下線は
+  Alt や F10 でメニューを使う間だけ出ます。
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
-Windows 7 のシェルのために足した Wine のパッチは 0078〜0101 です（[patches.md](patches.md)）。
+Windows 7 のシェルのために足した Wine のパッチは 0078〜0103 です（[patches.md](patches.md)）。
 
 ## 制限
 

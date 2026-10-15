@@ -99,3 +99,5 @@
 0099-advapi32-saferiisexecutablefiletype.patch
 0100-uxtheme-drawthemeparentbackgroundex.patch
 0101-uxtheme-padded-border-caption-buttons.patch
+0102-win32u-themed-menus.patch
+0103-winex11-win7-shadow-rounding.patch

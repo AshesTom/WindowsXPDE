@@ -38,7 +38,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 9
+VERSION = 10
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -310,6 +310,12 @@ def wow64_files(prefix, assets, ui):
                     wow64 / 'comctl32.dll')
 
 
+def effects(prefix):
+    """Windows 7's visual effects, UserPreferencesMask read on the reference machine: among
+    others, access keys underlined only while the keyboard is used, hot tracking and shadows."""
+    prefix.reg(r'HKCU\Control Panel\Desktop', 'UserPreferencesMask', '9e3e078012000000', 'REG_BINARY')
+
+
 def settings(prefix, lang):
     """DLL overrides, the shell, fonts and Wine settings of a new prefix."""
     prefix.overrides()
@@ -320,6 +326,7 @@ def settings(prefix, lang):
     prefix.reg(r'HKCU\Control Panel\Desktop', 'FontSmoothing', '2')
     prefix.reg(r'HKCU\Control Panel\Desktop', 'FontSmoothingType', 2, 'REG_DWORD')
     prefix.reg(r'HKCU\Control Panel\Desktop', 'LogPixels', 96, 'REG_DWORD')
+    effects(prefix)
     # The user's documents are the Linux home (H:), as in the XP session.
     for suffix in ('Shell Folders', 'User Shell Folders'):
         prefix.reg('HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\' + suffix, 'Personal', 'H:\\')
@@ -397,6 +404,8 @@ def stage(dest, wine=None):
         if applied and applied[0].isdigit() and int(applied[0]) < 9:
             # Prefixes made before Wine kept the style's padded border and caption widths
             appearance(prefix)
+        if applied and applied[0].isdigit() and int(applied[0]) < 10:
+            effects(prefix)
     finally:
         prefix.stop()
     # After every Wine process of the prefix has ended: a Wine update can go on
