@@ -65,6 +65,8 @@ Windows 7 の comdlg32 の部品が登録する `FileOpenDialog`（シェルの�
   Common Controls 6 のままです（Wine のパッチ 0092。Windows 7 の comctl32 をプログラムに使わせると Wine のアプリが壊れるため）。
   サムネイルを作る `dllhost.exe` は、Wine の Common Controls 6 のままにします。
 - `HKLM\...\Winlogon` の `Shell` を `w7-explorer.exe` にします。
+- 利用者のフォルダー（ドキュメント・ピクチャ・ミュージック・ビデオなど）とライブラリは Windows 7 と同じ日本語の名前で出ます
+  （desktop.ini と、Windows 7 の読み取り専用の代わりのシステム属性。Linux のフォルダーへのリンクになっているものには書きません）。
 - フォントのつなぎ（FontLink）と置き換え（FontSubstitutes）は日本語の Windows 7 と同じです（MS Shell Dlg は MS UI Gothic、
   MS Shell Dlg 2 は Tahoma、Segoe UI には Tahoma とメイリオ。参照用の実機で読んだ値）。古い形のダイアログの文字も Windows 7 と
   同じフォントです。以前に取り出したファイル（MS UI Gothic と Tahoma が無い）では、これまでどおりメイリオ UI で代わりにします。
@@ -122,7 +124,7 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
-Windows 7 のシェルのために足した Wine のパッチは 0078〜0108 です（[patches.md](patches.md)）。
+Windows 7 のシェルのために足した Wine のパッチは 0078〜0109 です（[patches.md](patches.md)）。
 
 ## 制限
 

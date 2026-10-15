@@ -38,7 +38,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 10
+VERSION = 11
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -283,6 +283,7 @@ def create(assets, dest, home, wine):
         prefix.run(str(ROOT / '.local/bridge/wallpaper-convert.exe'), windows_path(wallpaper),
                    windows_path(themes / 'TranscodedWallpaper.bmp'))
         start_menu(prefix, assets, user)
+        profile_folders(prefix, user)
         (dest / 'dosdevices/h:').symlink_to(home)
         prefix.run('regedit', '/s', windows_path(assets / 'registry.reg'), timeout=600)
         prefix.wow64_registry(assets)
@@ -310,6 +311,44 @@ def system_icons(dest, assets):
     if source.is_file() and not target.is_file():
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
+
+
+# Windows 7's desktop.ini of the user's Documents and Libraries folders (read on the
+# reference machine); the other profile folders get theirs when the prefix is made.
+PROFILE_INI = {
+    'Documents': '[.ShellClassInfo]\r\nLocalizedResourceName=@%SystemRoot%\\system32\\shell32.dll,-21770\r\n'
+                 'IconResource=%SystemRoot%\\system32\\imageres.dll,-112\r\nIconFile=%SystemRoot%\\system32\\shell32.dll\r\n'
+                 'IconIndex=-235\r\n',
+    'AppData/Roaming/Microsoft/Windows/Libraries':
+        '\r\n[.ShellClassInfo]\r\n\r\n[LocalizedFileNames]\r\n'
+        'Documents.library-ms=@@%SystemRoot%\\system32\\shell32.dll,-34575\r\n'
+        'Pictures.library-ms=@@%SystemRoot%\\system32\\shell32.dll,-34595\r\n'
+        'Videos.library-ms=@@%SystemRoot%\\system32\\shell32.dll,-34620\r\n'
+        'Music.library-ms=@@%SystemRoot%\\system32\\shell32.dll,-34584\r\n',
+}
+PROFILE_FOLDERS = ('Documents', 'Desktop', 'Favorites', 'Links', 'Contacts', 'Saved Games', 'Searches', 'Videos',
+                   'Music', 'Pictures', 'AppData/Roaming/Microsoft/Windows/Libraries')
+
+
+def profile_folders(prefix, user):
+    """Localized names of the user's folders and libraries, as on Windows 7: a desktop.ini
+    in a folder marked for it. Windows 7 marks them read-only; Wine keeps no read-only
+    folders, and the system attribute serves alike. Folders that are links (to the
+    Linux home) are left alone."""
+    home = prefix.path / f'drive_c/users/{user}'
+    for name in PROFILE_FOLDERS:
+        folder = home / name
+        if not folder.is_dir() or folder.is_symlink():
+            continue
+        ini = folder / 'desktop.ini'
+        if not ini.exists() and name in PROFILE_INI:
+            ini.write_bytes(b'\xff\xfe' + PROFILE_INI[name].encode('utf-16-le'))
+            path = 'C:\\' + str(ini.relative_to(prefix.path / 'drive_c')).replace('/', '\\')
+            prefix.run('attrib', '+h', path, check=False)
+            prefix.run('attrib', '+s', path, check=False)
+        if ini.exists():
+            prefix.run('attrib', '+s', 'C:\\' + str(folder.relative_to(prefix.path / 'drive_c')).replace('/', '\\'),
+                       check=False)
 
 
 def start_menu(prefix, assets, user):
@@ -461,6 +500,8 @@ def stage(dest, wine=None):
             appearance(prefix)
         if applied and applied[0].isdigit() and int(applied[0]) < 10:
             effects(prefix)
+        if applied and applied[0].isdigit() and int(applied[0]) < 11:
+            profile_folders(prefix, pwd.getpwuid(os.getuid()).pw_name)
     finally:
         prefix.stop()
     # After every Wine process of the prefix has ended: a Wine update can go on

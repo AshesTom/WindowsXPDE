@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 108 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 109 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -196,6 +196,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0106 | user32: Windows 7 のシステム アイコン（IDI_APPLICATION〜IDI_SHIELD）を、prefix がデータとして置く Windows 7 の user32.dll（`C:\w7\res\user32-w7.dll`）から読む。アイコンの縮小は Windows 7 と同じ間引き | `WIN4WINE_SHELL=win7` |
 | 0107 | user32, comctl32: Windows 7 のメッセージ ボックス（白地と下のボタン帯、アイコン・文字・右寄せのボタンの配置）、既定のボタンの脈動とプログレス バーの光（どちらも 2 秒周期、Windows 7 SP1 の実機で測定） | `WIN4WINE_SHELL=win7` |
 | 0108 | win32u: Windows 7 の ClearType。XP と同じ 7 段階の標本化で、ガンマをかけずに混ぜる（白地の黒文字が 0, 43, 85, 128, 170, 212, 255 だけになる。実機で確認） | `WIN4WINE_SHELL=win7` |
+| 0109 | uxtheme: DrawThemeTextEx の DTT_CALLBACK（呼び出し側の関数で描く）と DTT_COMPOSITED（アルファのある面に不透明に描く）。Windows 7 のスタートメニューの検索欄の「プログラムとファイルの検索」が出ていなかった | なし |
 
 ## 並び順の考え方
 
