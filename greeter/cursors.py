@@ -2,9 +2,14 @@
 """Make an X cursor theme from the cursors in the user's XP user32.dll.
 
 python3 greeter/cursors.py USER32.DLL THEME_DIRECTORY [--reactos]
+python3 greeter/cursors.py --win7 USER32.DLL CURSORS_DIRECTORY THEME_DIRECTORY
 
 With --reactos the user32.dll is ReactOS's: its cursors get no shadow, as in
-ReactOS and Windows 2000.
+ReactOS and Windows 2000. With --win7 the cursors are Windows 7's Aero scheme:
+the .cur and .ani files of its Windows\\Cursors (extract/win7.py), with the
+I-beam and the crosshair, which the scheme leaves to user32, from Windows 7's
+user32.dll. Their images carry their own soft shadow in their alpha; the
+animated ones (busy, working) become animated X cursors.
 
 Wine shows Windows' standard cursors through the X cursor theme (winex11
 maps them to names such as left_ptr), Linux applications and the greeter use
@@ -176,6 +181,111 @@ def cursors(user32):
         yield number, names, decode(resources.find(RT_CURSOR, resource))
 
 
+# Windows 7's Aero scheme (HKLM\...\Control Panel\Cursors\Default of the
+# shell-cursors component): the user32 group whose X names each file stands
+# for. The I-beam (101) and the crosshair (103) are left to user32.
+AERO = {
+    100: 'aero_arrow.cur', 102: 'aero_busy.ani', 104: 'aero_up.cur', 105: 'aero_nwse.cur',
+    106: 'aero_nesw.cur', 107: 'aero_ew.cur', 108: 'aero_ns.cur', 109: 'aero_move.cur',
+    110: 'aero_unavail.cur', 111: 'aero_working.ani', 112: 'aero_helpsel.cur', 114: 'aero_link.cur',
+}
+AERO_PEN = ('aero_pen.cur', ('pencil', 'draft'))
+WIN7_SIZES = (32, 48)
+
+
+def cur_images(data):
+    """The images of a .cur file: {size: (width, height, hot x, hot y, rows, shaded)}."""
+    _, kind, count = struct.unpack_from('<HHH', data)
+    images = {}
+    for i in range(count):
+        width, height, _, _, hot_x, hot_y, size, offset = struct.unpack_from('<BBBBHHII', data, 6 + 16 * i)
+        width, height = width or 256, height or 256
+        dib = data[offset:offset + size]
+        if dib[:4] == b'\x89PNG':
+            continue
+        images[width] = decode(struct.pack('<HH', hot_x, hot_y) + dib)
+    return images
+
+
+def riff_chunks(data, start, end):
+    while start + 8 <= end:
+        tag, size = struct.unpack_from('<4sI', data, start)
+        yield tag, start + 8, size
+        start += 8 + size + (size & 1)
+
+
+def ani_frames(data):
+    """The frames of an .ani file in display order: [(images of the frame, milliseconds)]."""
+    frames, rate, seq, jiffies = [], None, None, 1
+    for tag, start, size in riff_chunks(data, 12, len(data)):
+        if tag == b'anih':
+            _, frame_count, steps, _, _, _, _, jiffies, _ = struct.unpack_from('<9I', data, start)
+        elif tag == b'rate':
+            rate = struct.unpack_from(f'<{size // 4}I', data, start)
+        elif tag == b'seq ':
+            seq = struct.unpack_from(f'<{size // 4}I', data, start)
+        elif tag == b'LIST' and data[start:start + 4] == b'fram':
+            frames = [cur_images(data[s:s + n]) for t, s, n in riff_chunks(data, start + 4, start + size) if t == b'icon']
+    order = seq or range(len(frames))
+    return [(frames[f], round((rate[i] if rate else jiffies) * 1000 / 60)) for i, f in enumerate(order)]
+
+
+def xcursor_frames(frames):
+    """An Xcursor file of animated images: frames of ({nominal: image}, ms)."""
+    chunks = []
+    for nominal in WIN7_SIZES:
+        for images, delay in frames:
+            image = images.get(nominal) or images[min(images, key=lambda s: abs(s - nominal))]
+            width, height, hot_x, hot_y, rows, _ = image
+            if (width, height) != (nominal, nominal):
+                continue
+            pixels = bytearray()
+            for row in rows:
+                for r, g, b, a in row:
+                    pixels += struct.pack('<I', a << 24 | (r * a // 255) << 16 | (g * a // 255) << 8 | (b * a // 255))
+            chunks.append((nominal, struct.pack('<IIIIIIIII', 36, 0xfffd0002, nominal, 1, width, height, hot_x, hot_y,
+                                                delay if len(frames) > 1 else 0) + pixels))
+    position = 16 + 12 * len(chunks)
+    table = b''
+    for nominal, chunk in chunks:
+        table += struct.pack('<III', 0xfffd0002, nominal, position)
+        position += len(chunk)
+    return struct.pack('<4sIII', b'Xcur', 16, 0x10000, len(chunks)) + table + b''.join(c for _, c in chunks)
+
+
+def write_names(directory, names, data):
+    first = directory / 'cursors' / names[0]
+    first.write_bytes(data)
+    for alias in names[1:]:
+        link = directory / 'cursors' / alias
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        link.symlink_to(names[0])
+
+
+def write_theme_win7(user32, cursor_files, directory):
+    directory, cursor_files = Path(directory), Path(cursor_files)
+    (directory / 'cursors').mkdir(parents=True, exist_ok=True)
+    resources = Resources(user32)
+    for number, names in NAMES.items():
+        if number in AERO:
+            path = cursor_files / AERO[number]
+            data = path.read_bytes()
+            frames = ani_frames(data) if path.suffix == '.ani' else [(cur_images(data), 0)]
+        else:
+            group = resources.find(RT_GROUP_CURSOR, number)
+            if group is None:
+                continue
+            images = {}
+            for width, height, _, resource in group_entries(group):
+                images.setdefault(width, decode(resources.find(RT_CURSOR, resource)))
+            frames = [(images, 0)]
+        write_names(directory, names, xcursor_frames(frames))
+    pen, names = AERO_PEN
+    write_names(directory, names, xcursor_frames([(cur_images((cursor_files / pen).read_bytes()), 0)]))
+    (directory / 'index.theme').write_text('[Icon Theme]\nName=win4wine-win7\nComment=Windows 7 cursors from the user\'s media\n')
+
+
 def write_theme(user32, directory, reactos=False):
     directory = Path(directory)
     (directory / 'cursors').mkdir(parents=True, exist_ok=True)
@@ -199,6 +309,9 @@ def write_theme(user32, directory, reactos=False):
 
 
 if __name__ == '__main__':
+    if sys.argv[1:2] == ['--win7'] and len(sys.argv) == 5:
+        write_theme_win7(*sys.argv[2:])
+        sys.exit()
     if len(sys.argv) not in (3, 4) or sys.argv[3:] not in ([], ['--reactos']):
         sys.exit(__doc__)
     write_theme(sys.argv[1], sys.argv[2], reactos=len(sys.argv) == 4)

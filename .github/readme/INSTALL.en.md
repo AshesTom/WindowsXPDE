@@ -119,7 +119,8 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
   `.local/assets-win7` (the Professional edition's image, else the last one). The ISO decides the language.
 - The prefix is `.local/prefix-win7`, the settings `~/.config/win4wine/win7-session.json` and the session
   "**Windows 7 Shell (Wine, X11)**". It can be set up beside the XP and ReactOS shells (they share Wine and the bridge).
-- `--greeter`, `--theme` and `--wayland` are not available for it yet; `--dpi` is.
+- Windows 7's Aero cursors are installed; with `--greeter` the login screen is Windows 7's logon screen too.
+- `--theme` and `--wayland` are not available for it yet; `--dpi` is.
 - Only Japanese Windows 7 Professional SP1 has been tested. Details: [docs/windows7.md](../../docs/windows7.md) (Japanese).
 
 ## 3. Log in

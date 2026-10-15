@@ -9,6 +9,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 ```
 
 ログイン画面でセッション「**Windows 7 Shell (Wine, X11)**」を選びます。XP や ReactOS のシェルも入れてあれば、セッションが並びます。
+`--greeter` を付けると、LightDM のログイン画面が Windows 7 のログオン画面になり、そのまま Windows 7 のシェルに入ります。
 
 > [!WARNING]
 > XP のシェルより新しく、確かめた範囲も狭い試作です。下の「制限」を読んでから試してください。
@@ -26,6 +27,8 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | `explorerframe`、`shell32`、`shlwapi`、`propsys`、`shdocvw`、`dui70`、`duser`、`profapi`、`sndvolsso`、`winbrand`、`shacct`、`thumbcache`、`authui`、`linkinfo` | w7-explorer.exe（と、サムネイルを作る dllhost.exe）だけが使う DLL |
 | `actxprxy` | Windows 7 のインターフェースの proxy。`w7actxprxy.dll` の名前で置きます（Wine の actxprxy.dll は Wine の DLL の proxy に残します） |
 | `imageres`、`sud`、`DeviceCenter` | 文字列とアイコンだけを読む DLL（override なし） |
+| `Cursors\aero_*.cur`、`aero_*.ani`、`user32.dll` | Windows 7 の Aero のカーソル（X のカーソルのテーマ `win4wine-win7` にします。I ビームと十字は user32.dll のもの） |
+| `Branding\Basebrd\basebrd.dll` | ログオン画面のエディションの名前 |
 | `SysWOW64\shell32.dll`、`SysWOW64\imageres.dll` | 32bit のプログラムが読むアイコンと名前（override なし。32bit のプログラムは Wine の shell32 のまま） |
 | Common Controls 6（amd64） | w7-explorer.exe が使う comctl32。`C:\w7\comctl32.dll` として、シェルの横に置きます |
 | Segoe UI、メイリオ（日本語のとき） | Windows 7 の UI のフォント |
@@ -67,6 +70,18 @@ Windows 7 の comdlg32 の部品が登録する `FileOpenDialog`（シェルの�
 - `win7.py stage` は毎回のセッションの前に動き、Wine の更新で上書きされた DLL と登録（「コンピューター」「コントロール パネル」
   「ネットワーク」の名前など）を入れ直します。
 
+## カーソルとログオン画面
+
+- カーソル: `greeter/cursors.py --win7` が、Windows 7 の Aero の配色（shell-cursors の部品のマニフェストにある既定の割り当て）の
+  `.cur`・`.ani` を X のカーソルのテーマ `win4wine-win7` にします。画像の影は Windows 7 のファイルに入っているものです。待ち（`aero_busy.ani`）と
+  バックグラウンドで作業中（`aero_working.ani`）は動くカーソルです。Wine のアプリも Linux のアプリも、このテーマのカーソルを使います。
+- ログオン画面: `greeter/win7-greeter.py`（LightDM の greeter）が、Windows 7 の LogonUI の画面を描きます（`greeter/w7logon.py`）。
+  背景（imageres.dll。画面の縦横比に近いもの）、利用者の写真とその枠、パスワードの欄と矢印のボタン、下のボタンと文字（authui.dll と
+  その MUI、メイリオ）、エディションの名前（basebrd.dll）は、メディアのファイルのものです。大きさや位置は authui のレイアウトの
+  ファイル（UIFILE）と、Windows 7 SP1 の実機（1024x768 と 1280x800）で測ったものです。パスワードが違うときのメッセージ、
+  シャットダウンのボタンと、その横の ▲ のメニュー（再起動、スリープ・休止状態（できる場合）、シャットダウン）があります。
+  利用者の写真は、LightDM（AccountsService）に設定されたものか、Windows 7 の既定の `user.bmp` です。
+
 ## セッション
 
 session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` で、supervisor は次のように動きます。
@@ -93,7 +108,8 @@ Windows 7 のシェルのために足した Wine のパッチは 0078〜0096 で
 ## 制限
 
 - Aero の効果（ガラス、ライブ サムネイル、Aero Peek）はありません。デスクトップの合成（DWM）が無いためです。
-- ログイン画面とカーソルは Windows 7 のものではありません（ディスプレイマネージャーと X のもの）。
+- ログオン画面（`--greeter`）は、利用者を 1 人だけ（LightDM が選ぶ利用者）表示します。「コンピューターの簡単操作」のボタンは何もしません。
+  左上の入力言語のボタンはありません。
 - Wayland のセッションはまだありません。
 - 確かめたのは日本語版の Windows 7 Professional SP1（x64）だけです。英語版も同じ手順で作りますが、試していません。
 - ネットワーク、ヘルプとサポート、コントロール パネルの中身は、Wine にその部品が無いので使えません。

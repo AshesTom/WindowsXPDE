@@ -8,6 +8,9 @@
 #                                the same with ReactOS's logon screen (greeter/reactos-greeter.py)
 #                                from extract/reactos.py's output, in LANG (ja or en); SESSION
 #                                defaults to reactos-shell
+#   greeter/install.sh --win7 ASSETS [SESSION]
+#                                Windows 7's logon screen (greeter/win7-greeter.py) from
+#                                extract/win7.py's output; SESSION defaults to windows7-shell
 #   greeter/install.sh --remove  go back to the greeter LightDM used before
 # Restart LightDM afterwards. Without the XP files the greeter starts lightdm-gtk-greeter.
 set -euo pipefail
@@ -18,6 +21,27 @@ sudo() { if [[ $EUID -eq 0 ]]; then "$@"; else command sudo "$@"; fi; }
 if [[ ${1:-} == --remove ]]; then
     sudo rm -f "$seat"
     printf 'Removed %s; LightDM uses its previous greeter after a restart.\n' "$seat"
+    exit 0
+fi
+if [[ ${1:-} == --win7 ]]; then
+    assets=${2:?Usage: greeter/install.sh --win7 ASSETS [SESSION]}
+    ui=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["ui_language"])' "$assets/media.json")
+    for f in system32/authui.dll "system32/$ui/authui.dll.mui" system32/imageres.dll branding/basebrd.dll pictures/user.bmp; do
+        [[ -f $assets/$f ]] || { printf 'Missing %s: extract again with extract/win7.py\n' "$assets/$f" >&2; exit 1; }
+    done
+    sudo rm -rf "$share/win7"
+    sudo install -d -m755 "$share/code" "$share/win7/$ui" "$share/win7/fonts"
+    sudo install -m644 "$root"/greeter/{welcome,xpres,xdraw,w7logon}.py "$share/code/"
+    sudo install -m755 "$root/greeter/win7-greeter.py" "$share/code/"
+    sudo install -m644 "$assets"/system32/{authui,imageres}.dll "$assets/branding/basebrd.dll" "$assets/pictures/user.bmp" \
+        "$share/win7/"
+    sudo install -m644 "$assets/system32/$ui/authui.dll.mui" "$share/win7/$ui/"
+    sudo install -m644 "$assets"/fonts/* "$share/win7/fonts/"
+    printf '{"assets": "%s/win7", "fallback": "lightdm-gtk-greeter"}\n' "$share" |
+        sudo install -Dm644 /dev/stdin /etc/win4wine/win7-greeter.json
+    sudo install -Dm644 "$root/greeter/win7-greeter.desktop" /usr/share/xgreeters/win7-greeter.desktop
+    printf '[Seat:*]\ngreeter-session=win7-greeter\nuser-session=%s\n' "${3:-windows7-shell}" | sudo install -Dm644 /dev/stdin "$seat"
+    printf 'Installed the Windows 7 logon screen as %s. Settings: /etc/win4wine/win7-greeter.json\n' "$seat"
     exit 0
 fi
 if [[ ${1:-} == --reactos ]]; then

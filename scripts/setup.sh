@@ -6,7 +6,7 @@
 #                    [--wine-install DIR | --jobs N]
 #   scripts/setup.sh --shell reactos [--lang ja|en] [--theme T] [--greeter] [--dpi N]
 #                    [--wayland] [--wine-install DIR | --jobs N]
-#   scripts/setup.sh --shell win7 --media ISO [--dpi N] [--wine-install DIR | --jobs N]
+#   scripts/setup.sh --shell win7 --media ISO [--greeter] [--dpi N] [--wine-install DIR | --jobs N]
 #
 #   --media PATH   the user's Windows XP SP3 (x86) ISO or Windows directory; with
 #                  --shell win7, the user's Windows 7 SP1 x64 ISO
@@ -22,7 +22,8 @@
 #                  it); with --greeter, LightDM shows ReactOS's logon screen instead
 #                  of XP's Welcome screen
 #   --greeter      also make LightDM show XP's Welcome screen (greeter/), with XP's
-#                  cursors; LightDM becomes the display manager
+#                  cursors; LightDM becomes the display manager. With --shell win7,
+#                  Windows 7's logon screen
 #   --no-greeter   keep the display manager's own login screen (the default); XP's
 #                  cursors are still installed for the session
 #   --theme T      luna (XP's default, the default here, with XP's Start menu) or
@@ -94,7 +95,6 @@ if [[ $shell == win7 ]]; then
     [[ -z $lang ]] || { printf -- '--lang is for the ReactOS shell; the Windows 7 shell follows its media\n' >&2; exit 2; }
     [[ $theme_given == no ]] || { printf -- '--theme is not available for the Windows 7 shell yet\n' >&2; exit 2; }
     [[ -z $smoothing ]] || { printf -- '--font-smoothing is for the XP shell\n' >&2; exit 2; }
-    [[ $greeter == no ]] || { printf -- '--greeter is not available for the Windows 7 shell yet\n' >&2; exit 2; }
     [[ $wayland == no ]] || { printf -- '--wayland is not available for the Windows 7 shell yet\n' >&2; exit 2; }
 elif [[ $shell == reactos ]]; then
     [[ -z $media ]] || { printf -- '--media is for the XP shell; the ReactOS shell needs no media\n' >&2; exit 2; }
@@ -396,6 +396,10 @@ if settings.get('locale') != locale:
     else:
         settings.pop('input_method', None)
     changes.append(f'locale {locale}')
+if settings.get('shell') == 'win7' and settings.get('cursor_theme') == '':
+    # Made before the Windows 7 shell had its cursors
+    settings['cursor_theme'] = 'win4wine-win7'
+    changes.append('Windows 7 cursors')
 if changes:
     open(config, 'w').write(json.dumps(settings, indent=2) + '\n')
     print(f'Updated {config}: {", ".join(changes)}')
@@ -413,8 +417,7 @@ if locale.startswith('ja'):
 if shell == 'reactos':
     settings.update(shell='reactos', cursor_theme='win4wine-reactos')
 elif shell == 'win7':
-    # No cursors of Windows 7's yet: X's own, not XP's.
-    settings.update(shell='win7', cursor_theme='')
+    settings.update(shell='win7', cursor_theme='win4wine-win7')
 open(config, 'w').write(json.dumps(settings, indent=2) + '\n')
 EOF
     printf 'Wrote %s\n' "$config"
@@ -468,7 +471,17 @@ fi
 
 step 'Login screen and cursors'
 if [[ $shell == win7 ]]; then
-    printf 'The Windows 7 shell has no login screen or cursors of its own yet; the display manager keeps its own\n'
+    # Windows 7's Aero cursors for the session (and the logon screen).
+    theme=$(mktemp -d)
+    python3 "$root/greeter/cursors.py" --win7 "$assets/cursors/user32.dll" "$assets/cursors" "$theme/win4wine-win7"
+    sudo rm -rf /usr/share/icons/win4wine-win7
+    sudo cp -r "$theme/win4wine-win7" /usr/share/icons/
+    sudo chmod -R a+rX /usr/share/icons/win4wine-win7
+    rm -rf "$theme"
+    printf 'Installed Windows 7 cursors\n'
+    if [[ $greeter == yes ]]; then
+        "$root/greeter/install.sh" --win7 "$assets" windows7-shell
+    fi
 elif [[ $shell == reactos ]]; then
     if [[ $greeter == yes ]]; then
         "$root/greeter/install.sh" --reactos "$assets" "$lang" \
@@ -510,6 +523,8 @@ if [[ $shell == reactos && $greeter == yes ]]; then
     printf 'Restart the display manager (or reboot): the ReactOS logon screen logs in to the ReactOS shell.\n'
 elif [[ $shell == reactos ]]; then
     printf 'Restart the display manager (or reboot) and choose "ReactOS Shell (Wine, X11)" at the login screen.\n'
+elif [[ $shell == win7 && $greeter == yes ]]; then
+    printf 'Restart the display manager (or reboot): the Windows 7 logon screen logs in to the Windows 7 shell.\n'
 elif [[ $shell == win7 ]]; then
     printf 'Restart the display manager (or reboot) and choose "Windows 7 Shell (Wine, X11)" at the login screen.\n'
 elif [[ $greeter == yes ]]; then

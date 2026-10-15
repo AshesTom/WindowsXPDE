@@ -117,7 +117,8 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
   （エディションは Professional を使います。無ければ最後のもの）。言語は ISO で決まります。
 - prefix は `.local/prefix-win7`、設定は `~/.config/win4wine/win7-session.json`、セッションは「**Windows 7 Shell (Wine, X11)**」です。
   XP や ReactOS のシェルと並べて入れられます（Wine と bridge は共通です）。
-- `--greeter`、`--theme`、`--wayland` はまだ使えません。`--dpi` は使えます。
+- Windows 7 の Aero のカーソルを入れます。`--greeter` を付けると、ログイン画面も Windows 7 のログオン画面になります。
+- `--theme`、`--wayland` はまだ使えません。`--dpi` は使えます。
 - 確かめたのは日本語版の Windows 7 Professional SP1 だけです。詳しくは [docs/windows7.md](docs/windows7.md) にあります。
 
 ## 3. ログインする

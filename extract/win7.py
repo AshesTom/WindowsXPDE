@@ -118,6 +118,9 @@ def select(paths, lang_dir, lang):
             wanted[real] = f'fonts/{PurePosixPath(real).name}'
         elif path.startswith('windows/resources/themes/aero/') and not path.endswith('/'):
             wanted[real] = 'themes/' + real[len('Windows/Resources/Themes/'):]
+        elif re.match(r'windows/cursors/aero_[a-z]+\.(cur|ani)$', path):
+            # The Aero cursor scheme (normal size), for the session's X cursor theme
+            wanted[real] = 'cursors/' + PurePosixPath(real).name
         elif path.startswith('programdata/microsoft/user account pictures/'):
             wanted[real] = 'pictures/' + real[len('ProgramData/Microsoft/User Account Pictures/'):]
     # The icons and names that registrations give in shell32.dll and imageres.dll,
@@ -125,6 +128,10 @@ def select(paths, lang_dir, lang):
     for name in ('shell32.dll', 'imageres.dll'):
         want(f'Windows/SysWOW64/{name}', f'syswow64/{name}')
         want(f'Windows/SysWOW64/{lang_dir}/{name}.mui', f'syswow64/{lang_dir}/{name}.mui', required=False)
+    # The edition's name on the logon screen (greeter/w7logon.py)
+    want('Windows/Branding/Basebrd/basebrd.dll', 'branding/basebrd.dll')
+    # Read for its I-beam and crosshair cursors only (greeter/cursors.py --win7)
+    want('Windows/System32/user32.dll', 'cursors/user32.dll')
     want('Windows/Resources/Themes/aero.theme', 'themes/aero.theme')
     want('Windows/Web/Wallpaper/Windows/img0.jpg', 'web/img0.jpg')
     for folder in START_MENU:
