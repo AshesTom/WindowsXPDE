@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 112 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 113 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -200,6 +200,7 @@ labwc と wlroots のパッチは `wayland/patches/` にあります（[wayland.
 | 0110 | user32: DrawText の DT_PREFIXONLY（下線だけを描く）。Windows 7 の comctl32 のリストビューは項目名を描いたあと下線のためにこれで呼ぶので、スタートメニューの「コントロール パネル」などが二度描きで太く見えていた | あり |
 | 0111 | uxtheme: Windows 7 の最小パーツサイズ（TS_MIN = 内容余白の合計）。フォルダーウィンドウのアドレスバーと検索欄が 47 px と高すぎた | v4 のスタイル（Windows 7）のときだけ |
 | 0112 | combase・explorer・shell32: `explorer C:\パス` や `start C:\パス` など Wine 側のプログラムから開いたフォルダーを Windows 7 の explorer で開く（LocalServer32 の REG_EXPAND_SZ 展開、/factory サーバーの待機、DelegateExecute の動詞にファイルを渡す）。ライブラリが開いていた | 一部あり（REG_EXPAND_SZ の展開は常に。Windows と同じ） |
+| 0113 | xmllite: XmlReaderProperty_RandomAccess を受け付ける。Windows 7 の shell32 がライブラリ（*.library-ms）を読めず、アイコンが一般のものになり、フォルダーも空だった | なし |
 
 ## 並び順の考え方
 

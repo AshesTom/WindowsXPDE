@@ -107,6 +107,9 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - Windows キー、Ctrl+Esc（Linux の窓からも）、Win+R、Win+E、Alt+Tab が使えます。
 - フォルダーは、Windows のアプリからも、Wine 自身のプログラム（`wine explorer C:\パス`、`wine start C:\パス`）からも Windows 7 の
   フォルダーウィンドウで開きます（Wine の 0112）。フォルダーウィンドウのアドレス バーと検索欄の高さは実機と同じです（Wine の 0111）。
+- フォルダーウィンドウのナビゲーション ウィンドウは実機と同じです: 「お気に入り」のダウンロード・デスクトップ・最近表示した場所
+  （prefix の `profile-links.exe` が Links フォルダーに作るリンクと日本語の名前）、ライブラリごとのアイコン（Wine の 0113）。
+  ダウンロードが Linux のフォルダーへのリンクのときは、そこに desktop.ini を置かないため、アイコンは普通のフォルダーです。
 - Alt+Tab は Windows 7 ベーシックの形です。Windows 7 のテーマの `AltTab` クラスで描き（背景、選んだ項目の枠、題の字体と色）、
   大きさや並びは Windows 7 SP1 の実機に合わせています（1 行に 7 個、行は作業領域に入るだけ）。最初の行の最後に「デスクトップ」が
   入り、選ぶとすべての窓を最小化します（Windows 7 では、デスクトップを見せたあと元に戻せますが、ここでは窓ごとに戻します）。
@@ -127,7 +130,7 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
-Windows 7 のシェルのために足した Wine のパッチは 0078〜0112 です（[patches.md](patches.md)）。
+Windows 7 のシェルのために足した Wine のパッチは 0078〜0113 です（[patches.md](patches.md)）。
 
 ## 制限
 

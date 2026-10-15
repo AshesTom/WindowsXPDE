@@ -38,7 +38,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 11
+VERSION = 12
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -240,7 +240,7 @@ def create(assets, dest, home, wine):
     assets, dest, home = assets.resolve(strict=True), dest.resolve(), home.resolve(strict=True)
     if dest.exists():
         raise SystemExit(f'Refusing existing prefix: {dest}')
-    for tool in ('theme-fonts.exe', 'theme-settings.exe', 'wallpaper-convert.exe'):
+    for tool in ('theme-fonts.exe', 'theme-settings.exe', 'wallpaper-convert.exe', 'profile-links.exe'):
         if not (ROOT / '.local/bridge' / tool).is_file():
             raise SystemExit(f'Run bridge-wm/build.sh first: missing {tool}')
     media = json.loads((assets / 'media.json').read_text())
@@ -284,6 +284,7 @@ def create(assets, dest, home, wine):
                    windows_path(themes / 'TranscodedWallpaper.bmp'))
         start_menu(prefix, assets, user)
         profile_folders(prefix, user)
+        profile_links(prefix, user)
         (dest / 'dosdevices/h:').symlink_to(home)
         prefix.run('regedit', '/s', windows_path(assets / 'registry.reg'), timeout=600)
         prefix.wow64_registry(assets)
@@ -349,6 +350,37 @@ def profile_folders(prefix, user):
         if ini.exists():
             prefix.run('attrib', '+s', 'C:\\' + str(folder.relative_to(prefix.path / 'drive_c')).replace('/', '\\'),
                        check=False)
+
+
+# Windows 7's desktop.ini of the Links folder, with the names of the links
+# profile-links.exe makes (read on the reference machine).
+LINKS_INI = ('[.ShellClassInfo]\r\nLocalizedResourceName=@%SystemRoot%\\system32\\shell32.dll,-21810\r\n'
+             'IconResource=%SystemRoot%\\system32\\imageres.dll,-185\r\nDefaultDropEffect=4\r\n'
+             '[LocalizedFileNames]\r\nRecentPlaces.lnk=@shell32.dll,-37217\r\nDesktop.lnk=@shell32.dll,-21769\r\n'
+             'Downloads.lnk=@shell32.dll,-21798\r\n')
+
+
+def profile_links(prefix, user):
+    """Windows 7's Favorites in folder windows: the Links folder's links to the desktop,
+    Downloads and Recent Places, with their Japanese names."""
+    tool = ROOT / '.local/bridge/profile-links.exe'
+    folder = prefix.path / f'drive_c/users/{user}/Links'
+    if not tool.is_file():
+        print(f'Skipping the Favorites links: missing {tool} (run bridge-wm/build.sh)', flush=True)
+        return
+    prefix.run(str(tool), check=False)
+    if not folder.is_dir() or folder.is_symlink():
+        return
+    ini = folder / 'desktop.ini'
+    if ini.exists() and b'L\x00o\x00c\x00a\x00l\x00i\x00z\x00e\x00d\x00F\x00i\x00l\x00e' in ini.read_bytes():
+        return
+    if ini.exists():
+        ini.unlink()
+    ini.write_bytes(b'\xff\xfe' + LINKS_INI.encode('utf-16-le'))
+    path = 'C:\\' + str(ini.relative_to(prefix.path / 'drive_c')).replace('/', '\\')
+    prefix.run('attrib', '+h', path, check=False)
+    prefix.run('attrib', '+s', path, check=False)
+    prefix.run('attrib', '+s', 'C:\\' + str(folder.relative_to(prefix.path / 'drive_c')).replace('/', '\\'), check=False)
 
 
 def start_menu(prefix, assets, user):
@@ -502,6 +534,8 @@ def stage(dest, wine=None):
             effects(prefix)
         if applied and applied[0].isdigit() and int(applied[0]) < 11:
             profile_folders(prefix, pwd.getpwuid(os.getuid()).pw_name)
+        if applied and applied[0].isdigit() and int(applied[0]) < 12:
+            profile_links(prefix, pwd.getpwuid(os.getuid()).pw_name)
     finally:
         prefix.stop()
     # After every Wine process of the prefix has ended: a Wine update can go on

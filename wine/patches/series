@@ -110,3 +110,4 @@
 0110-user32-dt-prefixonly.patch
 0111-uxtheme-win7-min-part-size.patch
 0112-win7-folder-windows-from-wine-programs.patch
+0113-xmllite-random-access.patch
