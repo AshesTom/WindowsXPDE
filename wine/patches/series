@@ -105,3 +105,4 @@
 0105-comctl32-win7-listview.patch
 0106-user32-win7-system-icons.patch
 0107-user32-win7-message-boxes.patch
+0108-win32u-win7-cleartype.patch
