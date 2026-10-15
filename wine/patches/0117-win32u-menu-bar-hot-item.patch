@@ -1,0 +1,166 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] win32u: the hot item and inactive text of Windows 7's menu bars
+
+Purpose: draw themed menu bars as Windows 7 does when the mouse is over
+them and when their window is inactive.
+Windows behavior: while the window is active and no menu is open, the
+bar item under the mouse is drawn with MENU_BARITEM's hot state; an
+inactive window's bar has no hot item and gray text (109,109,109).
+Wine before: the bar item was drawn only when pushed, and the text kept
+the active color.
+Change: DefWindowProc's WM_NCMOUSEMOVE and WM_NCMOUSELEAVE follow the
+bar item under the mouse (TME_NONCLIENT | TME_LEAVE) and redraw it with
+MBI_HOT or MBI_DISABLEDHOT; selecting a bar item clears it. An inactive
+bar's items use the disabled text color.
+Evidence: w7cmp.exe on Windows 7 and in the session, the mouse over a
+bar item of the active window and of an inactive one, and moved into
+the client area: the same as Windows 7 apart from the known glyph
+differences.
+Scope: themed menus (the Windows 7 shell with a version 4 visual style).
+---
+ dlls/win32u/defwnd.c         |  5 +++++
+ dlls/win32u/menu.c           | 52 +++++++++++++++++++++++++++++++++++++++-----
+ dlls/win32u/win32u_private.h |  1 +
+ 3 files changed, 53 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/win32u/defwnd.c b/dlls/win32u/defwnd.c
+index 42fc315..f807738 100644
+--- a/dlls/win32u/defwnd.c
++++ b/dlls/win32u/defwnd.c
+@@ -2494,6 +2494,10 @@ static LRESULT handle_nc_mouse_move( HWND hwnd, WPARAM wparam, LPARAM lparam )
+ 
+     TRACE( "hwnd=%p wparam=%#lx lparam=%#lx\n", hwnd, (long)wparam, lparam );
+ 
++    pt.x = (short)LOWORD( lparam );
++    pt.y = (short)HIWORD( lparam );
++    track_menu_bar_hot_item( hwnd, wparam == HTMENU ? &pt : NULL );
++
+     if (wparam != HTHSCROLL && wparam != HTVSCROLL)
+         return 0;
+ 
+@@ -2515,6 +2519,7 @@ static LRESULT handle_nc_mouse_leave( HWND hwnd )
+ 
+     TRACE( "hwnd=%p\n", hwnd );
+ 
++    track_menu_bar_hot_item( hwnd, NULL );
+     if (style & WS_HSCROLL)
+         handle_scroll_event( hwnd, SB_HORZ, WM_NCMOUSELEAVE, pt );
+     if (style & WS_VSCROLL)
+diff --git a/dlls/win32u/menu.c b/dlls/win32u/menu.c
+index ed7b9ff..d71fdb9 100644
+--- a/dlls/win32u/menu.c
++++ b/dlls/win32u/menu.c
+@@ -64,6 +64,7 @@ struct menu
+     UINT        nItems;         /* number of items in the menu */
+     HWND        hWnd;           /* window containing the menu */
+     UINT        FocusedItem;    /* currently focused item */
++    UINT        hot_item;       /* menu bar item under the mouse (see track_menu_bar_hot_item) */
+     HWND        hwndOwner;      /* window receiving the messages for ownerdraw */
+     BOOL        bScrolling;     /* scroll arrows are active */
+     UINT        nScrollPos;     /* current scroll position */
+@@ -604,6 +605,7 @@ static HMENU create_menu( BOOL is_popup )
+ 
+     if (!(menu = calloc( 1, sizeof(*menu) ))) return 0;
+     menu->FocusedItem = NO_SELECTED_ITEM;
++    menu->hot_item = NO_SELECTED_ITEM;
+     menu->refcount = 1;
+     if (is_popup) menu->wFlags |= MF_POPUP;
+ 
+@@ -2630,7 +2632,10 @@ static void draw_themed_bar_item( HWND hwnd, struct menu *menu, HDC hdc, struct
+                                   UINT odaction )
+ {
+     BOOL grayed = item->fState & MF_GRAYED, hilite = item->fState & MF_HILITE;
+-    int state = grayed ? (hilite ? MBI_DISABLEDPUSHED : MBI_DISABLED) : (hilite ? MBI_PUSHED : MBI_NORMAL);
++    BOOL active = win_get_flags( hwnd ) & WIN_NCACTIVATED;
++    BOOL hot = !hilite && item - menu->items == menu->hot_item && active;
++    int state = grayed ? (hilite ? MBI_DISABLEDPUSHED : hot ? MBI_DISABLEDHOT : MBI_DISABLED) :
++                         (hilite ? MBI_PUSHED : hot ? MBI_HOT : MBI_NORMAL);
+     RECT bar = menu->items_rect;
+     HRGN clip;
+ 
+@@ -2641,9 +2646,8 @@ static void draw_themed_bar_item( HWND hwnd, struct menu *menu, HDC hdc, struct
+         NtGdiExtSelectClipRgn( hdc, clip, RGN_AND );
+         NtGdiDeleteObjectApp( clip );
+     }
+-    draw_menu_part( hwnd, hdc, MENU_BARBACKGROUND,
+-                    (win_get_flags( hwnd ) & WIN_NCACTIVATED) ? MB_ACTIVE : MB_INACTIVE, &bar );
+-    if (hilite) draw_menu_part( hwnd, hdc, MENU_BARITEM, state, &rect );
++    draw_menu_part( hwnd, hdc, MENU_BARBACKGROUND, active ? MB_ACTIVE : MB_INACTIVE, &bar );
++    if (hilite || hot) draw_menu_part( hwnd, hdc, MENU_BARITEM, state, &rect );
+     if (item->hbmpItem)
+     {
+         RECT bmprc;
+@@ -2658,8 +2662,9 @@ static void draw_themed_bar_item( HWND hwnd, struct menu *menu, HDC hdc, struct
+         set_viewport_org( hdc, org.x, org.y, NULL );
+         rect.left += item->bmpsize.cx;
+     }
++    /* an inactive window's bar has gray text, like disabled items */
+     draw_themed_item_text( hdc, item, rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+-                           menu_theme.bar_text[state - 1], 0 );
++                           menu_theme.bar_text[(active || hilite ? state : MBI_DISABLED) - 1], 0 );
+ }
+ 
+ static void draw_themed_popup_item( HWND hwnd, struct menu *menu, HDC hdc, struct menu_item *item, RECT rect,
+@@ -3581,6 +3586,42 @@ static void ensure_menu_item_visible( struct menu *menu, UINT index, HDC hdc )
+     }
+ }
+ 
++/* Windows 7's themed menu bars light the item under the mouse while the
++ * window is active and no menu is open (seen on Windows 7 SP1); pt (screen
++ * coordinates) is NULL when the mouse is elsewhere */
++void track_menu_bar_hot_item( HWND hwnd, const POINT *pt )
++{
++    struct menu *menu;
++    UINT index = NO_SELECTED_ITEM, old;
++    HDC hdc;
++
++    if (!themed_menus() || is_win_menu_disallowed( hwnd ) || is_menu_active()) return;
++    if (!(menu = unsafe_menu_ptr( get_menu( hwnd ) )) || menu->hWnd != hwnd) return;
++    if (pt && (win_get_flags( hwnd ) & WIN_NCACTIVATED) && menu->FocusedItem == NO_SELECTED_ITEM)
++    {
++        TRACKMOUSEEVENT tme = { sizeof(tme), TME_QUERY };
++
++        find_item_by_coords( menu, *pt, &index );
++        if (index != NO_SELECTED_ITEM && (menu->items[index].fType & MF_SEPARATOR)) index = NO_SELECTED_ITEM;
++        NtUserTrackMouseEvent( &tme );
++        if ((tme.dwFlags & (TME_NONCLIENT | TME_LEAVE)) != (TME_NONCLIENT | TME_LEAVE) || tme.hwndTrack != hwnd)
++        {
++            tme.dwFlags = TME_NONCLIENT | TME_LEAVE;
++            tme.hwndTrack = hwnd;
++            NtUserTrackMouseEvent( &tme );
++        }
++    }
++    if ((old = menu->hot_item) == index) return;
++    menu->hot_item = index;
++    if (!(hdc = NtUserGetDCEx( hwnd, 0, DCX_CACHE | DCX_WINDOW ))) return;
++    NtGdiSelectFont( hdc, get_menu_font( FALSE ));
++    if (old != NO_SELECTED_ITEM && old < menu->nItems)
++        draw_menu_item( hwnd, menu, hwnd, hdc, &menu->items[old], TRUE, ODA_SELECT );
++    if (index != NO_SELECTED_ITEM)
++        draw_menu_item( hwnd, menu, hwnd, hdc, &menu->items[index], TRUE, ODA_SELECT );
++    NtUserReleaseDC( hwnd, hdc );
++}
++
+ static void select_item( HWND owner, HMENU hmenu, UINT index, BOOL send_select, HMENU topmenu )
+ {
+     struct menu *menu;
+@@ -3592,6 +3633,7 @@ static void select_item( HWND owner, HMENU hmenu, UINT index, BOOL send_select,
+     if (!menu || !menu->nItems || !menu->hWnd) return;
+ 
+     if (menu->FocusedItem == index) return;
++    menu->hot_item = NO_SELECTED_ITEM;
+     if (menu->wFlags & MF_POPUP) hdc = NtUserGetDC( menu->hWnd );
+     else hdc = NtUserGetDCEx( menu->hWnd, 0, DCX_CACHE | DCX_WINDOW);
+     if (!top_popup)
+diff --git a/dlls/win32u/win32u_private.h b/dlls/win32u/win32u_private.h
+index dab6f7b..bbd23fe 100644
+--- a/dlls/win32u/win32u_private.h
++++ b/dlls/win32u/win32u_private.h
+@@ -120,6 +120,7 @@ extern LRESULT popup_menu_window_proc( HWND hwnd, UINT message, WPARAM wparam, L
+ extern BOOL set_window_menu( HWND hwnd, HMENU handle );
+ extern void track_keyboard_menu_bar( HWND hwnd, UINT wparam, WCHAR ch );
+ extern void track_mouse_menu_bar( HWND hwnd, INT ht, int x, int y );
++extern void track_menu_bar_hot_item( HWND hwnd, const POINT *pt );
+ 
+ /* message.c */
+ extern NTSTATUS send_hardware_message( HWND hwnd, UINT flags, const INPUT *input, LPARAM lparam );

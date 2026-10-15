@@ -113,3 +113,5 @@
 0113-xmllite-random-access.patch
 0114-kernelbase-number-format-zero.patch
 0115-windowscodecs-fant-scaling.patch
+0116-comctl32-listview-hot-item.patch
+0117-win32u-menu-bar-hot-item.patch
