@@ -1,0 +1,122 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] comdlg32: open folders and return absolute items with Windows' shell
+
+Purpose: make the Vista-style open and save dialogs work when the shell
+DLLs are Windows' (Windows 7's shell uses this dialog for its Run box's
+Browse button).
+Windows behavior: a shell view in a file dialog calls the dialog's
+ICommDlgBrowser::OnDefaultCommand for a double click or Enter on any item,
+folders included; the dialog opens a folder. Open (or Enter in the
+dialog) with an empty file name and a folder selected opens the folder. SHCreateShellItemArray takes
+child item IDs of its parent folder.
+Wine before: the dialog left folders to Wine's explorer browser, which
+opens them before it asks the dialog; with Windows 7's explorer browser a
+double click on a folder did nothing. Open with a folder selected and no
+file name did nothing with either shell32. The dialog made its result from
+absolute ID lists with SHCreateShellItemArray and the desktop as parent,
+which Wine's shell32 accepts; Windows 7's shell32 kept only their last ID,
+so H:\file.txt came back as the desktop's file.txt.
+Change: OnDefaultCommand, and Open with an empty file name (except with
+FOS_PICKFOLDERS), browse to a selected folder; the result array is made
+with SHCreateShellItemArrayFromIDLists.
+Evidence: in Windows 7's shell, the Run box's Browse dialog opens folders
+on a double click and returns H:\テスト.txt; a probe calling shell32's
+GetFileNameFromBrowse and IFileOpenDialog / IFileSaveDialog in programs
+with Wine's shell32 (64-bit and 32-bit) returns the same paths as before.
+Scope: comdlg32's IFileDialog; with Wine's shell32 the default command for
+folders is still handled by the explorer browser first.
+---
+ dlls/comdlg32/itemdlg.c | 59 +++++++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 57 insertions(+), 2 deletions(-)
+
+diff --git a/dlls/comdlg32/itemdlg.c b/dlls/comdlg32/itemdlg.c
+index 830d88b..819cb41 100644
+--- a/dlls/comdlg32/itemdlg.c
++++ b/dlls/comdlg32/itemdlg.c
+@@ -738,8 +738,10 @@ static HRESULT on_default_action(FileDialogImpl *This)
+                 This->psia_results = NULL;
+             }
+ 
+-            hr = SHCreateShellItemArray(NULL, psf_desktop, file_count, (PCUITEMID_CHILD_ARRAY)pidla,
+-                                        &This->psia_results);
++            /* The ID lists are absolute: SHCreateShellItemArray takes children of
++             * its parent (Windows' shell32 keeps only their last ID). */
++            hr = SHCreateShellItemArrayFromIDLists(file_count, (PCIDLIST_ABSOLUTE_ARRAY)pidla,
++                                                   &This->psia_results);
+ 
+             IShellFolder_Release(psf_desktop);
+ 
+@@ -2230,10 +2232,54 @@ static LRESULT on_wm_destroy(FileDialogImpl *This)
+     return TRUE;
+ }
+ 
++/* The selected item, when it is a single folder. */
++static IShellItem *selected_folder(IShellView *shv)
++{
++    IShellItemArray *items;
++    IShellItem *item = NULL;
++    IDataObject *pdo;
++    SFGAOF attr;
++    DWORD count;
++
++    if(FAILED(IShellView_GetItemObject(shv, SVGIO_SELECTION, &IID_IDataObject, (void**)&pdo)))
++        return NULL;
++    if(SUCCEEDED(SHCreateShellItemArrayFromDataObject(pdo, &IID_IShellItemArray, (void**)&items)))
++    {
++        if(SUCCEEDED(IShellItemArray_GetCount(items, &count)) && count == 1 &&
++           SUCCEEDED(IShellItemArray_GetItemAt(items, 0, &item)) &&
++           (FAILED(IShellItem_GetAttributes(item, SFGAO_FOLDER, &attr)) || !(attr & SFGAO_FOLDER)))
++        {
++            IShellItem_Release(item);
++            item = NULL;
++        }
++        IShellItemArray_Release(items);
++    }
++    IDataObject_Release(pdo);
++    return item;
++}
++
+ static LRESULT on_idok(FileDialogImpl *This)
+ {
++    IShellView *shv;
++    IShellItem *folder = NULL;
++    LPWSTR name = NULL;
+     TRACE("%p\n", This);
+ 
++    /* With no file name, Open opens the selected folder (unless folders are what is picked). */
++    if(!(This->options & FOS_PICKFOLDERS) && !get_file_name(This, &name) &&
++       SUCCEEDED(IExplorerBrowser_GetCurrentView(This->peb, &IID_IShellView, (void**)&shv)))
++    {
++        folder = selected_folder(shv);
++        IShellView_Release(shv);
++    }
++    if(name) CoTaskMemFree(name);
++    if(folder)
++    {
++        IExplorerBrowser_BrowseToObject(This->peb, (IUnknown*)folder, SBSP_DEFBROWSER);
++        IShellItem_Release(folder);
++        return FALSE;
++    }
++
+     if(SUCCEEDED(on_default_action(This)))
+         EndDialog(This->dlg_hwnd, S_OK);
+ 
+@@ -3650,9 +3696,18 @@ static HRESULT WINAPI ICommDlgBrowser3_fnOnDefaultCommand(ICommDlgBrowser3 *ifac
+                                                           IShellView *shv)
+ {
+     FileDialogImpl *This = impl_from_ICommDlgBrowser3(iface);
++    IShellItem *folder;
+     HRESULT hr;
+     TRACE("%p (%p)\n", This, shv);
+ 
++    /* Wine's explorer browser opens a folder itself; Windows' asks the dialog. */
++    if((folder = selected_folder(shv)))
++    {
++        IExplorerBrowser_BrowseToObject(This->peb, (IUnknown*)folder, SBSP_DEFBROWSER);
++        IShellItem_Release(folder);
++        return S_OK;
++    }
++
+     hr = on_default_action(This);
+ 
+     if(SUCCEEDED(hr))

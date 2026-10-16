@@ -80,7 +80,10 @@ class Manager:
         # exposures, and they and their frames change size often; a
         # redirected window's every resize costs a new off-screen image,
         # which made resizing a native client several times slower in a VM.
+        # Their frames are redirected only while they move (frame_moves).
         self.redirect = redirect and self.d.has_extension('Composite')
+        self.previous_classes = None
+        self.overlays = {}  # override-redirect Windows 7 shell windows kept above the taskbar and Start menu
         # Windows without a cursor of their own, such as the menus of Linux
         # applications while they hold the pointer, show the root's: an
         # arrow, as window managers set, instead of the X server's cross.
@@ -205,6 +208,21 @@ class Manager:
                 w.unmap()
             return
         client['hidden'] = False
+        if client['kind'] == 'normal' and client['owner'] and not client['hwnd'] and not client.get('placed'):
+            # An owned Linux window has no frame; keep it inside the work area
+            # (GTK's file chooser asks for a fixed size, larger than small screens),
+            # centred on its owner unless it placed itself (GTK 4 does not).
+            client['placed'] = True
+            x, y, width, height = client['geometry'][:4]
+            width, height = self.fit(client, 0, 0)
+            owner = self.clients.get(client['owner'])
+            if owner and not self.positioned(client):
+                ox, oy, owidth, oheight = owner['geometry'][:4]
+                x, y = ox + (owidth-width) // 2, oy + (oheight-height) // 2
+            ax, ay, awidth, aheight = self.area
+            x, y = max(ax, min(x, ax+awidth-width)), max(ay, min(y, ay+aheight-height))
+            if (x, y, width, height) != client['geometry'][:4]:
+                self.configure(client, x=x, y=y, width=width, height=height)
         self.setprop(w, 'WM_STATE', self.atom('WM_STATE'), [1, 0])
         w.map()
         if client['kind'] in ('normal', 'popup'):
@@ -213,7 +231,9 @@ class Manager:
         self.workarea()
 
     def update_redirect(self, c):
-        wanted = self.redirect and bool(c['hwnd']) and c['kind'] != 'proxy'
+        # Frames only while they move (frame_moves)
+        wanted = self.redirect and (c['kind'] == 'proxy' and c.get('moving', False) or
+                                    bool(c['hwnd']) and c['kind'] != 'proxy')
         if wanted != c.get('redirected', False):
             c['redirected'] = wanted
             (composite.redirect_window if wanted else composite.unredirect_window)(c['w'], composite.RedirectAutomatic)
@@ -233,6 +253,14 @@ class Manager:
             title = self.prop(w, '_NET_WM_NAME')
             name = bytes(title).decode('utf-8', 'replace') if len(title) else (w.get_wm_name() or '')
             c['title'] = name.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')[:500]
+        if atom in (None, Xatom.WM_CLASS):
+            # The application's class: Windows 7's taskbar groups a Linux
+            # application's windows by it (classes.tsv, proxy).
+            try:
+                names = w.get_wm_class()
+            except error.XError:
+                names = None
+            c['class'] = (names[1] if names and len(names) > 1 else '').replace('\t', ' ').replace('\n', ' ')[:100]
         if atom in (None, self.atom('WM_TRANSIENT_FOR')):
             try:
                 owner = w.get_wm_transient_for()
@@ -357,6 +385,16 @@ class Manager:
         temporary.write_text(f'{self.shell_keys} {kind}' + ''.join(f' {k:x}' for k in keys) + '\n')
         temporary.replace(self.ipc / 'shellkeys.tsv')
 
+    def raise_overlays(self):
+        # Windows 7's Start button over the taskbar and the user picture over the
+        # Start menu are unmanaged (override-redirect) windows of their own;
+        # raising the taskbar or the menu must not cover them.
+        for w in list(self.overlays.values()):
+            try:
+                w.configure(stack_mode=X.Above)
+            except error.XError:
+                self.overlays.pop(w.id, None)
+
     def focus(self, w):
         # Wine activation targets the proxy's XID; the native client owns X
         # keyboard focus and the single EWMH task identity.
@@ -371,6 +409,7 @@ class Manager:
             # without becoming the active application task or an Alt+Tab entry.
             w.map()
             w.configure(stack_mode=X.Above)
+            self.raise_overlays()
             if self.atom('WM_TAKE_FOCUS') in self.prop(w, 'WM_PROTOCOLS'):
                 self.message(w, 'WM_PROTOCOLS', [self.atom('WM_TAKE_FOCUS'), X.CurrentTime, 0, 0, 0])
             w.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
@@ -386,6 +425,7 @@ class Manager:
         states = list(self.prop(w, '_NET_WM_STATE'))
         self.setprop(w, '_NET_WM_STATE', Xatom.ATOM, [s for s in states if s != self.atom('_NET_WM_STATE_HIDDEN')])
         w.configure(stack_mode=X.Above)
+        self.raise_owned(w.id)
         protocols = self.prop(w, 'WM_PROTOCOLS')
         if self.atom('WM_TAKE_FOCUS') in protocols:
             self.message(w, 'WM_PROTOCOLS', [self.atom('WM_TAKE_FOCUS'), X.CurrentTime, 0, 0, 0])
@@ -394,6 +434,26 @@ class Manager:
         self.setprop(self.root, '_NET_ACTIVE_WINDOW', Xatom.WINDOW, [w.id])
         self.restack()
         self.redraw_native(w)
+
+    def raise_owned(self, owner, seen=()):
+        """Keep the windows that OWNER owns (WM_TRANSIENT_FOR) above it, as Windows
+        keeps owned windows above their owner: a click on the caption of a window
+        with a modal dialog raised the window over its dialog."""
+        seen = (*seen, owner)
+        owned = [c for c in self.clients.values()
+                 if c['kind'] == 'normal' and not c['hidden'] and c['owner'] == owner and c['w'].id not in seen]
+        if not owned:
+            return
+        try:
+            order = [w.id for w in self.root.query_tree().children]
+        except error.XError:
+            return
+        for c in sorted(owned, key=lambda c: order.index(c['w'].id) if c['w'].id in order else len(order)):
+            try:
+                c['w'].configure(stack_mode=X.Above)
+            except error.XError:
+                continue
+            self.raise_owned(c['w'].id, seen)
 
     def message(self, w, name, values):
         w.send_event(protocol.event.ClientMessage(window=w, client_type=self.atom(name), data=(32, values)))
@@ -411,12 +471,16 @@ class Manager:
         self.setprop(w, '_NET_WM_STATE', Xatom.ATOM, list(set(states + [hidden])))
         if self.active == w.id:
             self.active = 0
-            visible = [c for c in self.clients.values() if c['kind'] == 'normal' and not c['hidden']]
-            if visible:
-                self.focus(visible[-1]['w'])
-            else:
-                self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
-                self.setprop(self.root, '_NET_ACTIVE_WINDOW', Xatom.WINDOW, [0])
+            self.focus_visible()
+
+    def focus_visible(self):
+        """Focus the most recently managed client that is shown, or nothing."""
+        visible = [c for c in self.clients.values() if c['kind'] == 'normal' and not c['hidden']]
+        if visible:
+            self.focus(visible[-1]['w'])
+        else:
+            self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
+            self.setprop(self.root, '_NET_ACTIVE_WINDOW', Xatom.WINDOW, [0])
 
     def close(self, w):
         if self.atom('WM_DELETE_WINDOW') in self.prop(w, 'WM_PROTOCOLS'):
@@ -437,8 +501,10 @@ class Manager:
                     frame['w'].unmap()
                 del self.frames[frame_id]
         if self.active == window_id:
+            # Focus the next window still shown, not a minimized one (Wine
+            # withdraws a minimized window that it restores, and maps it again).
             self.active = 0
-            self.cycle()
+            self.focus_visible()
         self.restack()
         self.workarea()
 
@@ -470,6 +536,7 @@ class Manager:
         for c in self.clients.values():
             if c['kind'] == 'popup' and not c['hidden']:
                 c['w'].configure(stack_mode=X.Above)
+        self.raise_overlays()
         ids = [i for i, c in self.clients.items() if c['kind'] != 'proxy']
         self.setprop(self.root, '_NET_CLIENT_LIST', Xatom.WINDOW, ids)
         stack = [self.frames.get(w.id, w.id) for w in self.root.query_tree().children if w.id in ids or w.id in self.frames]
@@ -613,6 +680,17 @@ class Manager:
             return False
         return bool(hints.flags & Xutil.USPosition) or c['geometry'][:2] != (0, 0)
 
+    def fit(self, c, frame_width, frame_height):
+        """The client's size, shrunk to fit the work area with its frame (not below its minimum size)."""
+        width, height = c['geometry'][2:4]
+        try:
+            hints = c['w'].get_wm_normal_hints()
+        except error.XError:
+            hints = None
+        min_width, min_height = (hints.min_width, hints.min_height) if hints and hints.flags & Xutil.PMinSize else (1, 1)
+        return (min(width, max(self.area[2]-frame_width, min_width, 1)),
+                min(height, max(self.area[3]-frame_height, min_height, 1)))
+
     def cascade(self, left, top):
         """Next XP default-window slot, as native client coordinates.
 
@@ -652,16 +730,23 @@ class Manager:
                 if metrics:
                     left, right, top, bottom, maximized = metrics
                     if not native['framed']:
-                        nx, ny = native['geometry'][:2]
-                        if self.positioned(native):
+                        nx, ny, nwidth, nheight = native['geometry'][:4]
+                        width, height = self.fit(native, left+right, top+bottom)
+                        if (width, height) != (nwidth, nheight):
+                            # Too large for the work area with its frame:
+                            # shrink it, centred, as other window managers do.
+                            ax, ay, awidth, aheight = self.area
+                            x = ax + left + max(0, (awidth-left-right-width) // 2)
+                            y = ay + top + max(0, (aheight-top-bottom-height) // 2)
+                        elif self.positioned(native):
                             # Keep an explicit position, but keep the first
                             # caption visible above content placed at 0,0.
                             x = max(nx, self.area[0]+left)
                             y = max(ny, self.area[1]+top)
                         else:
                             x, y = self.cascade(left, top)
-                        if (x, y) != (nx, ny):
-                            self.configure(native, x=x, y=y)
+                        if (x, y, width, height) != (nx, ny, nwidth, nheight):
+                            self.configure(native, x=x, y=y, width=width, height=height)
                         native['framed'] = True
                     if native['extents'] != [left, right, top, bottom]:
                         native['extents'] = [left, right, top, bottom]
@@ -684,6 +769,22 @@ class Manager:
             self.frames = frames
             self.restack()
         self.write_geometry()
+
+    def frame_moves(self, frame, values):
+        """Keep a frame's pixels off screen while it moves, not while it changes size.
+
+        Its client moves first (follow_frame) and covers the frame's leading
+        edge for a moment; the frame's move then cannot copy that edge, and
+        it stayed black until Wine painted it again, about 5 ms in each step
+        of a drag (wide frames such as Windows 7's showed it). A redirected
+        frame moves from its off-screen image. Redirected, each size change
+        would cost a new image, so a size change ends it; the switch costs
+        one repaint, without black."""
+        x, y, width, height, _ = frame['geometry']
+        resized = values.get('width', width) != width or values.get('height', height) != height
+        if resized or values.get('x', x) != x or values.get('y', y) != y:
+            frame['moving'] = not resized
+            self.update_redirect(frame)
 
     def follow_frame(self, frame_id, values):
         """Move a native client with its frame, in the same pass.
@@ -743,6 +844,7 @@ class Manager:
 
     def snapshot(self):
         lines = []
+        classes = []
         focused = self.d.get_input_focus().focus
         # An XP menu can take focus without changing the EWMH active client.
         # Do not keep stealing Win32 foreground from that menu back to a proxy.
@@ -770,6 +872,13 @@ class Manager:
                     self.previous_icons[i] = data
                 c['icon_dirty'] = False
             lines.append(f'{i:x}\t{int(c["hidden"])}\t{int(i == self.active and i == focused_id)}\t{c["title"]}\n')
+            classes.append(f'{i:x}\t{c.get("class", "")}\n')
+        text = ''.join(classes)
+        if text != self.previous_classes:
+            temp = self.ipc / 'classes.tmp'
+            temp.write_text(text, encoding='utf-8')
+            temp.replace(self.ipc / 'classes.tsv')
+            self.previous_classes = text
         text = ''.join(lines)
         if text != self.previous_snapshot:
             temp = self.ipc / 'windows.tmp'
@@ -833,6 +942,14 @@ class Manager:
         if e.type == X.MapRequest:
             self.manage(e.window)
         elif e.type == X.MapNotify:
+            if e.override and e.window.id not in self.overlays:
+                try:
+                    cls = bytes(self.prop(e.window, '_WIN4WINE_CLASS')).strip(b'\0').lower()
+                except error.XError:
+                    cls = b''
+                if cls in (b'win4winestartbutton', b'desktop user picture'):
+                    self.overlays[e.window.id] = e.window
+                    self.restack()
             c = self.clients.get(e.window.id)
             if c and (c['kind'] == 'popup' or c['kind'] == 'normal' and self.active == e.window.id):
                 # Wine defers WM_TAKE_FOCUS while waiting for the initial map acknowledgement.
@@ -847,6 +964,7 @@ class Manager:
             if c:
                 moves = e.value_mask & (X.CWX | X.CWY | X.CWWidth | X.CWHeight)
                 if moves and e.window.id in self.frames:
+                    self.frame_moves(c, values)
                     self.follow_frame(e.window.id, values)
                 self.configure(c, **values)
                 if moves and c['kind'] == 'normal' and not c['hwnd']:
@@ -858,6 +976,7 @@ class Manager:
             if c and c['kind'] == 'dock':
                 self.workarea()
         elif e.type == X.DestroyNotify:
+            self.overlays.pop(e.window.id, None)
             self.unmanage(e.window.id)
         elif e.type == X.UnmapNotify:
             c = self.clients.get(e.window.id)

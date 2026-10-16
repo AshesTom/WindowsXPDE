@@ -31,6 +31,10 @@ win4wine がどの部品でできていて、どうつながっているかの�
   使わせます。ほかの Wine のアプリは Wine の DLL のままです。
 - Wine のパッチの多くは、環境変数 `WIN4WINE_EXTERNAL_SHELL` があるときだけ効きます（opt-in。[patches.md](patches.md)）。
 - prefix は 64-bit（WoW64）で、XP の DLL は `syswow64` に置きます。XP のシェルのための COM の登録は 32-bit の側にだけ書きます。
+- ReactOS のシェル（`C:\ros\ros-explorer.exe`）と Windows 7 のシェル（`C:\w7\w7-explorer.exe`、64bit）も同じ形で、専用の prefix で
+  動かします（[reactos.md](reactos.md)、[windows7.md](windows7.md)）。session.json の `shell` で選び、supervisor はその prefix の
+  `stage`（`prefix/reactos.py`、`prefix/win7.py`）を使います。Windows 7 のシェルでは `WIN4WINE_SHELL=win7` も設定し、proxy は
+  Linux の窓に `WM_CLASS` ごとの AppUserModelID を付けます（Windows 7 のタスクバーはこれでボタンをまとめます）。
 
 ## WM（`bridge-wm/wm.py`）
 
@@ -42,6 +46,7 @@ X11 のウィンドウマネージャーです。枠を自分では描かず（r
   それが持つ窓はタスクバーより上に置きます。
 - タスクバーの位置から作業領域（`_NET_WORKAREA`）を作ります。
 - クリックでウィンドウを有効にします。デスクトップとタスクバーをクリックすると、そこにキーボードを渡します。
+  上げた窓が持つ窓（`WM_TRANSIENT_FOR`。モーダルのダイアログなど）は、Windows と同じくその上に保ちます。
 - Linux の窓の枠（proxy の窓）をその窓のすぐ下に置き、一緒に動かします（下の「Linux の窓の XP の枠」）。
 - Alt+Tab、Windows キー、Ctrl+Esc を受け取り、XP のシェルに渡します（下の「キー操作」）。
 - `Gtk/DecorationLayout` を `:` にする XSETTINGS を出し、GTK のヘッダーバーの閉じるボタンなどを隠します（ほかの settings
@@ -50,7 +55,9 @@ X11 のウィンドウマネージャーです。枠を自分では描かず（r
   `composite`、既定は `true`）。窓を動かしたり閉じたりして下の Wine の窓が見えたとき、X サーバーがその中身をそのまま出すので、
   その窓のプロセスが描き直すまで黒く見えることがありません（Wine は自分の X の窓の背景を黒にしています）。Linux の窓は自分で
   素早く描き直し、Linux の窓と枠は大きさがよく変わる（リダイレクトした窓は大きさが変わるたびに画像を作り直す）ので、
-  リダイレクトしません。影や透明などの効果はありません。
+  リダイレクトしません。ただし枠は、動いている間だけリダイレクトします（大きさが変わったら戻します）。ドラッグの 1 歩ごとに
+  先に動いた Linux の窓が枠の進む側の縁を隠し、枠が動くときにその縁を写せず、Wine が描き直すまで（約 5 ms）黒く見えていた
+  ためです（縁の太い Windows 7 で目立ちました）。影や透明などの効果はありません。
 
 WM は周期的には起きません。X のイベント、IPC ディレクトリの inotify、シグナルで起き、内容が変わったファイルだけを書きます。
 窓の位置や題名は X のイベントから覚えておき、X への問い合わせを減らしています。窓のドラッグでは 1 歩ごとに X のイベントが
@@ -110,8 +117,9 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 - 枠は、Linux の窓が X のキーボードを持っている間（`windows.tsv` の「有効」）だけ、アクティブの見た目にします。proxy は
   `WM_NCACTIVATE` で枠の見た目を直接切り替えます。Windows と同じく Wine は、最後の入力を受けていないプロセスの
   SetForegroundWindow を断り、入力は Linux の窓に届くので、代理は Win32 の前面にはなれないことが多いためです。
-  Luna の枠も、XP と同じく前面の窓ではなく `WM_NCACTIVATE` の状態で描きます（パッチ 0049）。
-- transient（ダイアログ）の Linux の窓には枠を付けず、タスクバーにも出しません。
+  Luna の枠も、XP と同じく前面の窓ではなく `WM_NCACTIVATE` の状態で描きます（パッチ 0055）。
+- transient（ダイアログ）の Linux の窓には枠を付けず、タスクバーにも出しません。作業領域より大きいもの（小さい画面での GTK の
+  ファイルを選ぶダイアログ）は作業領域に収まるように縮め、位置を指定しないもの（GTK 4）は親の窓の中央に置きます。
 
 ## アイコン
 
@@ -124,13 +132,15 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 
 - **Alt+Tab**: WM が Alt を押している間キーボードをつかみ、`switch.tsv` を書きます。proxy が XP の切り替えの窓を描き、
   確定すると `switch XID` を送り、WM がその窓を有効にします。proxy が動いていなければ、WM が順に切り替えます。
+  窓の形はシェルごとに違い（`WIN4WINE_SWITCHER`）、XP（既定）、ReactOS、Windows 7 の形があります。Windows 7 の形は
+  テーマ（aero.msstyles）の `AltTab` クラスの部品で描き、項目に「デスクトップ」が入ります（選ぶとすべての窓を最小化します）。
 - **Windows キーと Ctrl+Esc**: Wine の窓にフォーカスがあるときは、そのまま Wine に渡します（パッチ 0023 でスタートメニューが
   開き、Win+R などのホットキーも Wine が処理します）。Linux の窓にフォーカスがあるときは、WM が Windows キーを離すまでの
   キーを受け取って `shellkeys.tsv` に書き、proxy が `SendInput` で Wine に入れます。
 - **窓の寄せ（`window_snap` のときだけ）**: proxy が Win+←/→/↑/↓ を `RegisterHotKey` で受け取り、前面の窓（Linux の窓に
   フォーカスがあればその枠）を作業領域の左右の半分に寄せたり、最大化・元に戻す・最小化したりします。寄せる前の位置は proxy が
   覚えていて、Win+↓ や反対側の Win+矢印で戻します。X11 のセッションでは、Wine の移動のループが送る EVENT_SYSTEM_MOVESIZESTART/END
-  （パッチ 0073）でタイトルバーのドラッグを知り、ポインタが画面の左右の端・上端にあれば XP のドラッグの枠と同じ網掛けで行き先を
+  （パッチ 0032）でタイトルバーのドラッグを知り、ポインタが画面の左右の端・上端にあれば XP のドラッグの枠と同じ網掛けで行き先を
   示し、離したときに寄せます。寄せた窓には `Win4WineSnapRestore` を付け、ドラッグで引き剥がすと Wine が元の大きさに戻します。
   最大化した窓もタイトルバーをドラッグすると、Wine が元の大きさに戻して動かし続けます（`WIN4WINE_WINDOW_SNAP=1` のとき）。
   Wayland のセッションでは、元の大きさの窓のドラッグは labwc が行うので、`wayland/session.sh` が labwc の snapping を有効にした
@@ -158,7 +168,9 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 - 環境: Wine と Linux のアプリの `PATH` の先頭にセッションの Wine を置きます。日本語入力の変数（`XMODIFIERS` など）、
   字体の設定（`linux_font` の fontconfig）、DPI の設定（下の「DPI」）、カーソルのテーマも入れます。
 - 周期的には起きません（起動中のタスクバーを待つ間だけ 1 秒ごとに確かめます）。ログは `~/.local/state/win4wine/` に書き、
-  起動のたびに前回の分を `*.log.1` にします。
+  起動のたびに前回の分を `*.log.1` にします。Wine のログは既定ではエラーだけです（`WINEDEBUG=+timestamp,fixme-all`。
+  セッションのすべての Windows のプログラムが受け継ぎます）。調べるときは `session.json` の `"debug"` で Wine のチャンネルを
+  選びます（例: `"+timestamp,+seh,+loaddll"`）。
 
 ## Linux のアプリのスタートメニュー（`session/linux_apps.py`）
 
@@ -180,7 +192,7 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 ## DPI
 
 - DPI は XP と同じく prefix の `HKCU\Control Panel\Desktop\LogPixels` で決めます（`prefix/display.py --dpi`）。
-- XP のシェルと Wine のアプリは、その DPI で自分で描きます（パッチ 0044 で system DPI aware にします）。
+- XP のシェルと Wine のアプリは、その DPI で自分で描きます（パッチ 0049 で system DPI aware にします）。
 - supervisor は同じ値を Linux のアプリに渡します（`session/dpi.py`）。`Xft.dpi`、fontconfig の dpi、`XCURSOR_SIZE`、
   192 以上では GTK の `GDK_SCALE` も設定します。
 - ようこそ画面の DPI は `/etc/win4wine/greeter.json` の `dpi` で決めます（XP でもマシン全体の設定です）。
@@ -189,7 +201,7 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 
 - XP の「画面のフォントの縁を滑らかにする」の「標準」と「ClearType」を、prefix の `HKCU\Control Panel\Desktop` の
   `FontSmoothing` と `FontSmoothingType`（1 か 2）で決めます（`prefix/display.py --font-smoothing`）。既定は XP と同じく「標準」です。
-- ClearType では、XP のシェルと Wine のアプリの文字をパッチ 0077 が XP と同じ方式で描きます。
+- ClearType では、XP のシェルと Wine のアプリの文字をパッチ 0050 が XP と同じ方式で描きます。
   MS UI Gothic などの埋め込みビットマップのある大きさ（22 ピクセルまで）は、XP と同じく ClearType になりません。
 - supervisor は Linux のアプリにも RGB のサブピクセルで描くように伝えます（`session/dpi.py`。`Xft.rgba`、fontconfig の `rgba`）。
   Wayland のアプリ（GTK など）は自分の設定（GNOME の `font-rgba-order` など）に従います。

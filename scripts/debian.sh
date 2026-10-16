@@ -27,7 +27,7 @@ case ${1:-help} in
         sudo chroot "$fs" apt-get update
         # WoW64 Wine: 64-bit Unix libraries only, i686 and x86_64 MinGW for the PE modules.
         sudo chroot "$fs" apt-get install -y --no-install-recommends \
-            build-essential flex bison pkg-config git ca-certificates \
+            build-essential flex bison pkg-config git ca-certificates gettext \
             python3 python3-xlib cabextract p7zip-full xvfb xauth xterm x11-utils xdotool imagemagick \
             python3-gi-cairo gir1.2-pango-1.0 \
             libx11-dev libxext-dev libxrender-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev \

@@ -1,0 +1,76 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] riched20: lay out text without complex scripts with GDI in the Windows 7 shell
+
+Purpose: show Japanese text in Windows 7's search boxes (the Start menu's
+and the folder windows'), windowless rich edit controls in Segoe UI.
+Windows behavior: a rich edit control in Segoe UI shows Japanese text with
+another font's glyphs; in rewidth.exe's control the characters after "A"
+start at 9, 21, 33, 44 and 55.
+Wine before: every paragraph was laid out with Uniscribe's glyphs, which
+are the font's own (ScriptShape does not link fonts): the Japanese text was
+drawn as boxes, 8 pixels apart, or in the search boxes overlapped.
+Change: in the Windows 7 shell, a paragraph without complex scripts (the
+paragraph mark aside, a control character for Uniscribe) is measured and
+drawn with GDI, as one with a password character is; GDI links the
+fonts.
+Evidence: rewidth.exe on Windows 7 SP1 (Japanese, 96 dpi): Segoe UI 1 9
+21 33 44 55 59 67 73, Meiryo UI 1 9 21 33 43 53 57 65 72. In the session
+after the change: Segoe UI 1 9 21 33 45 57 60 68 75 (the kana take GDI's
+linked font, 12 pixels), Meiryo UI unchanged; the Start menu's search box
+shows typed and converted Japanese text.
+Scope: the Windows 7 shell (WIN4WINE_SHELL=win7).
+---
+ dlls/riched20/wrap.c | 33 ++++++++++++++++++++++++++++++---
+ 1 file changed, 30 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/riched20/wrap.c b/dlls/riched20/wrap.c
+index a4d638a..32c1866 100644
+--- a/dlls/riched20/wrap.c
++++ b/dlls/riched20/wrap.c
+@@ -814,6 +814,35 @@ static HRESULT shape_para( ME_Context *c, ME_Paragraph *para )
+     return hr;
+ }
+ 
++/* Windows 7's shell (win4wine: WIN4WINE_SHELL is win7). */
++static BOOL windows7_shell(void)
++{
++    static int shell = -1;
++    if (shell < 0)
++    {
++        WCHAR value[8];
++        DWORD len = GetEnvironmentVariableW( L"WIN4WINE_SHELL", value, ARRAY_SIZE(value) );
++        shell = len && len < ARRAY_SIZE(value) && !wcsicmp( value, L"win7" );
++    }
++    return shell;
++}
++
++/* Whether to lay out the paragraph's runs with Uniscribe's glyphs. These are
++ * the font's own, without font linking: Japanese text in a Latin font, such
++ * as Windows 7's search boxes in Segoe UI, was drawn as boxes or overlapped.
++ * In the Windows 7 shell, text without complex scripts is measured and drawn
++ * with GDI, which links fonts. */
++static BOOL shape_paragraph( ME_Context *c, ME_Paragraph *para )
++{
++    int len = para->text->nLen;
++
++    if (c->editor->password_char) return FALSE;
++    if (!windows7_shell()) return TRUE;
++    /* The paragraph's end (a control character, complex for Uniscribe) */
++    while (len && (para->text->szData[len - 1] == '\r' || para->text->szData[len - 1] == '\n')) len--;
++    return ScriptIsComplex( para->text->szData, len, SIC_COMPLEX ) == S_OK;
++}
++
+ static void ME_WrapTextParagraph( ME_TextEditor *editor, ME_Context *c, ME_Paragraph *para )
+ {
+   ME_Run *run;
+@@ -828,9 +857,7 @@ static void ME_WrapTextParagraph( ME_TextEditor *editor, ME_Context *c, ME_Parag
+   /* Calculate paragraph numbering label */
+   para_num_init( c, para );
+ 
+-  /* For now treating all non-password text as complex for better testing */
+-  if (!c->editor->password_char /* &&
+-      ScriptIsComplex( tp->member.para.text->szData, tp->member.para.text->nLen, SIC_COMPLEX ) == S_OK */)
++  if (shape_paragraph( c, para ))
+   {
+       if (SUCCEEDED( itemize_para( c, para ) ))
+           shape_para( c, para );

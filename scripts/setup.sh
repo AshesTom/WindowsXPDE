@@ -6,19 +6,24 @@
 #                    [--wine-install DIR | --jobs N]
 #   scripts/setup.sh --shell reactos [--lang ja|en] [--theme T] [--greeter] [--dpi N]
 #                    [--wayland] [--wine-install DIR | --jobs N]
+#   scripts/setup.sh --shell win7 --media ISO [--greeter] [--dpi N] [--wine-install DIR | --jobs N]
 #
-#   --media PATH   the user's Windows XP SP3 (x86) ISO or Windows directory
-#   --shell S      xp (the default) or reactos: ReactOS's shell (classic look),
-#                  downloaded from the ReactOS release, so no XP media is needed.
-#                  It is registered as its own session, "ReactOS Shell (Wine, X11)",
-#                  beside the XP shell's if that is set up too
+#   --media PATH   the user's Windows XP SP3 (x86) ISO or Windows directory; with
+#                  --shell win7, the user's Windows 7 SP1 x64 ISO
+#   --shell S      xp (the default), reactos or win7. reactos: ReactOS's shell
+#                  (classic look), downloaded from the ReactOS release, so no XP media
+#                  is needed. win7 (experimental): Windows 7's shell (Windows 7 Basic)
+#                  from the user's Windows 7 ISO, in the language of its media.
+#                  Each is registered as its own session ("ReactOS Shell (Wine, X11)",
+#                  "Windows 7 Shell (Wine, X11)"), beside the others that are set up
 #   --lang L       ja or en: the language of the ReactOS shell and its session
 #                  (default: ja when the current locale is Japanese, else en;
 #                  an existing prefix keeps its language: move it away to change
 #                  it); with --greeter, LightDM shows ReactOS's logon screen instead
 #                  of XP's Welcome screen
 #   --greeter      also make LightDM show XP's Welcome screen (greeter/), with XP's
-#                  cursors; LightDM becomes the display manager
+#                  cursors; LightDM becomes the display manager. With --shell win7,
+#                  Windows 7's logon screen
 #   --no-greeter   keep the display manager's own login screen (the default); XP's
 #                  cursors are still installed for the session
 #   --theme T      luna (XP's default, the default here, with XP's Start menu) or
@@ -69,7 +74,7 @@ shadowfb=yes
 while (($#)); do
     case $1 in
         --media) media=${2:?--media needs a path}; shift 2 ;;
-        --shell) shell=${2:?--shell needs xp or reactos}; shift 2 ;;
+        --shell) shell=${2:?--shell needs xp, reactos or win7}; shift 2 ;;
         --lang) lang=${2:?--lang needs ja or en}; shift 2 ;;
         --greeter) greeter=yes; shift ;;
         --no-greeter) greeter=no; shift ;;
@@ -84,8 +89,14 @@ while (($#)); do
         *) printf 'Unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
     esac
 done
-[[ $shell == xp || $shell == reactos ]] || { printf -- '--shell is xp or reactos\n' >&2; exit 2; }
-if [[ $shell == reactos ]]; then
+[[ $shell == xp || $shell == reactos || $shell == win7 ]] || { printf -- '--shell is xp, reactos or win7\n' >&2; exit 2; }
+if [[ $shell == win7 ]]; then
+    [[ -n $media ]] || { printf 'Give the Windows 7 ISO with --media (see --help)\n' >&2; exit 2; }
+    [[ -z $lang ]] || { printf -- '--lang is for the ReactOS shell; the Windows 7 shell follows its media\n' >&2; exit 2; }
+    [[ $theme_given == no ]] || { printf -- '--theme is not available for the Windows 7 shell yet\n' >&2; exit 2; }
+    [[ -z $smoothing ]] || { printf -- '--font-smoothing is for the XP shell\n' >&2; exit 2; }
+    [[ $wayland == no ]] || { printf -- '--wayland is not available for the Windows 7 shell yet\n' >&2; exit 2; }
+elif [[ $shell == reactos ]]; then
     [[ -z $media ]] || { printf -- '--media is for the XP shell; the ReactOS shell needs no media\n' >&2; exit 2; }
     [[ $theme_given == yes ]] || theme=classic
     [[ -z $smoothing ]] || { printf -- '--font-smoothing is for the XP shell\n' >&2; exit 2; }
@@ -113,7 +124,7 @@ else
     [[ -z $lang ]] || { printf -- '--lang is for the ReactOS shell; the XP shell follows its media\n' >&2; exit 2; }
     [[ -n $media ]] || { printf 'Give the XP media with --media (see --help)\n' >&2; exit 2; }
 fi
-[[ $shell == reactos || $theme == luna || $theme == classic ]] || { printf -- '--theme is luna or classic\n' >&2; exit 2; }
+[[ $shell != xp || $theme == luna || $theme == classic ]] || { printf -- '--theme is luna or classic\n' >&2; exit 2; }
 [[ -z $dpi || ( $dpi =~ ^[0-9]+$ && $dpi -ge 19 && $dpi -le 480 ) ]] ||
     { printf -- '--dpi is a number from 19 to 480\n' >&2; exit 2; }
 [[ -z $smoothing || $smoothing == standard || $smoothing == cleartype ]] ||
@@ -131,6 +142,8 @@ step 'Packages'
 packages=(
     # Wine build (WoW64: 64-bit Unix libraries, i686 and x86_64 MinGW for the PE modules)
     build-essential flex bison pkg-config git ca-certificates
+    # Wine's translations (msgfmt): Wine's own programs and dialogs in the session's language
+    gettext
     libx11-dev libxext-dev libxrender-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev
     libfreetype-dev libfontconfig-dev libgnutls28-dev libgl-dev libasound2-dev libdbus-1-dev libudev-dev
     gcc-mingw-w64-i686 gcc-mingw-w64-x86-64
@@ -291,6 +304,44 @@ if [[ $shell == xp ]]; then
         WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
         printf 'Font smoothing: %s\n' "$smoothing"
     fi
+elif [[ $shell == win7 ]]; then
+    step 'Windows 7 files'
+    assets=$local/assets-win7
+    wanted=$(sed -n 's/^EXTRACT_VERSION = //p' "$root/extract/win7.py")
+    have=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("extract_version", 1))' \
+        "$assets/media.json" 2>/dev/null || echo 0)
+    if [[ -f $assets/manifest.json && $have == "$wanted" ]]; then
+        printf 'Extracted already: %s\n' "$assets"
+    else
+        # 7z needs room for install.wim; keep it out of a small /tmp.
+        mkdir -p "$local/tmp"
+        rm -rf "$assets.new"
+        TMPDIR=$local/tmp python3 "$root/extract/win7.py" "$media" "$assets.new"
+        # An earlier extraction: replaced; the prefix's stage takes the new files.
+        rm -rf "$assets"
+        mv "$assets.new" "$assets"
+    fi
+    lang=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["lang"])' "$assets/media.json")
+    printf 'Windows 7 in %s\n' "$([[ $lang == ja ]] && echo Japanese || echo English)"
+    make_locale
+
+    step 'Windows 7 shell prefix'
+    prefix=$local/prefix-win7
+    if [[ -f $prefix/win7-shell.json ]]; then
+        printf 'Created already: %s\n' "$prefix"
+    else
+        [[ ! -e $prefix ]] || { printf '%s exists but is incomplete; move it away and run again\n' "$prefix" >&2; exit 1; }
+        xvfb-run -a -s '-screen 0 1280x800x24' python3 "$root/prefix/win7.py" create "$assets" "$prefix" \
+            --home "$HOME" --wine "$wine" > "$local/prefix-win7.log" 2>&1 ||
+            { tail -20 "$local/prefix-win7.log" >&2; printf 'Prefix creation failed; see .local/prefix-win7.log\n' >&2; exit 1; }
+        printf 'Created %s\n' "$prefix"
+    fi
+    if [[ -n $dpi ]]; then
+        WINEPREFIX=$prefix WINE=$wine python3 "$root/prefix/display.py" --dpi "$dpi" >> "$local/prefix-win7.log" 2>&1 ||
+            { tail -20 "$local/prefix-win7.log" >&2; printf 'Setting the DPI failed; see .local/prefix-win7.log\n' >&2; exit 1; }
+        WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
+        printf 'DPI: %s\n' "$dpi"
+    fi
 else
     step 'ReactOS files'
     assets=$local/assets-reactos
@@ -328,21 +379,37 @@ else
 fi
 
 step 'Session'
-config=${XDG_CONFIG_HOME:-$HOME/.config}/win4wine/$([[ $shell == xp ]] && echo session.json || echo reactos-session.json)
+case $shell in
+    xp) config_name=session.json ;;
+    reactos) config_name=reactos-session.json ;;
+    win7) config_name=win7-session.json ;;
+esac
+config=${XDG_CONFIG_HOME:-$HOME/.config}/win4wine/$config_name
 if [[ -f $config ]]; then
-    # Kept, with the language of the prefix (a new prefix may be in another one)
-    python3 - "$config" "$locale" <<'EOF'
+    # Kept, with the Wine and the language of the prefix (a new prefix may be
+    # made with another Wine, or be in another language)
+    python3 - "$config" "$locale" "$wine" <<'EOF'
 import json, sys
-config, locale = sys.argv[1:]
+config, locale, wine = sys.argv[1:]
 settings = json.load(open(config))
+changes = []
+if settings.get('wine') != wine:
+    settings['wine'] = wine
+    changes.append(f'Wine {wine}')
 if settings.get('locale') != locale:
     settings['locale'] = locale
     if locale.startswith('ja'):
         settings['input_method'] = 'fcitx5'
     else:
         settings.pop('input_method', None)
+    changes.append(f'locale {locale}')
+if settings.get('shell') == 'win7' and settings.get('cursor_theme') == '':
+    # Made before the Windows 7 shell had its cursors
+    settings['cursor_theme'] = 'win4wine-win7'
+    changes.append('Windows 7 cursors')
+if changes:
     open(config, 'w').write(json.dumps(settings, indent=2) + '\n')
-    print(f'Updated {config}: locale {locale}')
+    print(f'Updated {config}: {", ".join(changes)}')
 else:
     print(f'Keeping {config}')
 EOF
@@ -356,6 +423,8 @@ if locale.startswith('ja'):
     settings['input_method'] = 'fcitx5'
 if shell == 'reactos':
     settings.update(shell='reactos', cursor_theme='win4wine-reactos')
+elif shell == 'win7':
+    settings.update(shell='win7', cursor_theme='win4wine-win7')
 open(config, 'w').write(json.dumps(settings, indent=2) + '\n')
 EOF
     printf 'Wrote %s\n' "$config"
@@ -366,6 +435,8 @@ elif [[ $wayland == yes ]]; then
     "$root/session/install.sh" --wayland "$labwc"
 elif [[ $shell == reactos ]]; then
     "$root/session/install.sh" --reactos
+elif [[ $shell == win7 ]]; then
+    "$root/session/install.sh" --win7
 else
     "$root/session/install.sh"
 fi
@@ -406,7 +477,19 @@ EOF
 fi
 
 step 'Login screen and cursors'
-if [[ $shell == reactos ]]; then
+if [[ $shell == win7 ]]; then
+    # Windows 7's Aero cursors for the session (and the logon screen).
+    theme=$(mktemp -d)
+    python3 "$root/greeter/cursors.py" --win7 "$assets/cursors/user32.dll" "$assets/cursors" "$theme/win4wine-win7"
+    sudo rm -rf /usr/share/icons/win4wine-win7
+    sudo cp -r "$theme/win4wine-win7" /usr/share/icons/
+    sudo chmod -R a+rX /usr/share/icons/win4wine-win7
+    rm -rf "$theme"
+    printf 'Installed Windows 7 cursors\n'
+    if [[ $greeter == yes ]]; then
+        "$root/greeter/install.sh" --win7 "$assets" windows7-shell
+    fi
+elif [[ $shell == reactos ]]; then
     if [[ $greeter == yes ]]; then
         "$root/greeter/install.sh" --reactos "$assets" "$lang" \
             "$([[ $wayland == yes ]] && echo reactos-shell-wayland || echo reactos-shell)"
@@ -447,6 +530,10 @@ if [[ $shell == reactos && $greeter == yes ]]; then
     printf 'Restart the display manager (or reboot): the ReactOS logon screen logs in to the ReactOS shell.\n'
 elif [[ $shell == reactos ]]; then
     printf 'Restart the display manager (or reboot) and choose "ReactOS Shell (Wine, X11)" at the login screen.\n'
+elif [[ $shell == win7 && $greeter == yes ]]; then
+    printf 'Restart the display manager (or reboot): the Windows 7 logon screen logs in to the Windows 7 shell.\n'
+elif [[ $shell == win7 ]]; then
+    printf 'Restart the display manager (or reboot) and choose "Windows 7 Shell (Wine, X11)" at the login screen.\n'
 elif [[ $greeter == yes ]]; then
     printf 'Restart the display manager (or reboot): the XP Welcome screen logs in to the XP shell.\n'
 else

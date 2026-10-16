@@ -18,8 +18,11 @@ LANGUAGES = {0x411: 'ja', 0x409: 'en'}
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 
 
-def resource_languages(path, rtype):
-    """The LANGIDs of the resources of type RTYPE in the PE file PATH."""
+def resource_directory(path):
+    """(data, base, entries) of the PE file PATH's resource directory, or None without resources.
+
+    entries(offset) lists the (name or ID, target) pairs of the directory at
+    OFFSET, named entries first, as the file orders them."""
     data = Path(path).read_bytes()
     pe = struct.unpack_from('<I', data, 0x3c)[0]
     if data[pe:pe + 4] != b'PE\0\0':
@@ -35,12 +38,21 @@ def resource_languages(path, rtype):
         if address <= rva < address + max(size, raw_size):
             base = rva - address + raw
     if base is None:
-        return []
+        return None
 
     def entries(offset):
         named, numbered = struct.unpack_from('<12xHH', data, offset)
         return [struct.unpack_from('<II', data, offset + 16 + 8 * i) for i in range(named + numbered)]
 
+    return data, base, entries
+
+
+def resource_languages(path, rtype):
+    """The LANGIDs of the resources of type RTYPE in the PE file PATH."""
+    directory = resource_directory(path)
+    if not directory:
+        return []
+    _, base, entries = directory
     languages = []
     for name, target in entries(base):
         if name != rtype or not target & 0x80000000:
@@ -49,6 +61,19 @@ def resource_languages(path, rtype):
             if names & 0x80000000:
                 languages.extend(lang for lang, _ in entries(base + (names & 0x7fffffff)))
     return languages
+
+
+def resource_ids(path, rtype):
+    """The names of the resources of type RTYPE in the PE file PATH, in the file's order:
+    an ID, or None for a named resource (named resources come first)."""
+    directory = resource_directory(path)
+    if not directory:
+        return []
+    _, base, entries = directory
+    for name, target in entries(base):
+        if name == rtype and target & 0x80000000:
+            return [None if name & 0x80000000 else name for name, _ in entries(base + (target & 0x7fffffff))]
+    return []
 
 
 def tested(assets):

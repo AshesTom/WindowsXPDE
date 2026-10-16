@@ -61,7 +61,7 @@ session.json（`~/.config/win4wine/reactos-session.json`）の `"shell": "reacto
 
 - `C:\ros\ros-explorer.exe` を起動し、`prefix/reactos.py stage` を使います。XP のようこそ画面は出しません。
 - `WIN4WINE_FOLDER_SHELL` を設定します。ReactOS のシェルはコントロール パネル、検索、Win+E、ショートカットの「リンク先を開く」を
-  `explorer.exe` の起動で開きますが、この prefix の explorer.exe は Wine のデスクトップの管理です。パッチ 0063 で、Wine の explorer は
+  `explorer.exe` の起動で開きますが、この prefix の explorer.exe は Wine のデスクトップの管理です。パッチ 0072 で、Wine の explorer は
   そうした起動を ros-explorer.exe に渡します。
 - `WIN4WINE_SWITCHER=reactos` を設定し、proxy は Alt+Tab の窓を ReactOS の形（`appswitch.c`）で描きます。
 
@@ -72,7 +72,7 @@ Windows キーと Ctrl+Esc、通知領域、ログオフとシャットダウン
 
 既定はクラシックですが、ReactOS の 3 つのテーマも選べます。`scripts/setup.sh --shell reactos --theme lautus`（`lunar`、`mizu`）、
 または `python3 prefix/reactos.py theme PREFIX lautus`。テーマは Wine の uxtheme が描きます（`prefix/theme-settings.c` の
-`msstyles` で当てます）。ReactOS のテーマのスタートボタンは負の余白を持つので、Wine のパッチ 0064 で余白の負の値を読めるようにしました。
+`msstyles` で当てます）。ReactOS のテーマのスタートボタンは負の余白を持つので、Wine のパッチ 0073 で余白の負の値を読めるようにしました。
 
 ## ログイン画面（任意）
 

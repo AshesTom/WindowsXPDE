@@ -21,7 +21,7 @@ win4wine の主な判断とその理由を、話題ごとにまとめたもの�
 | explorer.exe | XP | タスクバー、スタートメニュー、デスクトップの本体です |
 | shell32、browseui、shdocvw、shlwapi | XP | Wine の browseui は XP の explorer が使う機能（序数 107 など）が未実装で、同じ世代の組で使う必要があります（調査 1） |
 | browselc、shdoclc、linkinfo、msgina、mydocs | XP（資源・一部の機能） | 日本語のメニューと文字、ショートカット、ログオフ・終了のダイアログ、アイコン（調査 8・14・36・39） |
-| comctl32 | XP の v6（XP のシェルのプロセスだけ） | Wine の comctl32 では XP の explorer の toolbar が動きません。ボタンなどは Wine のテーマ付きの実装を別名で使います（調査 7、パッチ 0046・0047） |
+| comctl32 | XP の v6（XP のシェルのプロセスだけ） | Wine の comctl32 では XP の explorer の toolbar が動きません。ボタンなどは Wine のテーマ付きの実装を別名で使います（調査 7、パッチ 0052・0053） |
 | uxtheme | Wine | 利用者の Luna のテーマファイルを Wine の uxtheme で描きます。XP のテーマのサービスは入れません |
 | kernel32、ntdll、user32、gdi32 など | Wine | Linux の上で動かす基盤です |
 | mshtml、mscoree | 無効 | IE と .NET は対象外です |
@@ -38,6 +38,21 @@ Wine 自身の管理のプロセスや復旧の経路まで XP の DLL に頼る
 - prefix は 64-bit（WoW64）です。XP の DLL は `syswow64` に置き、XP のシェルのための登録は 32-bit の側にだけ書きます
   （「64bit（WoW64）対応」）。
 
+## ほかのシェル（ReactOS、Windows 7）
+
+XP のシェルと同じ Wine、bridge、supervisor で、ほかの Windows 系のシェルも動かせるようにしています。シェルごとに専用の
+prefix を作り、そのシェルの DLL はそのシェルのプロセスにだけ使わせます（XP と同じ「Override の隔離」）。
+
+- **ReactOS**（[reactos.md](reactos.md)）: 自由なソフトウェアなので公式のリリースから取得します。登録は ReactOS の DLL 自身の
+  `DllRegisterServer` に書かせます。
+- **Windows 7**（[windows7.md](windows7.md)、実験的）: 64bit のシェルを使います（prefix が WoW64 なので、64bit のまま動かせます）。
+  登録は、XP のように 1 つずつ確かめて手で書くには多すぎる（DirectUI、プロパティ システム、既知のフォルダなど）ので、
+  **使うファイルの部品のマニフェスト**（WinSxS）が登録するものを入れます。インストール済みの Windows のレジストリは移しません。
+  Windows 7 のためだけの Wine の挙動は `WIN4WINE_SHELL=win7` のときだけ効かせ、XP と ReactOS のシェルには影響させません。
+  例外として、アプリのファイルのダイアログを Windows 7 の形にするため、ダイアログが読み込む DLL（shell32 など 10 個）は
+  アプリにも使わせます。Wine 自身のプログラムは Wine の DLL のままで、うまく動かないアプリも Wine の DLL に戻せます
+  （[windows7.md](windows7.md) の「どのプログラムが Windows 7 の DLL を使うか」）。
+
 ## Linux のアプリとの統合（bridge）
 
 - **WM は枠を描きません。** Linux の窓の XP の枠は、proxy.exe が作る Win32 の窓に Wine が描きます。XP の見た目を自分で
@@ -49,7 +64,8 @@ Wine 自身の管理のプロセスや復旧の経路まで XP の DLL に頼る
 - **枠と Linux の窓は WM が一緒に動かします。** proxy を通すと、ドラッグの 1 歩ごとに、枠が先に動いて空いた部分が
   黒く見えました。どちらかが動く要求を受けた WM が、同じ処理の中でもう一方も動かします。
 - **Wine の窓の中身は X サーバーに覚えさせます（Composite）。** 下の窓が見えたとき、その窓のプロセスが描き直すまで
-  黒く見えないようにするためです。合成（影や透明）のための compositing manager は、仮想マシンの CPU の負担を増やすので使いません。
+  黒く見えないようにするためです。Linux の窓の枠は、動いている間だけ同じようにします（大きさを変えるたびに画像を作り直すと、
+  大きさの変更が数倍遅くなるため）。合成（影や透明）のための compositing manager は、仮想マシンの CPU の負担を増やすので使いません。
 - **仮想マシンでは X がメモリーに描くようにします（ShadowFB）。** GPU の無い仮想マシンでは、窓を動かすたびに X が
   仮想のグラフィックカードのメモリーから読み戻し、これが遅いためです（`scripts/setup.sh`）。
 
@@ -61,7 +77,7 @@ Wine 自身の管理のプロセスや復旧の経路まで XP の DLL に頼る
 - 入力モードは、fcitx5 のアイコンを XP の通知領域に出して示します。
 - 変換中の文字は、XP の IME と同じく入力欄の中に出します（XIM の on-the-spot）。fcitx5 は XIM の利用者に on-the-spot を
   `~/.config/fcitx5/conf/xim.conf` の `UseOnTheSpot=True` のときだけ出すので、supervisor が（利用者が決めていなければ）書きます。
-  Wine はキャレットの行の下端を fcitx5 に渡し、候補の窓はその下に出ます（パッチ 0069）。xterm などは今までどおり over-the-spot です。
+  Wine はキャレットの行の下端を fcitx5 に渡し、候補の窓はその下に出ます（パッチ 0029）。xterm などは今までどおり over-the-spot です。
 
 ## ログイン画面
 
@@ -72,7 +88,7 @@ Wine 自身の管理のプロセスや復旧の経路まで XP の DLL に頼る
 ## DPI
 
 - XP と同じく `LogPixels` 1 つで決めます。XP には DPI の仮想化が無く、どのアプリも自分で大きく描くので、Wine の画像の拡大
-  （ぼける）を止め、XP のシェルのプロセスを system DPI aware にしています（パッチ 0044）。
+  （ぼける）を止め、XP のシェルのプロセスを system DPI aware にしています（パッチ 0049）。
 - アイコンやカーソルの大きさなど、XP が独自の規則を持つものは、実際の XP を 96〜216 DPI にして測りました（「DPI の拡大」）。
 - Linux のアプリには同じ DPI を `Xft.dpi` などで渡します。
 

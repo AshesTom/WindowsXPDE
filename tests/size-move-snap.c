@@ -1,4 +1,4 @@
-/* Wine's move loop reports drags for window snapping (patch 0073): EVENT_SYSTEM_MOVESIZESTART
+/* Wine's move loop reports drags for window snapping (patch 0032): EVENT_SYSTEM_MOVESIZESTART
  * and EVENT_SYSTEM_MOVESIZEEND, "Win4WineSizeMove" (the hit test while the loop runs, then
  * with 0x1000 ended, 0x100 moved), and a window with "Win4WineSnapRestore" gets that size
  * back on the first mouse move, the pointer staying on its caption. With

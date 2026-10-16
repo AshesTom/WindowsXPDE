@@ -1,21 +1,31 @@
 From: Codex <codex@localhost>
-Subject: [PATCH] winex11: keep the composition spot asked for before the XIC exists
+Subject: [PATCH] winex11: give the input method the caret's place
 
 Purpose: show an input method's composition at the caret from the first
-conversion in a window.
+conversion in a window, and its candidate window under the line.
+XP behavior: the IME draws the composition at the caret (or in the
+application's composition window) and its candidate list under it.
 Wine before: the XIC is created at the first key press or focus, and
 composition positions set earlier were dropped, so the first composition
 of a window was shown at its top left corner (seen with fcitx5 and Mozc in
-Wine notepad). Later ones followed the caret.
+Wine notepad). Wine asks for on-the-spot (callback) preedit, but sent the
+spot (XNSpotLocation) only with the over-the-spot style, so with
+on-the-spot fcitx5 showed its candidate window at the corner of the
+window. (fcitx5 offers XIM clients on-the-spot only with its XIM
+frontend's UseOnTheSpot option, which the win4wine session sets.)
 Change: remember the spot while the window has no XIC and give it to the
-XIC when it is created.
+XIC when it is created; send the spot with the on-the-spot style too, at
+the bottom of the line, since the input method places its window under
+it.
 Evidence: with fcitx5 5.1.12 and Mozc in the test VM, the first
-composition in Wine notepad appears at the caret.
-Scope: only with WIN4WINE_EXTERNAL_SHELL, for the over-the-spot style.
+composition in Wine notepad appears at the caret; Notepad and XP's Run
+dialog show the text inline and the candidates under the line.
+Scope: only with WIN4WINE_EXTERNAL_SHELL; without it, over-the-spot
+behaves as before.
 ---
  dlls/winex11.drv/x11drv.h |  2 ++
- dlls/winex11.drv/xim.c    | 27 +++++++++++++++++++--------
- 2 files changed, 21 insertions(+), 8 deletions(-)
+ dlls/winex11.drv/xim.c    | 36 +++++++++++++++++++++++++++---------
+ 2 files changed, 29 insertions(+), 9 deletions(-)
 
 diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
 index d7cfed8..2440dfe 100644
@@ -31,7 +41,7 @@ index d7cfed8..2440dfe 100644
      UINT        embedded : 1;   /* is window an XEMBED client? */
      UINT        shaped : 1;     /* is window using a custom region shape? */
 diff --git a/dlls/winex11.drv/xim.c b/dlls/winex11.drv/xim.c
-index 05ef786..bb227dc 100644
+index 05ef786..b3eaf37 100644
 --- a/dlls/winex11.drv/xim.c
 +++ b/dlls/winex11.drv/xim.c
 @@ -36,6 +36,7 @@
@@ -70,8 +80,15 @@ index 05ef786..bb227dc 100644
      release_win_data( data );
  
      return ret;
-@@ -538,14 +540,23 @@ BOOL X11DRV_SetIMECompositionRect( HWND hwnd, RECT rect )
-     if (!(input_style & XIMPreeditPosition))
+@@ -535,17 +537,33 @@ BOOL X11DRV_SetIMECompositionRect( HWND hwnd, RECT rect )
+     XVaNestedList attr;
+     XPoint xpoint;
+ 
+-    if (!(input_style & XIMPreeditPosition))
++    /* win4wine: with on-the-spot (callbacks) the composition is drawn here,
++     * but the input method still places its candidate window at the spot */
++    if (!(input_style & XIMPreeditPosition) &&
++        !(win4wine_external_shell() && (input_style & XIMPreeditCallbacks)))
          return FALSE;
  
 -    if (!(data = get_win_data( hwnd )) || !data->xic)
@@ -83,6 +100,10 @@ index 05ef786..bb227dc 100644
  
      xpoint.x = rect.left - data->rects.visible.left;
      xpoint.y = rect.top - data->rects.visible.top;
++    /* win4wine: the input method places its candidate window under the spot,
++     * which for over-the-spot is the text's top; on-the-spot text is ours,
++     * so give the bottom of the line to keep the window off it */
++    if (!(input_style & XIMPreeditPosition)) xpoint.y = rect.bottom - data->rects.visible.top;
 +    if (!data->xic)
 +    {
 +        /* The XIC is made at the first key press or focus, often after the

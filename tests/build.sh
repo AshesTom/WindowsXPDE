@@ -37,6 +37,16 @@ compile "$out/theme-threads-test.exe" "$root/tests/theme-threads.c" -luxtheme -l
 compile "$out/menu-layout-test.exe" "$root/tests/menu-layout.c" -luser32 -lgdi32
 compile "$out/menu-separator-test.exe" "$root/tests/menu-separator.c" -luser32
 compile "$out/menu-height-test.exe" "$root/tests/menu-height.c" -lgdi32 -luser32
+compile "$out/menu-theme-layout-test.exe" -municode -mwindows "$root/tests/menu-theme-layout.c" -lgdi32 -luser32
+compile "$out/status-height-test.exe" -municode -mwindows "$root/tests/status-height.c" -lcomctl32 -lgdi32 -luser32
+compile "$out/tab-focus-test.exe" -municode -mwindows "$root/tests/tab-focus.c" -lcomctl32 -lgdi32 -luser32
+compile "$out/trackbar-size-test.exe" -municode -mwindows "$root/tests/trackbar-size.c" -lcomctl32 -lgdi32 -luser32
+compile "$out/listview-layout-test.exe" -municode -mwindows "$root/tests/listview-layout.c" -lcomctl32 -luxtheme -lgdi32 -luser32
+compile "$out/msgbox-layout-test.exe" -municode -mwindows "$root/tests/msgbox-layout.c" -luser32
+compile "$out/theme-part-sizes-test.exe" -municode "$root/tests/theme-part-sizes.c" -luxtheme -lgdi32 -luser32
+compile "$out/rebar-bands-test.exe" -municode "$root/tests/rebar-bands.c" -luser32
+compile "$out/number-format-test.exe" -municode "$root/tests/number-format.c"
+compile "$out/shell-item-images-test.exe" -municode "$root/tests/shell-item-images.c" -lshell32 -lole32 -luuid -lgdi32
 compile "$out/caption-ncactivate-test.exe" "$root/tests/caption-ncactivate.c" -lgdi32 -luser32
 compile "$out/cleartype-test.exe" -municode "$root/tests/cleartype.c" -luser32 -lgdi32 -ladvapi32
 compile "$out/icon-alpha-test.exe" "$root/tests/icon-alpha.c" -luser32 -lgdi32
