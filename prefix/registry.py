@@ -3,10 +3,12 @@ import os
 import pwd
 import struct
 
-VERSION = 24
+VERSION = 25
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 # The classic fonts of a new prefix (prefix/theme-settings.c classic-initialize).
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\XPClassic'
+# Wine's Unix root folder, a desktop item of Wine's shell namespace
+UNIX_ROOT = '{9D20AAE8-0625-44B0-9CA7-71889C2254D9}'
 # The classic theme's fonts per language of the XP media, read with public SPI
 # calls on the reference machines: Japanese XP uses MS UI Gothic 9pt, English
 # XP Tahoma 8pt (captions bold in both).
@@ -124,6 +126,13 @@ def install(run, exists, language='ja'):
         if not exists(FONT_PROFILE, name):
             run('reg', 'add', FONT_PROFILE, '/v', name, '/t', kind, '/d', data, '/f')
     advanced = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+    # Wine's Unix root folder ("/") is not one of XP's desktop items; XP's
+    # Explorer reads these keys for its two Start menu styles. Only an absent
+    # value is seeded, so a user's own choice stays.
+    for style in ('NewStartPanel', 'ClassicStartMenu'):
+        hidden = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons' + '\\' + style
+        if not exists(hidden, UNIX_ROOT):
+            run('reg', 'add', hidden, '/v', UNIX_ROOT, '/t', 'REG_DWORD', '/d', '1', '/f')
     # XP's default user draws desktop icon labels with drop shadows; without
     # the value XP fills the label background over the wallpaper.
     if not exists(advanced, 'ListviewShadow'):

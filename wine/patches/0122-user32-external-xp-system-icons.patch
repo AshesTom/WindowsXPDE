@@ -1,0 +1,74 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] user32: XP's system icons in the XP shell session
+
+Purpose: show XP's application, error, warning, question and information
+icons in the XP shell session, as patch 0111 does for Windows 7.
+Windows behavior: XP's user32.dll holds them as icon groups 100 to 105; a
+class's small icon made from IDI_APPLICATION is its 32x32 image scaled
+down by picking pixels (compared with xpcmp.exe's caption on the reference
+XP machine).
+Wine before: Wine's own icons, scaled down by blending.
+Change: in the XP shell session, the system icons come from XP's
+user32.dll, which the prefix keeps as data in C:\xp\res\user32-xp.dll
+(prefix/stage.py), and icons are scaled down as 0111 does.
+Evidence: xpcmp.exe's caption icon is pixel-identical to XP's; message
+boxes show XP's icons.
+Scope: the XP shell session (WIN4WINE_EXTERNAL_SHELL, no WIN4WINE_SHELL).
+---
+ dlls/user32/cursoricon.c | 26 +++++++++++++++++++-------
+ 1 file changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/dlls/user32/cursoricon.c b/dlls/user32/cursoricon.c
+index b8672c7..3504b85 100644
+--- a/dlls/user32/cursoricon.c
++++ b/dlls/user32/cursoricon.c
+@@ -1385,6 +1385,14 @@ static struct { WORD id; INT width, height, depth; HICON icon; } win7_icons[32];
+ static unsigned int win7_icon_count;
+ static HMODULE win7_icon_module;
+ 
++/* the XP shell session: an external shell without WIN4WINE_SHELL */
++static BOOL xp_shell(void)
++{
++    static int xp = -1;
++    if (xp < 0) xp = win4wine_external_shell() && !GetEnvironmentVariableW( L"WIN4WINE_SHELL", NULL, 0 );
++    return xp;
++}
++
+ static HICON win7_system_icon( LPCWSTR name, INT width, INT height, INT depth, UINT loadflags )
+ {
+     /* IDI_APPLICATION, IDI_HAND, IDI_QUESTION, IDI_EXCLAMATION, IDI_ASTERISK, IDI_WINLOGO, IDI_SHIELD */
+@@ -1396,12 +1404,16 @@ static HICON win7_system_icon( LPCWSTR name, INT width, INT height, INT depth, U
+ 
+     if (!IS_INTRESOURCE( name ) || LOWORD( name ) < LOWORD( IDI_APPLICATION ) || LOWORD( name ) > LOWORD( IDI_SHIELD ))
+         return 0;
+-    if (!win4wine_win7_shell()) return 0;
+     if (!tried)
+     {
++        /* the XP shell session (no WIN4WINE_SHELL): XP's user32.dll, kept by
++         * the prefix as C:\xp\res\user32-xp.dll, with icons 100 to 105 */
++        const WCHAR *path = NULL;
+         tried = TRUE;
+-        win7_icon_module = LoadLibraryExW( L"C:\\w7\\res\\user32-w7.dll", NULL,
+-                                           LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE );
++        if (win4wine_win7_shell()) path = L"C:\\w7\\res\\user32-w7.dll";
++        else if (xp_shell()) path = L"C:\\xp\\res\\user32-xp.dll";
++        if (path)
++            win7_icon_module = LoadLibraryExW( path, NULL, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE );
+     }
+     if (!win7_icon_module) return 0;
+     id = ids[LOWORD( name ) - LOWORD( IDI_APPLICATION )];
+@@ -2263,10 +2275,10 @@ static void stretch_bitmap( HBITMAP dst, HBITMAP src, int dst_width, int dst_hei
+ 
+     SelectObject( src_dc, src );
+     SelectObject( dst_dc, dst );
+-    /* Windows 7 SP1 picks pixels when it scales an icon down, counting rows
+-     * from the bottom (a class's small icon from IDI_APPLICATION, compared
+-     * with a screenshot) */
+-    if (win4wine_win7_shell() && src_width >= dst_width && src_height >= dst_height)
++    /* Windows 7 SP1 and XP SP3 pick pixels when they scale an icon down,
++     * counting rows from the bottom (a class's small icon from
++     * IDI_APPLICATION, compared with screenshots) */
++    if ((win4wine_win7_shell() || xp_shell()) && src_width >= dst_width && src_height >= dst_height)
+     {
+         SetStretchBltMode( dst_dc, COLORONCOLOR );
+         StretchBlt( dst_dc, 0, 0, dst_width, dst_height, src_dc, 0, src_height / dst_height - 1,
