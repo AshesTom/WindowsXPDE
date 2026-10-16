@@ -68,8 +68,12 @@ class Session:
             self.ipc = Path(os.environ['WIN4WINE_IPC']).resolve(strict=True)
         else:
             self.ipc = Path(tempfile.mkdtemp(prefix=f'win4wine-{os.getuid()}-', dir=runtime))
+        # Wine's errors, with the time, but not its fixmes: every program of the
+        # session inherits this and writes to the shell's or the proxy's log.
+        # (+seh logged each window message call of a 32-bit process, several
+        # MB within minutes.) session.json's "debug" sets other channels.
         self.env = dict(os.environ, WINEPREFIX=str(self.prefix),
-                        WIN4WINE_EXTERNAL_SHELL='1', WINEDEBUG=config.get('debug', '+timestamp,+seh,+loaddll'),
+                        WIN4WINE_EXTERNAL_SHELL='1', WINEDEBUG=config.get('debug', '+timestamp,fixme-all'),
                         WINEDLLOVERRIDES=f'explorer=b;{self.shell["module"]}=n;mscoree,mshtml=;uxtheme=b')
         if self.shell['folders']:
             # Wine's explorer.exe hands folder windows to the shell's own explorer.
@@ -80,7 +84,7 @@ class Session:
         if self.shell['name']:
             # Wine leaves ReactOS's own controls to it (Start button, dialogs);
             # with Windows 7's shell the XP shell's taskbar replacements are
-            # left out and the Windows 7 changes apply (patches 0100 to 0114).
+            # left out and the Windows 7 changes apply (patches 0100 to 0115).
             self.env['WIN4WINE_SHELL'] = self.shell['name']
         # Opt-in: the proxy snaps windows to half of the screen (Win+arrows, dragging to an edge).
         if config.get('window_snap'):

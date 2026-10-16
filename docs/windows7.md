@@ -24,7 +24,8 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | ファイル | 使い方 |
 |---|---|
 | `explorer.exe` | `C:\w7\w7-explorer.exe` として置くシェル（x64） |
-| `explorerframe`、`shell32`、`shlwapi`、`propsys`、`shdocvw`、`dui70`、`duser`、`profapi`、`sndvolsso`、`winbrand`、`shacct`、`thumbcache`、`authui`、`linkinfo` | Windows 7 のシェルの DLL。シェルと、セッションのすべてのプログラム（ファイルのダイアログ）が使います（Wine 自身のプログラムを除く） |
+| `explorerframe`、`shell32`、`shlwapi`、`propsys`、`shdocvw`、`dui70`、`duser`、`profapi`、`thumbcache`、`linkinfo` | Windows 7 のシェルの DLL。シェルと、セッションのプログラムのファイルのダイアログが使います（下の「どのプログラムが Windows 7 の DLL を使うか」） |
+| `sndvolsso`、`winbrand`、`shacct`、`authui` | シェルだけが使う DLL（通知領域の音量、スタートメニューのエディション名・利用者の画像・終了） |
 | `actxprxy` | Windows 7 のインターフェースの proxy。`w7actxprxy.dll` の名前で置きます（Wine の actxprxy.dll は Wine の DLL の proxy に残します） |
 | `imageres`、`sud`、`DeviceCenter` | 文字列とアイコンだけを読む DLL（override なし） |
 | `Cursors\aero_*.cur`、`aero_*.ani`、`user32.dll` | Windows 7 の Aero のカーソル（X のカーソルのテーマ `win4wine-win7` にします。I ビームと十字は user32.dll のもの） |
@@ -59,8 +60,7 @@ Windows 7 の comdlg32 の部品が登録する `FileOpenDialog`（シェルの�
 `.local/prefix-win7` は WoW64 の prefix で、XP の prefix と同じ考え方で作ります。
 
 - Windows 7 のシェルの DLL は `C:\w7\native`（64bit）と `C:\w7\wow64`（32bit）に置き、`system32` と `syswow64` に写します。
-  prefix 全体で `native,builtin`（DllOverrides）にし、Windows のアプリのファイルを開く・保存するダイアログも Windows 7 の形になります。
-  Wine 自身のプログラム（デスクトップ、サービス、メニューやブラウザとのつなぎ）は AppDefaults で `builtin` のままです。
+  どのプログラムがどれを使うかは、下の「どのプログラムが Windows 7 の DLL を使うか」のとおりです。
 - Windows 7 の Common Controls 6 は `C:\w7\comctl32.dll`（32bit は `C:\w7\wow64\comctl32.dll`）に置きます。Windows 7 のシェルの
   セッションでは、シェル（`w7-explorer.exe`）と、ほかのプログラムの中の Windows 7 の DLL がこれを使い、プログラム自身は Wine の
   Common Controls 6 のままです（Wine のパッチ 0105。Windows 7 の comctl32 をプログラムに使わせると Wine のアプリが壊れるため）。
@@ -77,6 +77,33 @@ Windows 7 の comdlg32 の部品が登録する `FileOpenDialog`（シェルの�
 - 「ドキュメント」は Linux のホーム（`H:`）です（XP のシェルと同じ）。
 - `win7.py stage` は毎回のセッションの前に動き、Wine の更新で上書きされた DLL と登録（「コンピューター」「コントロール パネル」
   「ネットワーク」の名前など）を入れ直します。
+
+### どのプログラムが Windows 7 の DLL を使うか
+
+Windows のアプリのファイルを開く・保存するダイアログを Windows 7 の形にするため、ダイアログが読み込む DLL は
+アプリにも使わせます。それ以外の DLL はシェルだけです。
+
+| プログラム | Windows 7 の DLL | 設定 |
+|---|---|---|
+| シェル（`w7-explorer.exe`） | 上の表のシェルの DLL すべて（14 個）と、Windows 7 の Common Controls 6 | AppDefaults で `native` |
+| Windows のアプリ（64bit と 32bit） | ファイルのダイアログの 10 個（`explorerframe`、`shell32`、`shlwapi`、`propsys`、`shdocvw`、`dui70`、`duser`、`profapi`、`thumbcache`、`linkinfo`） | DllOverrides で `native,builtin` |
+| Wine 自身のプログラム（デスクトップの `explorer.exe`、サービス、`start`、`winemenubuilder`、`winebrowser`、`control`、`rundll32`、`winecfg` など） | なし | AppDefaults で `builtin` |
+| サムネイルを作る `dllhost.exe` | ファイルのダイアログの 10 個（Common Controls 6 は Wine のもの） | AppDefaults で comctl32 だけ `builtin` |
+
+アプリの中では、Windows 7 の DLL は Windows 7 の Common Controls 6 を、アプリ自身は Wine の Common Controls 6 を使います
+（Wine のパッチ 0105）。
+
+Windows 7 の DLL でうまく動かないアプリには、Wine の DLL を使わせることができます（ファイルのダイアログは Wine のものに
+なります）。実行ファイルの名前で指定し、prefix に記録されるので、次からもそうなります。
+
+```sh
+prefix/win7.py builtin .local/prefix-win7 app.exe          # Wine の DLL にする
+prefix/win7.py builtin .local/prefix-win7 app.exe --undo   # Windows 7 の DLL に戻す
+```
+
+一度だけ試すときは、セッションの端末から
+`WINEDLLOVERRIDES="$WINEDLLOVERRIDES;explorerframe,shell32,shlwapi,propsys,shdocvw,dui70,duser,profapi,thumbcache,linkinfo,comctl32=b" wine app.exe`
+のように起動します（セッションが入れている値に足します）。
 
 ## カーソルとログオン画面
 
@@ -138,7 +165,7 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
-Windows 7 のシェルのために足した Wine のパッチは 0076〜0114 です（[patches.md](patches.md)）。
+Windows 7 のシェルのために足した Wine のパッチは 0076〜0115 です（[patches.md](patches.md)）。
 
 ## 制限
 
@@ -149,3 +176,5 @@ Windows 7 のシェルのために足した Wine のパッチは 0076〜0114 で
 - 確かめたのは日本語版の Windows 7 Professional SP1（x64）だけです。英語版も同じ手順で作りますが、試していません。
 - ネットワーク、ヘルプとサポート、コントロール パネルの中身は、Wine にその部品が無いので使えません。
 - スタートメニューの「ロック」「スリープ」「休止状態」は何もしません。
+- Wine は利用者を管理者として動かすので、管理者かどうかを題名に出すアプリ（Notepad++ の「[Administrator]」など）はそう表示します
+  （Windows Vista 以降として動く prefix の Wine で同じです。Windows 7 の DLL によるものではありません）。

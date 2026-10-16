@@ -46,6 +46,7 @@ X11 のウィンドウマネージャーです。枠を自分では描かず（r
   それが持つ窓はタスクバーより上に置きます。
 - タスクバーの位置から作業領域（`_NET_WORKAREA`）を作ります。
 - クリックでウィンドウを有効にします。デスクトップとタスクバーをクリックすると、そこにキーボードを渡します。
+  上げた窓が持つ窓（`WM_TRANSIENT_FOR`。モーダルのダイアログなど）は、Windows と同じくその上に保ちます。
 - Linux の窓の枠（proxy の窓）をその窓のすぐ下に置き、一緒に動かします（下の「Linux の窓の XP の枠」）。
 - Alt+Tab、Windows キー、Ctrl+Esc を受け取り、XP のシェルに渡します（下の「キー操作」）。
 - `Gtk/DecorationLayout` を `:` にする XSETTINGS を出し、GTK のヘッダーバーの閉じるボタンなどを隠します（ほかの settings
@@ -167,7 +168,9 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 - 環境: Wine と Linux のアプリの `PATH` の先頭にセッションの Wine を置きます。日本語入力の変数（`XMODIFIERS` など）、
   字体の設定（`linux_font` の fontconfig）、DPI の設定（下の「DPI」）、カーソルのテーマも入れます。
 - 周期的には起きません（起動中のタスクバーを待つ間だけ 1 秒ごとに確かめます）。ログは `~/.local/state/win4wine/` に書き、
-  起動のたびに前回の分を `*.log.1` にします。
+  起動のたびに前回の分を `*.log.1` にします。Wine のログは既定ではエラーだけです（`WINEDEBUG=+timestamp,fixme-all`。
+  セッションのすべての Windows のプログラムが受け継ぎます）。調べるときは `session.json` の `"debug"` で Wine のチャンネルを
+  選びます（例: `"+timestamp,+seh,+loaddll"`）。
 
 ## Linux のアプリのスタートメニュー（`session/linux_apps.py`）
 

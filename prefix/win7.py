@@ -3,6 +3,7 @@
 
   win7.py create ASSETS PREFIX [--home HOME] [--wine WINE]
   win7.py stage PREFIX [--wine WINE]
+  win7.py builtin PREFIX PROGRAM... [--undo] [--wine WINE]
 
 ASSETS is the output of extract/win7.py (the image's language decides the
 prefix's: Japanese or English).
@@ -13,9 +14,12 @@ its MUI file in the language's folder (system32\\ja-JP\\shell32.dll.mui), as
 Windows 7 keeps them; Wine reads MUI files (patch 0084). Windows 7's Common
 Controls 6 is C:\\w7\\comctl32.dll, beside the shell (patch 0105); Wine's own
 assembly stays every other program's. The files are placed as they are on
-the media, under the names the prefix uses. The prefix keeps Wine's DLLs for
-every other program (DllOverrides builtin) and gives w7-explorer.exe the
-native ones (AppDefaults), as prefix/create.py does for XP's explorer.
+the media, under the names the prefix uses. Every program of the prefix gets
+the DLLs that a file dialog needs (DllOverrides native,builtin: Windows
+applications open and save files with Windows 7's dialogs), and only
+w7-explorer.exe the rest (AppDefaults). Wine's own programs keep Wine's DLLs,
+and "builtin" gives them back to other programs that do not work with
+Windows 7's.
 DLLs that the shell only reads for their strings and icons (imageres) are
 placed in system32 without overrides. The registry gets what the components
 of these files register (their manifests, extract/manifests.py), not the
@@ -38,7 +42,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 14
+VERSION = 15
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -53,10 +57,16 @@ NAMES = (
 )
 # Windows 7's shell DLLs, 64-bit and 32-bit: native in every program of the
 # session (the shell, and the file dialogs of Windows applications), but for
-# Wine's own programs (WINE_PROGRAMS). Windows 7's DLLs get Windows 7's
-# Common Controls 6 from C:\w7 (Wine 0105); the programs keep Wine's.
+# Wine's own programs (WINE_PROGRAMS) and those the user gives Wine's DLLs
+# back (win7.py builtin). Windows 7's DLLs get Windows 7's Common Controls 6
+# from C:\w7 (Wine 0105); the programs keep Wine's. These are what an
+# application's file dialog loads (explorerframe's browser, its views and
+# thumbnails).
 NATIVE = ('explorerframe', 'shell32', 'shlwapi', 'propsys', 'shdocvw', 'dui70', 'duser', 'profapi',
-          'sndvolsso', 'winbrand', 'shacct', 'thumbcache', 'authui', 'linkinfo')
+          'thumbcache', 'linkinfo')
+# Native in the shell only: the taskbar's volume, the Start menu's
+# branding, user picture and shut down.
+SHELL_ONLY = ('sndvolsso', 'winbrand', 'shacct', 'authui')
 # Wine's programs that keep Wine's shell DLLs: its desktop and services, the
 # programs that link Wine to Linux (menus, the browser, start for `wine NAME`
 # and Linux launchers) and those built on Wine's shell32 (its Control Panel).
@@ -170,6 +180,10 @@ class Prefix:
             self.reg(r'HKCU\Software\Wine\AppDefaults\w7-explorer.exe\DllOverrides', name, 'native')
             for program in WINE_PROGRAMS:
                 self.reg(rf'HKCU\Software\Wine\AppDefaults\{program}\DllOverrides', name, 'builtin')
+        for name in SHELL_ONLY:
+            # Prefixes made before SHELL_ONLY had them in every program.
+            self.run('reg', 'delete', r'HKCU\Software\Wine\DllOverrides', '/v', name, '/f', check=False)
+            self.reg(r'HKCU\Software\Wine\AppDefaults\w7-explorer.exe\DllOverrides', name, 'native')
         # The thumbnail cache's surrogate keeps Wine's Common Controls 6 (with
         # Windows 7's, explorer started a new surrogate every few seconds).
         self.reg(r'HKCU\Software\Wine\AppDefaults\dllhost.exe\DllOverrides', 'comctl32', 'builtin')
@@ -177,6 +191,16 @@ class Prefix:
         for view, system in (('/reg:64', 'system32'), ('/reg:32', 'syswow64')):
             self.run('reg', 'add', rf'HKCR\CLSID\{clsid}\InProcServer32', '/ve', '/t', 'REG_EXPAND_SZ',
                      '/d', rf'%SystemRoot%\{system}\{proxies}.dll', '/f', view)
+
+    def builtin(self, program, undo=False):
+        """Give PROGRAM (an executable's name) Wine's shell DLLs instead of Windows 7's
+        (its file dialogs are then Wine's), or (UNDO) Windows 7's again."""
+        key = rf'HKCU\Software\Wine\AppDefaults\{program}\DllOverrides'
+        for name in NATIVE + ('comctl32',):
+            if undo:
+                self.run('reg', 'delete', key, '/v', name, '/f', check=False)
+            else:
+                self.reg(key, name, 'builtin')
 
     def wow64_registry(self, assets):
         """The 32-bit view of the components' registrations (32-bit programs: icons, file types)."""
@@ -576,6 +600,19 @@ def stage(dest, wine=None):
     temp.replace(version)
 
 
+def session_wine(path):
+    """The Wine of the session that uses the prefix at PATH (its session.json): the
+    prefix records the Wine that created it, which a later setup may have replaced."""
+    for config in sorted((Path.home() / '.config/win4wine').glob('*.json')):
+        try:
+            values = json.loads(config.read_text())
+            if values.get('wine') and Path(values.get('prefix', '')).resolve() == path:
+                return values['wine']
+        except (OSError, ValueError, AttributeError):
+            continue
+    return None
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -587,6 +624,11 @@ if __name__ == '__main__':
     p = commands.add_parser('stage')
     p.add_argument('prefix', type=Path)
     p.add_argument('--wine')
+    p = commands.add_parser('builtin', help="give programs Wine's shell DLLs instead of Windows 7's")
+    p.add_argument('prefix', type=Path)
+    p.add_argument('programs', nargs='+', metavar='PROGRAM', help='an executable\'s name, such as app.exe')
+    p.add_argument('--undo', action='store_true', help="give them Windows 7's again")
+    p.add_argument('--wine')
     args = parser.parse_args()
     if args.command == 'create':
         create(args.assets, args.prefix, args.home, args.wine)
@@ -594,4 +636,12 @@ if __name__ == '__main__':
     path = args.prefix.resolve(strict=True)
     if not (path / MARKER).is_file():
         raise SystemExit('Not a Windows 7 shell prefix')
+    if args.command == 'builtin':
+        config = json.loads((path / MARKER).read_text())
+        prefix = Prefix(path, args.wine or session_wine(path) or config['wine'], config.get('lang', 'ja'))
+        for program in args.programs:
+            if '\\' in program or '/' in program or not program.lower().endswith('.exe'):
+                raise SystemExit(f'Expected the name of an executable, such as app.exe: {program}')
+            prefix.builtin(program.lower(), args.undo)
+        raise SystemExit(0)
     stage(path, args.wine)

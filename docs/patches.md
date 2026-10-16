@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 114 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 115 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -18,7 +18,7 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 - 0018 は `WIN4WINE_SESSION_REQUEST` があるときだけ効きます。
 - 0072 は、さらに `WIN4WINE_FOLDER_SHELL` があるときだけ効きます（ReactOS のシェルのセッションだけが設定します）。
 - ReactOS のシェルのセッションは `WIN4WINE_SHELL=reactos` も設定します。0053 はそのとき、XP のための部品の差し替えをしません。
-- Windows 7 のシェルのセッションと見た目（0100〜0114）の多くは、`WIN4WINE_SHELL=win7` のときだけ効きます（どこまでかは表の opt-in の欄にあります。0100 は wineserver が起動したときの環境で判断します）。
+- Windows 7 のシェルのセッションと見た目（0100〜0115）の多くは、`WIN4WINE_SHELL=win7` のときだけ効きます（どこまでかは表の opt-in の欄にあります。0100 は wineserver が起動したときの環境で判断します）。
   0101 はそのとき 0065 と 0066 の XP のための置き換えをしません。
 
 ## 一覧
@@ -205,7 +205,7 @@ msstyles の形式 4 を読み、版 4 のスタイルの部品を描きます�
 | 0106 | user32: DrawText の DT_PREFIXONLY（下線だけを描く）。Windows 7 の comctl32 のリストビューは項目名を描いたあと下線のためにこれで呼ぶので、スタートメニューの「コントロール パネル」などが二度描きで太く見えていた | あり |
 | 0107 | combase・explorer・shell32: `explorer C:\パス` や `start C:\パス` など Wine 側のプログラムから開いたフォルダーを Windows 7 の explorer で開く（LocalServer32 の REG_EXPAND_SZ 展開、/factory サーバーの待機、DelegateExecute の動詞にファイルを渡す）。ライブラリが開いていた | 一部あり（REG_EXPAND_SZ の展開は常に。Windows と同じ） |
 
-### Windows 7 の見た目（0108〜0114）
+### Windows 7 の見た目（0108〜0115）
 
 Windows 7 SP1 の実機（参照用の VM）と画素で比べて合わせたものです。
 
@@ -218,6 +218,7 @@ Windows 7 SP1 の実機（参照用の VM）と画素で比べて合わせたも
 | 0112 | user32, comctl32: Windows 7 のメッセージ ボックス（白地と下のボタン帯、アイコン・文字・右寄せのボタンの配置）、既定のボタンの脈動とプログレス バーの光（どちらも 2 秒周期、Windows 7 SP1 の実機で測定） | `WIN4WINE_SHELL=win7` |
 | 0113 | win32u: Windows 7 の ClearType。XP と同じ 7 段階の標本化で、ガンマをかけずに混ぜる（白地の黒文字が 0, 43, 85, 128, 170, 212, 255 だけになる。実機で確認） | `WIN4WINE_SHELL=win7` |
 | 0114 | win32u: Windows 7 のリンク先フォント（Tahoma の中の日本語など）の大きさと字形。基のフォントの em から決め、em 11・13 は 12・15（実機で測定）。埋め込みビットマップのある大きさはそのビットマップで描く | `WIN4WINE_SHELL=win7` |
+| 0115 | riched20: 複雑な文字（アラビア文字など）の無い段落を GDI で測って描く（フォントのリンクが効く）。Segoe UI の検索欄（スタートメニュー、フォルダーウィンドウ）の日本語が四角や重なりにならないように | `WIN4WINE_SHELL=win7` |
 
 ## 並び順の考え方
 

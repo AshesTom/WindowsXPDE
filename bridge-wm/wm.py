@@ -425,6 +425,7 @@ class Manager:
         states = list(self.prop(w, '_NET_WM_STATE'))
         self.setprop(w, '_NET_WM_STATE', Xatom.ATOM, [s for s in states if s != self.atom('_NET_WM_STATE_HIDDEN')])
         w.configure(stack_mode=X.Above)
+        self.raise_owned(w.id)
         protocols = self.prop(w, 'WM_PROTOCOLS')
         if self.atom('WM_TAKE_FOCUS') in protocols:
             self.message(w, 'WM_PROTOCOLS', [self.atom('WM_TAKE_FOCUS'), X.CurrentTime, 0, 0, 0])
@@ -433,6 +434,26 @@ class Manager:
         self.setprop(self.root, '_NET_ACTIVE_WINDOW', Xatom.WINDOW, [w.id])
         self.restack()
         self.redraw_native(w)
+
+    def raise_owned(self, owner, seen=()):
+        """Keep the windows that OWNER owns (WM_TRANSIENT_FOR) above it, as Windows
+        keeps owned windows above their owner: a click on the caption of a window
+        with a modal dialog raised the window over its dialog."""
+        seen = (*seen, owner)
+        owned = [c for c in self.clients.values()
+                 if c['kind'] == 'normal' and not c['hidden'] and c['owner'] == owner and c['w'].id not in seen]
+        if not owned:
+            return
+        try:
+            order = [w.id for w in self.root.query_tree().children]
+        except error.XError:
+            return
+        for c in sorted(owned, key=lambda c: order.index(c['w'].id) if c['w'].id in order else len(order)):
+            try:
+                c['w'].configure(stack_mode=X.Above)
+            except error.XError:
+                continue
+            self.raise_owned(c['w'].id, seen)
 
     def message(self, w, name, values):
         w.send_event(protocol.event.ClientMessage(window=w, client_type=self.atom(name), data=(32, values)))

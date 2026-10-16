@@ -49,6 +49,9 @@ prefix を作り、そのシェルの DLL はそのシェルのプロセスに�
   登録は、XP のように 1 つずつ確かめて手で書くには多すぎる（DirectUI、プロパティ システム、既知のフォルダなど）ので、
   **使うファイルの部品のマニフェスト**（WinSxS）が登録するものを入れます。インストール済みの Windows のレジストリは移しません。
   Windows 7 のためだけの Wine の挙動は `WIN4WINE_SHELL=win7` のときだけ効かせ、XP と ReactOS のシェルには影響させません。
+  例外として、アプリのファイルのダイアログを Windows 7 の形にするため、ダイアログが読み込む DLL（shell32 など 10 個）は
+  アプリにも使わせます。Wine 自身のプログラムは Wine の DLL のままで、うまく動かないアプリも Wine の DLL に戻せます
+  （[windows7.md](windows7.md) の「どのプログラムが Windows 7 の DLL を使うか」）。
 
 ## Linux のアプリとの統合（bridge）
 
