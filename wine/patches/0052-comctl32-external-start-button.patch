@@ -27,13 +27,13 @@ machine's.
 Scope: only with WIN4WINE_EXTERNAL_SHELL and the Start button class.
 Old patches: 0013, 0033, 0037, 0044.
 ---
- dlls/comctl32_v6/button.c         | 137 ++++++++++++++++++++++++++++++++++----
+ dlls/comctl32_v6/button.c         | 131 ++++++++++++++++++++++++++++++++++----
  dlls/comctl32_v6/comctl32_v6.spec |   1 +
- dlls/user32/win.c                 |  18 +++++
- 3 files changed, 143 insertions(+), 13 deletions(-)
+ dlls/user32/win.c                 |  18 ++++++
+ 3 files changed, 137 insertions(+), 13 deletions(-)
 
 diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
-index 9128e52..2f5744a 100644
+index 9128e52..f4feec0 100644
 --- a/dlls/comctl32_v6/button.c
 +++ b/dlls/comctl32_v6/button.c
 @@ -55,6 +55,7 @@
@@ -44,7 +44,15 @@ index 9128e52..2f5744a 100644
  
  WINE_DEFAULT_DEBUG_CHANNEL(button);
  
-@@ -194,6 +195,7 @@ static const pfThemedPaint btnThemedPaintFunc[MAX_BTN_TYPE] =
+@@ -94,6 +95,7 @@ typedef struct _BUTTON_INFO
+         HBITMAP bitmap;
+         HANDLE  image; /* Duplicated handle used for drawing. */
+     } u;
++    BOOL             start_button; /* the external taskbar's Start button (Win4WineStartButton) */
+ } BUTTON_INFO;
+ 
+ static UINT BUTTON_CalcLayoutRects( const BUTTON_INFO *infoPtr, HDC hdc, RECT *labelRc, RECT *imageRc, RECT *textRc );
+@@ -194,6 +196,7 @@ static const pfThemedPaint btnThemedPaintFunc[MAX_BTN_TYPE] =
  
  typedef BOOL (*pfGetIdealSize)(BUTTON_INFO *infoPtr, SIZE *size);
  
@@ -52,7 +60,7 @@ index 9128e52..2f5744a 100644
  static BOOL PB_GetIdealSize(BUTTON_INFO *infoPtr, SIZE *size);
  static BOOL CB_GetIdealSize(BUTTON_INFO *infoPtr, SIZE *size);
  static BOOL GB_GetIdealSize(BUTTON_INFO *infoPtr, SIZE *size);
-@@ -319,7 +321,8 @@ HRGN set_control_clipping( HDC hdc, const RECT *rect )
+@@ -319,7 +322,8 @@ HRGN set_control_clipping( HDC hdc, const RECT *rect )
          DeleteObject( hrgn );
          hrgn = 0;
      }
@@ -62,20 +70,20 @@ index 9128e52..2f5744a 100644
      if (GetLayout( hdc ) & LAYOUT_RTL)  /* compensate for the shifting done by IntersectClipRect */
      {
          rc.left++;
-@@ -506,6 +509,12 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
+@@ -506,6 +510,12 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
          infoPtr->hwnd = hWnd;
          infoPtr->parent = cs->hwndParent;
          infoPtr->style = cs->style;
 +        {
 +            WCHAR name[64];
-+            if (win4wine_external_shell() &&
-+                GetClassNameW(hWnd, name, ARRAY_SIZE(name)) && !wcscmp(name, L"Win4WineStartButton"))
-+                SetRect(&infoPtr->text_margin, 1, 1, 1, 1);
++            infoPtr->start_button = win4wine_external_shell() &&
++                GetClassNameW(hWnd, name, ARRAY_SIZE(name)) && !wcscmp(name, L"Win4WineStartButton");
++            if (infoPtr->start_button) SetRect(&infoPtr->text_margin, 1, 1, 1, 1);
 +        }
          infoPtr->split_style = BCSS_STRETCH;
          infoPtr->glyph = (HIMAGELIST)0x36;  /* Marlett down arrow char code */
          infoPtr->glyph_size.cx = get_default_glyph_size(infoPtr);
-@@ -1079,7 +1088,21 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
+@@ -1079,7 +1089,21 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
  
          if (!size) return FALSE;
  
@@ -98,7 +106,7 @@ index 9128e52..2f5744a 100644
      }
  
      case WM_NCHITTEST:
-@@ -1092,18 +1115,37 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
+@@ -1092,18 +1116,34 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
  }
  
  /* If maxWidth is zero, rectangle width is unlimited */
@@ -106,10 +114,7 @@ index 9128e52..2f5744a 100644
 + * external taskbar. Ordinary Buttons retain their own font and sizing. */
 +static BOOL external_start_button(const BUTTON_INFO *info)
 +{
-+    WCHAR name[64];
-+    return win4wine_external_shell() &&
-+        GetClassNameW(info->hwnd, name, ARRAY_SIZE(name)) &&
-+        !wcscmp(name, L"Win4WineStartButton");
++    return info->start_button;
 +}
 +
 +static HTHEME start_button_theme(const BUTTON_INFO *info)
@@ -137,7 +142,7 @@ index 9128e52..2f5744a 100644
      if (hPrevFont) SelectObject(hdc, hPrevFont);
  
      return rect;
-@@ -1240,6 +1282,17 @@ static UINT BUTTON_ILStoBS(UINT align)
+@@ -1240,6 +1280,13 @@ static UINT BUTTON_ILStoBS(UINT align)
      }
  }
  
@@ -145,17 +150,13 @@ index 9128e52..2f5744a 100644
 + * HIMAGELIST is opaque; use that module's public API for its handles. */
 +static HMODULE start_button_image_module(const BUTTON_INFO *info)
 +{
-+    WCHAR name[64];
-+    if (GetClassNameW(info->hwnd, name, ARRAY_SIZE(name))
-+        && !wcscmp(name, L"Win4WineStartButton"))
-+        return GetModuleHandleW(L"comctl32.dll");
-+    return NULL;
++    return info->start_button ? GetModuleHandleW(L"comctl32.dll") : NULL;
 +}
 +
  static SIZE BUTTON_GetImageSize(const BUTTON_INFO *infoPtr)
  {
      ICONINFO iconInfo;
-@@ -1249,10 +1302,22 @@ static SIZE BUTTON_GetImageSize(const BUTTON_INFO *infoPtr)
+@@ -1249,10 +1296,22 @@ static SIZE BUTTON_GetImageSize(const BUTTON_INFO *infoPtr)
      /* ImageList has priority over image */
      if (infoPtr->imagelist.himl)
      {
@@ -180,7 +181,7 @@ index 9128e52..2f5744a 100644
      }
      else if (infoPtr->u.image)
      {
-@@ -1426,6 +1491,17 @@ static BOOL PB_GetIdealSize(BUTTON_INFO *infoPtr, SIZE *size)
+@@ -1426,6 +1485,17 @@ static BOOL PB_GetIdealSize(BUTTON_INFO *infoPtr, SIZE *size)
  
          size->cx = labelSize.cx;
          size->cy = labelSize.cy;
@@ -198,7 +199,7 @@ index 9128e52..2f5744a 100644
      }
      return TRUE;
  }
-@@ -1737,9 +1813,27 @@ static void BUTTON_DrawImage(const BUTTON_INFO *infoPtr, HDC hdc, HBRUSH hbr, UI
+@@ -1737,9 +1807,27 @@ static void BUTTON_DrawImage(const BUTTON_INFO *infoPtr, HDC hdc, HBRUSH hbr, UI
  {
      if (infoPtr->imagelist.himl)
      {
@@ -229,7 +230,7 @@ index 9128e52..2f5744a 100644
      }
      else
      {
-@@ -2771,9 +2865,13 @@ static void PB_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
+@@ -2771,9 +2859,13 @@ static void PB_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
      {
          DrawThemeParentBackground(infoPtr->hwnd, hDC, NULL);
          /* Tests show that the brush from WM_CTLCOLORBTN is used for filling background after a
@@ -246,7 +247,7 @@ index 9128e52..2f5744a 100644
      }
      DrawThemeBackground(theme, hDC, BP_PUSHBUTTON, state, &bgRect, NULL);
  
-@@ -3225,7 +3323,7 @@ static void CL_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
+@@ -3225,7 +3317,7 @@ static void CL_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
      }
  }
  
@@ -255,7 +256,7 @@ index 9128e52..2f5744a 100644
  {
      WNDCLASSW wndClass;
  
-@@ -3236,6 +3334,19 @@ void BUTTON_Register(void)
+@@ -3236,6 +3328,19 @@ void BUTTON_Register(void)
      wndClass.cbWndExtra = sizeof(BUTTON_INFO *);
      wndClass.hCursor = LoadCursorW(0, (LPWSTR)IDC_ARROW);
      wndClass.hbrBackground = NULL;

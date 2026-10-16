@@ -10,7 +10,8 @@ the DACL with that one. On a mismatch it asks to empty the broken recycle
 bin.
 Wine before: the server does not keep a file's security descriptor; it
 builds one from the Unix mode (two ACEs), so the comparison always failed.
-Change: when the server runs with WIN4WINE_SHELL=win7, the DACL given when
+Change: when the server runs with WIN4WINE_SHELL=win7 and the
+WIN4WINE_EXTERNAL_SHELL opt-in, the DACL given when
 a file or directory is created (FILE_CREATE, FILE_SUPERSEDE,
 FILE_OVERWRITE_IF) or set with DACL_SECURITY_INFORMATION is kept in the
 user.wine.dacl extended attribute (the DACL control flags, then the ACL),
@@ -19,14 +20,14 @@ the Unix owner as before. The Unix mode is still set from the DACL as
 before.
 Evidence: with WIN4WINE_SHELL=win7, a recreated recycle bin folder carries
 the three ACEs and the message no longer appears.
-Scope: only when WIN4WINE_SHELL is win7; without it nothing is stored or
+Scope: only in the Windows 7 shell session; elsewhere nothing is stored or
 read, and XP and ReactOS sessions behave as before.
 ---
  server/change.c | 12 +++++++++-
- server/fd.c     | 69 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ server/fd.c     | 70 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  server/file.c   | 15 ++++++++++++-
  server/file.h   |  2 ++
- 4 files changed, 96 insertions(+), 2 deletions(-)
+ 4 files changed, 97 insertions(+), 2 deletions(-)
 
 diff --git a/server/change.c b/server/change.c
 index 5bcd067..2e522e4 100644
@@ -66,7 +67,7 @@ index 5bcd067..2e522e4 100644
      return 1;
  }
 diff --git a/server/fd.c b/server/fd.c
-index f70bec3..f5decc7 100644
+index f70bec3..e2f9e65 100644
 --- a/server/fd.c
 +++ b/server/fd.c
 @@ -101,6 +101,7 @@
@@ -77,15 +78,16 @@ index f70bec3..f5decc7 100644
  
  #include "winternl.h"
  #include "winioctl.h"
-@@ -2464,6 +2465,74 @@ static int xattr_fremove( int filedes, const char *name )
+@@ -2464,6 +2465,75 @@ static int xattr_fremove( int filedes, const char *name )
  #endif
  }
  
 +#define XATTR_DACL XATTR_USER_PREFIX "wine.dacl"
 +
-+/* With the Windows 7 shell, the DACL given to a file or directory is kept in an extended
-+ * attribute and returned instead of the one made from the Unix mode: Windows 7's shell
-+ * checks the DACL of the folders it creates, such as the recycle bin. */
++/* With the Windows 7 shell (WIN4WINE_SHELL=win7, with the WIN4WINE_EXTERNAL_SHELL
++ * opt-in), the DACL given to a file or directory is kept in an extended attribute
++ * and returned instead of the one made from the Unix mode: Windows 7's shell checks
++ * the DACL of the folders it creates, such as the recycle bin. */
 +static int stored_dacl_enabled(void)
 +{
 +    static int enabled = -1;
@@ -93,7 +95,7 @@ index f70bec3..f5decc7 100644
 +    if (enabled == -1)
 +    {
 +        const char *shell = getenv( "WIN4WINE_SHELL" );
-+        enabled = shell && !strcmp( shell, "win7" );
++        enabled = getenv( "WIN4WINE_EXTERNAL_SHELL" ) && shell && !strcasecmp( shell, "win7" );
 +    }
 +    return enabled;
 +}

@@ -38,17 +38,17 @@ Scope: only with WIN4WINE_EXTERNAL_SHELL; classic sessions and ordinary
 Wine keep their frames.
 Old patches: 0014 (except metric.c), 0022, 0027, 0028, 0032, 0034, 0062, 0065.
 ---
- dlls/user32/defwnd.c      |  67 +++++++++++
+ dlls/user32/defwnd.c      |  76 +++++++++++++
  dlls/user32/nonclient.c   |   8 ++
  dlls/uxtheme/draw.c       |  22 ++++
  dlls/uxtheme/uxtheme.spec |   3 +
  dlls/uxtheme/window.c     | 284 ++++++++++++++++++++++++++++++++++++++++++++++
  dlls/win32u/defwnd.c      |  25 +++-
  include/winuser.h         |   4 +
- 7 files changed, 410 insertions(+), 3 deletions(-)
+ 7 files changed, 419 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/user32/defwnd.c b/dlls/user32/defwnd.c
-index 79192d4..2b30c16 100644
+index 6069166..0c303a0 100644
 --- a/dlls/user32/defwnd.c
 +++ b/dlls/user32/defwnd.c
 @@ -80,6 +80,50 @@ static void default_ime_compositionA( HWND hwnd, WPARAM wparam, LPARAM lparam )
@@ -102,47 +102,62 @@ index 79192d4..2b30c16 100644
  /* XP captures the Start panel through WM_PRINT before its show animation.
   * The win32u default only prints the parent; include visible descendants in
   * the caller's DC for the explicitly selected external shell. */
-@@ -94,7 +138,10 @@ static LRESULT external_shell_print( HWND hwnd, HDC dc, LPARAM flags )
-     if (!(saved = SaveDC( dc ))) return 0;
-     GetClientRect( hwnd, &rect );
-     if (flags & PRF_NONCLIENT)
-+    {
-         NtUserMessageCall( hwnd, WM_PRINT, (WPARAM)dc, PRF_NONCLIENT, 0, NtUserDefWindowProc, FALSE );
-+        external_shell_draw_nonclient( hwnd, dc );
-+    }
+@@ -96,6 +140,7 @@ static LRESULT external_shell_print( HWND hwnd, HDC dc, LPARAM flags )
      if (flags & PRF_NONCLIENT)
      {
+         NtUserMessageCall( hwnd, WM_PRINT, (WPARAM)dc, PRF_NONCLIENT, 0, NtUserDefWindowProc, FALSE );
++        external_shell_draw_nonclient( hwnd, dc );
          GetWindowRect( hwnd, &window );
-@@ -224,6 +271,16 @@ LRESULT WINAPI DefWindowProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
+         MapWindowPoints( hwnd, NULL, &origin, 1 );
+         OffsetViewportOrgEx( dc, origin.x - window.left, origin.y - window.top, NULL );
+@@ -163,6 +208,33 @@ static LRESULT external_shell_print( HWND hwnd, HDC dc, LPARAM flags )
+     return 0;
+ }
+ 
++/* The external shell's frames after DefWindowProc's own handling of MSG. */
++static LRESULT external_shell_defwnd( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam, LRESULT result )
++{
++    switch (msg)
++    {
++    case WM_NCPAINT:
++    case WM_NCACTIVATE:
++    case WM_SETTEXT:
++    /* WM_SETICON repaints the caption with the classic code too, as when a
++     * folder window shows the icon of the folder it navigated to. */
++    case WM_SETICON:
++        external_shell_draw_nonclient( hwnd, NULL );
++        break;
++    case WM_PRINT:
++        if ((lparam & PRF_NONCLIENT) && !(lparam & (PRF_CHILDREN | PRF_OWNED)))
++            external_shell_draw_nonclient( hwnd, (HDC)wparam );
++        break;
++    case WM_NCHITTEST:
++        return external_shell_nonclient_hit( hwnd, lparam, result );
++    case WM_NCMOUSEMOVE:
++    case WM_NCMOUSELEAVE:
++        external_shell_nonclient_mouse( hwnd, msg );
++        break;
++    }
++    return result;
++}
++
+ /***********************************************************************
+  *              DefWindowProcA (USER32.@)
+  *
+@@ -223,6 +295,8 @@ LRESULT WINAPI DefWindowProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
          break;
      }
  
-+    /* WM_SETICON repaints the caption with the classic code too, as when a
-+     * folder window shows the icon of the folder it navigated to. */
-+    if (msg == WM_NCPAINT || msg == WM_NCACTIVATE || msg == WM_SETTEXT || msg == WM_SETICON)
-+        external_shell_draw_nonclient( hwnd, NULL );
-+    else if (msg == WM_PRINT && (lParam & PRF_NONCLIENT) && !(lParam & (PRF_CHILDREN | PRF_OWNED)))
-+        external_shell_draw_nonclient( hwnd, (HDC)wParam );
-+
-+    if (msg == WM_NCHITTEST) result = external_shell_nonclient_hit( hwnd, lParam, result );
-+    if (msg == WM_NCMOUSEMOVE || msg == WM_NCMOUSELEAVE) external_shell_nonclient_mouse(hwnd, msg);
++    result = external_shell_defwnd( hwnd, msg, wParam, lParam, result );
 +
      SPY_ExitMessage( SPY_RESULT_DEFWND, hwnd, msg, result, wParam, lParam );
      return result;
  }
-@@ -294,6 +351,16 @@ LRESULT WINAPI DefWindowProcW(
+@@ -293,6 +367,8 @@ LRESULT WINAPI DefWindowProcW(
          result = NtUserMessageCall( hwnd, msg, wParam, lParam, 0, NtUserDefWindowProc, FALSE );
          break;
      }
-+    /* WM_SETICON repaints the caption with the classic code too, as when a
-+     * folder window shows the icon of the folder it navigated to. */
-+    if (msg == WM_NCPAINT || msg == WM_NCACTIVATE || msg == WM_SETTEXT || msg == WM_SETICON)
-+        external_shell_draw_nonclient( hwnd, NULL );
-+    else if (msg == WM_PRINT && (lParam & PRF_NONCLIENT) && !(lParam & (PRF_CHILDREN | PRF_OWNED)))
-+        external_shell_draw_nonclient( hwnd, (HDC)wParam );
-+
-+    if (msg == WM_NCHITTEST) result = external_shell_nonclient_hit( hwnd, lParam, result );
-+    if (msg == WM_NCMOUSEMOVE || msg == WM_NCMOUSELEAVE) external_shell_nonclient_mouse(hwnd, msg);
++    result = external_shell_defwnd( hwnd, msg, wParam, lParam, result );
 +
      SPY_ExitMessage( SPY_RESULT_DEFWND, hwnd, msg, result, wParam, lParam );
      return result;
@@ -540,7 +555,7 @@ index d059a85..15af1cd 100644
 +    return TRUE;
 +}
 diff --git a/dlls/win32u/defwnd.c b/dlls/win32u/defwnd.c
-index 4268708..42fc315 100644
+index d3798ed..8655d55 100644
 --- a/dlls/win32u/defwnd.c
 +++ b/dlls/win32u/defwnd.c
 @@ -1482,6 +1482,25 @@ void draw_menu_button( HWND hwnd, HDC dc, RECT *r, enum NONCLIENT_BUTTON_TYPE ty

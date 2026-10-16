@@ -15,15 +15,15 @@ Evidence: hh.exe gives XP's sizes; xpcmp.exe's message box caption is
 pixel-identical.
 Scope: the XP shell session (WIN4WINE_EXTERNAL_SHELL, no WIN4WINE_SHELL).
 ---
- dlls/uxtheme/draw.c   | 6 ++++--
+ dlls/uxtheme/draw.c   | 5 +++--
  dlls/uxtheme/window.c | 4 ++++
- 2 files changed, 8 insertions(+), 2 deletions(-)
+ 2 files changed, 7 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 6263960..dc7968f 100644
+index ce3be62..770c6c3 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
-@@ -937,8 +937,10 @@ static HRESULT get_image_part_size(HTHEME hTheme, int iPartId, int iStateId, REC
+@@ -937,8 +937,9 @@ static HRESULT get_image_part_size(HTHEME hTheme, int iPartId, int iStateId, REC
          }
          case TS_MIN:
              /* Windows 7 (a version 4 style): the content margins, at least 1
@@ -31,13 +31,12 @@ index 6263960..dc7968f 100644
 -            if (MSSTYLES_ActiveThemeFormat4())
 +             * (Explorer sizes its address and search bands from it); XP SP3
 +             * too, in the XP shell (Luna's header item: 3x1 with hh.exe) */
-+            if (MSSTYLES_ActiveThemeFormat4() ||
-+                (win4wine_external_shell() && !GetEnvironmentVariableW(L"WIN4WINE_SHELL", NULL, 0)))
++            if (MSSTYLES_ActiveThemeFormat4() || win4wine_shell() == WIN4WINE_SHELL_XP)
              {
                  MARGINS margins = {0};
                  GetThemeMargins(hTheme, NULL, iPartId, iStateId, TMT_CONTENTMARGINS, NULL, &margins);
 diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
-index 914cb80..1ca4ea6 100644
+index 914cb80..695ba82 100644
 --- a/dlls/uxtheme/window.c
 +++ b/dlls/uxtheme/window.c
 @@ -571,6 +571,10 @@ static BOOL draw_non_client(HWND hwnd, HDC target, BOOL paint)
@@ -46,7 +45,7 @@ index 914cb80..1ca4ea6 100644
      }
 +    /* XP starts the title two pixels further in without an icon (a message
 +     * box's, compared with the reference XP machine) */
-+    else if (!GetEnvironmentVariableW(L"WIN4WINE_SHELL", NULL, 0))
++    else if (win4wine_shell() == WIN4WINE_SHELL_XP)
 +        text.left += 2;
      if (style & WS_SYSMENU)
      {

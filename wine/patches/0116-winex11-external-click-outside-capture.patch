@@ -26,13 +26,13 @@ Scope: external shells (WIN4WINE_EXTERNAL_SHELL).
  1 file changed, 24 insertions(+)
 
 diff --git a/dlls/winex11.drv/event.c b/dlls/winex11.drv/event.c
-index 195f2f0..d33dd1d 100644
+index 195f2f0..34cb33e 100644
 --- a/dlls/winex11.drv/event.c
 +++ b/dlls/winex11.drv/event.c
-@@ -871,6 +871,29 @@ static BOOL X11DRV_FocusIn( HWND hwnd, XEvent *xev )
- /**********************************************************************
-  *              focus_out
-  */
+@@ -868,6 +868,29 @@ static BOOL X11DRV_FocusIn( HWND hwnd, XEvent *xev )
+     return TRUE;
+ }
+ 
 +/* win4wine: Windows gives a click outside the foreground application to the
 + * window that has the mouse capture, and a combo box closes its list on it.
 + * Under a window manager the click goes to the other X client (the shell's
@@ -56,9 +56,9 @@ index 195f2f0..d33dd1d 100644
 +    NtUserPostMessage( info.hwndCapture, WM_LBUTTONUP, 0, MAKELPARAM( pt.x, pt.y ) );
 +}
 +
- static void focus_out( Display *display , HWND hwnd )
-  {
-     if (xim_in_compose_mode()) return;
+ /**********************************************************************
+  *              focus_out
+  */
 @@ -880,6 +903,7 @@ static void focus_out( Display *display , HWND hwnd )
  
      if (is_virtual_desktop()) return;

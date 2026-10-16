@@ -56,7 +56,7 @@ index 7a20762..8b0d896 100644
      if (read_font(key, L"IconFont", 96, &icon))
          SystemParametersInfoW(SPI_SETICONTITLELOGFONT, sizeof(icon), &icon, 0);
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
-index 42f6e8f..2b47521 100644
+index 10c6e66..98c3919 100644
 --- a/dlls/uxtheme/msstyles.c
 +++ b/dlls/uxtheme/msstyles.c
 @@ -252,6 +252,20 @@ void MSSTYLES_CloseThemeFile(PTHEME_FILE tf)

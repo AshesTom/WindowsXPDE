@@ -20,10 +20,10 @@ Scope: only with WIN4WINE_EXTERNAL_SHELL.
  1 file changed, 3 insertions(+)
 
 diff --git a/dlls/user32/win.c b/dlls/user32/win.c
-index c3faaf2..f7b4544 100644
+index 98fd0f8..dd7618c 100644
 --- a/dlls/user32/win.c
 +++ b/dlls/user32/win.c
-@@ -704,6 +704,9 @@ void WINAPI SwitchToThisWindow( HWND hwnd, BOOL alt_tab )
+@@ -696,6 +696,9 @@ void WINAPI SwitchToThisWindow( HWND hwnd, BOOL alt_tab )
  {
      if (IsIconic( hwnd )) NtUserShowWindow( hwnd, SW_RESTORE );
      else BringWindowToTop( hwnd );

@@ -32,7 +32,7 @@ Scope: language neutral modules with a MUI file beside them.
  1 file changed, 198 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/ntdll/resource.c b/dlls/ntdll/resource.c
-index 3de932e..1c49acc 100644
+index 3de932e..3bae45b 100644
 --- a/dlls/ntdll/resource.c
 +++ b/dlls/ntdll/resource.c
 @@ -251,6 +251,200 @@ done:
@@ -86,7 +86,7 @@ index 3de932e..1c49acc 100644
 +    /* PATH is beside the module's own file, whose name is already the real one:
 +     * a 32-bit process that maps a 64-bit system32 DLL (through sysnative) must
 +     * not be sent to syswow64 for its MUI file. */
-+    InitializeObjectAttributes( &attr, path, OBJ_CASE_INSENSITIVE, 0, NULL );
++    InitializeObjectAttributes( &attr, (UNICODE_STRING *)path, OBJ_CASE_INSENSITIVE, 0, NULL );
 +    RtlWow64EnableFsRedirectionEx( TRUE, &redirect );
 +    status = NtOpenFile( &file, GENERIC_READ | SYNCHRONIZE, &attr, &io, FILE_SHARE_READ | FILE_SHARE_DELETE,
 +                         FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE );

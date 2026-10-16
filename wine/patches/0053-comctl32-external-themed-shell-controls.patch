@@ -29,15 +29,15 @@ Old patches: 0060, 0068.
  dlls/comctl32/comctl32.h          |  8 ++++++
  dlls/comctl32/commctrl.c          | 56 +++++++++++++++++++++++++++++++++++++++
  dlls/comctl32_v6/button.c         |  6 ++---
- dlls/comctl32_v6/combo.c          | 29 ++++++++++++++++++--
+ dlls/comctl32_v6/combo.c          | 27 +++++++++++++++++--
  dlls/comctl32_v6/comctl32_v6.spec |  1 +
  dlls/comctl32_v6/edit.c           |  9 +++++--
  dlls/comctl32_v6/listbox.c        | 18 ++++++++++---
  dlls/comctl32_v6/static.c         |  9 +++++--
  dlls/user32/class.c               | 54 +++++++++++++++++++++++++++++++++++++
  dlls/user32/controls.h            |  2 ++
- dlls/user32/win.c                 | 28 +++++++++++++++-----
- 11 files changed, 200 insertions(+), 20 deletions(-)
+ dlls/user32/win.c                 | 20 +++++++++-----
+ 11 files changed, 190 insertions(+), 20 deletions(-)
 
 diff --git a/dlls/comctl32/comctl32.h b/dlls/comctl32/comctl32.h
 index 249befa..918a303 100644
@@ -146,10 +146,10 @@ index 80404b8..b5e3814 100644
  {
      int min = 0, max = ARRAY_SIZE(classes) - 1;
 diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
-index 2f5744a..e011659 100644
+index f4feec0..87c594c 100644
 --- a/dlls/comctl32_v6/button.c
 +++ b/dlls/comctl32_v6/button.c
-@@ -3323,7 +3323,7 @@ static void CL_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
+@@ -3317,7 +3317,7 @@ static void CL_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
      }
  }
  
@@ -158,7 +158,7 @@ index 2f5744a..e011659 100644
  {
      WNDCLASSW wndClass;
  
-@@ -3340,13 +3340,13 @@ static void register_button_class(const WCHAR *name)
+@@ -3334,13 +3334,13 @@ static void register_button_class(const WCHAR *name)
  
  void BUTTON_Register(void)
  {
@@ -175,30 +175,29 @@ index 2f5744a..e011659 100644
      return GetClassInfoW(COMCTL32_hModule, L"Win4WineStartButton", &wc);
  }
 diff --git a/dlls/comctl32_v6/combo.c b/dlls/comctl32_v6/combo.c
-index a8ecf9f..5b95b92 100644
+index a8ecf9f..3f90350 100644
 --- a/dlls/comctl32_v6/combo.c
 +++ b/dlls/comctl32_v6/combo.c
-@@ -78,6 +78,12 @@ static UINT	CBitHeight, CBitWidth;
+@@ -78,6 +78,11 @@ static UINT	CBitHeight, CBitWidth;
  static void CBCalcPlacement(HEADCOMBO *combo);
  static void CBResetPos(HEADCOMBO *combo);
  
-+static BOOL is_external_alias(HWND hwnd)
++static BOOL is_external_alias(void)
 +{
-+    (void)hwnd;
 +    return COMCTL32_IsExternalAlias();
 +}
 +
  /***********************************************************************
   *           COMBO_Init
   *
-@@ -337,6 +343,16 @@ static void CBCalcPlacement(HEADCOMBO *combo)
+@@ -337,6 +342,16 @@ static void CBCalcPlacement(HEADCOMBO *combo)
           */
          combo->buttonRect.left = combo->buttonRect.right - GetSystemMetrics(SM_CXVSCROLL);
          combo->textRect.right = combo->buttonRect.left;
 +
 +        /* XP's themed ComboBox insets its button only by the one pixel frame
 +         * and lets it fill the client height; measured on the folder address bar. */
-+        if (is_external_alias(combo->self) && GetWindowTheme(combo->self))
++        if (is_external_alias() && GetWindowTheme(combo->self))
 +        {
 +            RECT client;
 +            GetClientRect(combo->self, &client);
@@ -208,15 +207,15 @@ index a8ecf9f..5b95b92 100644
      }
  
      /* In the case of a dropdown, there is an additional spacing between the text area and the button. */
-@@ -1475,6 +1491,7 @@ static LRESULT COMBO_SetItemHeight( LPHEADCOMBO lphc, INT index, INT height )
+@@ -1475,6 +1490,7 @@ static LRESULT COMBO_SetItemHeight( LPHEADCOMBO lphc, INT index, INT height )
         if( height < 32768 )
         {
             lphc->item_height = height + 2;  /* Is the 2 for 2*EDIT_CONTROL_PADDING? */
-+           lphc->text_height_set = is_external_alias(lphc->self);
++           lphc->text_height_set = is_external_alias();
  
  	 /*
  	  * Redo the layout of the control.
-@@ -1965,6 +1982,8 @@ static LRESULT CALLBACK COMBO_WindowProc( HWND hwnd, UINT message, WPARAM wParam
+@@ -1965,6 +1981,8 @@ static LRESULT CALLBACK COMBO_WindowProc( HWND hwnd, UINT message, WPARAM wParam
      case CB_GETITEMHEIGHT:
          if ((INT)wParam >= 0) /* listbox item */
              return SendMessageW(lphc->hWndLBox, LB_GETITEMHEIGHT, wParam, 0);
@@ -225,7 +224,7 @@ index a8ecf9f..5b95b92 100644
          return CBGetTextAreaHeight(lphc, FALSE);
  
      case CB_RESETCONTENT:
-@@ -2112,7 +2131,7 @@ static LRESULT CALLBACK COMBO_WindowProc( HWND hwnd, UINT message, WPARAM wParam
+@@ -2112,7 +2130,7 @@ static LRESULT CALLBACK COMBO_WindowProc( HWND hwnd, UINT message, WPARAM wParam
      return DefWindowProcW(hwnd, message, wParam, lParam);
  }
  
@@ -234,7 +233,7 @@ index a8ecf9f..5b95b92 100644
  {
      WNDCLASSW wndClass;
  
-@@ -2123,6 +2142,12 @@ void COMBO_Register(void)
+@@ -2123,6 +2141,11 @@ void COMBO_Register(void)
      wndClass.cbWndExtra = sizeof(HEADCOMBO *);
      wndClass.hCursor = LoadCursorW(0, (LPWSTR)IDC_ARROW);
      wndClass.hbrBackground = NULL;
@@ -247,7 +246,6 @@ index a8ecf9f..5b95b92 100644
 +{
 +    COMBO_Register_Name(WC_COMBOBOXW);
 +}
-+
 diff --git a/dlls/comctl32_v6/comctl32_v6.spec b/dlls/comctl32_v6/comctl32_v6.spec
 index 74ecd1f..bf037fb 100644
 --- a/dlls/comctl32_v6/comctl32_v6.spec
@@ -438,25 +436,10 @@ index 69c8fd9..df06c4f 100644
 +
  #endif  /* __WINE_CONTROLS_H */
 diff --git a/dlls/user32/win.c b/dlls/user32/win.c
-index 86b0fff..c3faaf2 100644
+index 86b0fff..98fd0f8 100644
 --- a/dlls/user32/win.c
 +++ b/dlls/user32/win.c
-@@ -277,6 +277,14 @@ static BOOL is_default_coord( int x )
-     return x == CW_USEDEFAULT || x == 0x8000;
- }
- 
-+/* ReactOS's shell instead of XP's (win4wine). */
-+static BOOL reactos_shell(void)
-+{
-+    WCHAR value[8];
-+    DWORD len = GetEnvironmentVariableW( L"WIN4WINE_SHELL", value, ARRAY_SIZE(value) );
-+    return len && len < ARRAY_SIZE(value) && !wcsicmp( value, L"reactos" );
-+}
-+
- /***********************************************************************
-  *           WIN_CreateWindowEx
-  *
-@@ -292,22 +300,28 @@ HWND WIN_CreateWindowEx( CREATESTRUCTW *cs, LPCWSTR className, HINSTANCE module,
+@@ -292,22 +292,28 @@ HWND WIN_CreateWindowEx( CREATESTRUCTW *cs, LPCWSTR className, HINSTANCE module,
      WCHAR name_buf[8];
      HMENU menu;
  
@@ -471,7 +454,7 @@ index 86b0fff..c3faaf2 100644
 +     * activation context are left unchanged. ReactOS's shell (WIN4WINE_SHELL
 +     * is reactos) brings its own Common Controls 6 with its manifest and keeps
 +     * its controls. */
-+    if (!IS_INTRESOURCE(className) && win4wine_external_shell() && !reactos_shell())
++    if (!IS_INTRESOURCE(className) && win4wine_shell() && win4wine_shell() != WIN4WINE_SHELL_REACTOS)
      {
 +        const WCHAR *themed = NULL;
          WCHAR parent_class[64];

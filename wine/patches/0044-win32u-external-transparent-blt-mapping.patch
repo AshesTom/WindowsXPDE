@@ -18,10 +18,10 @@ Old patches: 0064.
  1 file changed, 52 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/win32u/bitblt.c b/dlls/win32u/bitblt.c
-index f6fc0d9..564735c 100644
+index 95e6246..c495f39 100644
 --- a/dlls/win32u/bitblt.c
 +++ b/dlls/win32u/bitblt.c
-@@ -843,6 +843,44 @@ BOOL WINAPI NtGdiMaskBlt( HDC hdcDest, INT nXDest, INT nYDest, INT nWidth, INT n
+@@ -842,6 +842,44 @@ BOOL WINAPI NtGdiMaskBlt( HDC hdcDest, INT nXDest, INT nYDest, INT nWidth, INT n
      return TRUE;
  }
  
@@ -66,7 +66,7 @@ index f6fc0d9..564735c 100644
  /******************************************************************************
   *           NtGdiTransparentBlt    (win32u.@)
   */
-@@ -901,8 +939,20 @@ BOOL WINAPI NtGdiTransparentBlt( HDC hdcDest, int xDest, int yDest, int widthDes
+@@ -900,8 +938,20 @@ BOOL WINAPI NtGdiTransparentBlt( HDC hdcDest, int xDest, int yDest, int widthDes
      dc_work->attr->stretch_blt_mode = COLORONCOLOR;
      release_dc_ptr( dc_work );
  

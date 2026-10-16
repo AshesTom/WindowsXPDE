@@ -70,16 +70,13 @@ index 5d6cbb7..38fe9dd 100644
  
      if (dce->clip_rgn) NtGdiCombineRgn( vis_rgn, vis_rgn, dce->clip_rgn,
 diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
-index e8ebf9e..7333a83 100644
+index e8ebf9e..cbf4126 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
-@@ -2172,6 +2172,100 @@ static BOOL is_fullscreen( const MONITORINFO *info, const RECT *rect )
-  *
-  * Backend implementation of SetWindowPos.
-  */
-+/* Windows shows the screen under a top-level window that has no background brush until the
-+ * window paints there; XP's shell32 reads those pixels back to fade its log-off background to
-+ * grey. Give such a window's new surface what is on the screen there, before it is mapped. */
+@@ -2167,6 +2167,100 @@ static BOOL is_fullscreen( const MONITORINFO *info, const RECT *rect )
+            rect->top <= info->rcMonitor.top && rect->bottom >= info->rcMonitor.bottom;
+ }
+ 
 +/* Redraw RECT (screen coordinates) of DC, which shows WINDOW_RECT, as the screen would be
 + * without the layered window LIST[LAYERED]: from the surfaces of the windows under it, bottom
 + * up. Leaves DC as it is when a window above covers part of RECT, or when a window of another
@@ -136,6 +133,9 @@ index e8ebf9e..7333a83 100644
 +    }
 +}
 +
++/* Windows shows the screen under a top-level window that has no background brush until the
++ * window paints there; XP's shell32 reads those pixels back to fade its log-off background to
++ * grey. Give such a window's new surface what is on the screen there, before it is mapped. */
 +static void copy_screen_to_new_surface( HWND hwnd, const RECT *window_rect )
 +{
 +    HDC screen, dc;
@@ -171,9 +171,9 @@ index e8ebf9e..7333a83 100644
 +    NtUserReleaseDC( 0, screen );
 +}
 +
- static BOOL apply_window_pos( HWND hwnd, HWND insert_after, UINT swp_flags, struct window_surface *new_surface,
-                               const struct window_rects *new_rects, const RECT *valid_rects )
- {
+ /***********************************************************************
+  *           apply_window_pos
+  *
 @@ -2294,6 +2388,10 @@ static BOOL apply_window_pos( HWND hwnd, HWND insert_after, UINT swp_flags, stru
      {
          TRACE( "win %p surface %p -> %p\n", hwnd, old_surface, new_surface );

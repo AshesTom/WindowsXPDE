@@ -32,29 +32,24 @@ glyphs match bindw.exe's Meiryo -12 on Windows 7.
 Scope: the host's format with external shells (WIN4WINE_EXTERNAL_SHELL),
 the rest in the Windows 7 shell (WIN4WINE_SHELL=win7).
 ---
- dlls/riched20/editor.h |  1 +
- dlls/riched20/style.c  |  6 ++++++
+ dlls/riched20/style.c  |  7 +++++++
  dlls/riched20/txtsrv.c | 19 +++++++++++++++++++
- dlls/riched20/wrap.c   | 33 ++++++++++++++++++++++++++++++---
- 4 files changed, 56 insertions(+), 3 deletions(-)
+ dlls/riched20/wrap.c   | 21 ++++++++++++++++++---
+ 3 files changed, 44 insertions(+), 3 deletions(-)
 
-diff --git a/dlls/riched20/editor.h b/dlls/riched20/editor.h
-index 1ad8f4a..b834d74 100644
---- a/dlls/riched20/editor.h
-+++ b/dlls/riched20/editor.h
-@@ -198,6 +198,7 @@ void ME_InitContext(ME_Context *c, ME_TextEditor *editor, HDC hDC);
- void ME_DestroyContext(ME_Context *c);
- 
- /* wrap.c */
-+BOOL windows7_shell(void);
- BOOL ME_WrapMarkedParagraphs(ME_TextEditor *editor);
- void para_range_invalidate( ME_TextEditor *editor, ME_Paragraph *start_para, ME_Paragraph *last_para );
- void ME_SendRequestResize(ME_TextEditor *editor, BOOL force);
 diff --git a/dlls/riched20/style.c b/dlls/riched20/style.c
-index 8102ec6..0ee9622 100644
+index 8102ec6..eff8f83 100644
 --- a/dlls/riched20/style.c
 +++ b/dlls/riched20/style.c
-@@ -326,6 +326,12 @@ ME_LogFontFromStyle(ME_Context* c, LOGFONTW *lf, const ME_Style *s)
+@@ -19,6 +19,7 @@
+  */
+ 
+ #include "editor.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(richedit);
+ WINE_DECLARE_DEBUG_CHANNEL(richedit_style);
+@@ -326,6 +327,12 @@ ME_LogFontFromStyle(ME_Context* c, LOGFONTW *lf, const ME_Style *s)
      lf->lfPitchAndFamily = s->fmt.bPitchAndFamily;
    if (s->fmt.dwMask & CFM_CHARSET)
      lf->lfCharSet = s->fmt.bCharSet;
@@ -62,7 +57,7 @@ index 8102ec6..0ee9622 100644
 +   * links fonts for the others (Japanese text in Segoe UI takes Meiryo), as
 +   * Windows' rich edit binds fonts: the system's charset asked for a Japanese
 +   * face for the whole text. */
-+  if (windows7_shell() && lf->lfCharSet != SYMBOL_CHARSET)
++  if (win4wine_shell() == WIN4WINE_SHELL_WIN7 && lf->lfCharSet != SYMBOL_CHARSET)
 +    lf->lfCharSet = DEFAULT_CHARSET;
  }
  
@@ -105,26 +100,21 @@ index 5c63b3d..834cecf 100644
      {
          if (bits & TXTBIT_USEPASSWORD) ITextHost_TxGetPasswordChar( services->editor->texthost, &services->editor->password_char );
 diff --git a/dlls/riched20/wrap.c b/dlls/riched20/wrap.c
-index a4d638a..5c5c621 100644
+index a4d638a..6a56e77 100644
 --- a/dlls/riched20/wrap.c
 +++ b/dlls/riched20/wrap.c
-@@ -814,6 +814,35 @@ static HRESULT shape_para( ME_Context *c, ME_Paragraph *para )
+@@ -21,6 +21,7 @@
+ 
+ 
+ #include "editor.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(richedit);
+ 
+@@ -814,6 +815,22 @@ static HRESULT shape_para( ME_Context *c, ME_Paragraph *para )
      return hr;
  }
  
-+/* Windows 7's shell (win4wine: WIN4WINE_SHELL is win7). */
-+BOOL windows7_shell(void)
-+{
-+    static int shell = -1;
-+    if (shell < 0)
-+    {
-+        WCHAR value[8];
-+        DWORD len = GetEnvironmentVariableW( L"WIN4WINE_SHELL", value, ARRAY_SIZE(value) );
-+        shell = len && len < ARRAY_SIZE(value) && !wcsicmp( value, L"win7" );
-+    }
-+    return shell;
-+}
-+
 +/* Whether to lay out the paragraph's runs with Uniscribe's glyphs. These are
 + * the font's own, without font linking: Japanese text in a Latin font, such
 + * as Windows 7's search boxes in Segoe UI, was drawn as boxes or overlapped.
@@ -135,7 +125,7 @@ index a4d638a..5c5c621 100644
 +    int len = para->text->nLen;
 +
 +    if (c->editor->password_char) return FALSE;
-+    if (!windows7_shell()) return TRUE;
++    if (win4wine_shell() != WIN4WINE_SHELL_WIN7) return TRUE;
 +    /* The paragraph's end (a control character, complex for Uniscribe) */
 +    while (len && (para->text->szData[len - 1] == '\r' || para->text->szData[len - 1] == '\n')) len--;
 +    return ScriptIsComplex( para->text->szData, len, SIC_COMPLEX ) == S_OK;
@@ -144,7 +134,7 @@ index a4d638a..5c5c621 100644
  static void ME_WrapTextParagraph( ME_TextEditor *editor, ME_Context *c, ME_Paragraph *para )
  {
    ME_Run *run;
-@@ -828,9 +857,7 @@ static void ME_WrapTextParagraph( ME_TextEditor *editor, ME_Context *c, ME_Parag
+@@ -828,9 +845,7 @@ static void ME_WrapTextParagraph( ME_TextEditor *editor, ME_Context *c, ME_Parag
    /* Calculate paragraph numbering label */
    para_num_init( c, para );
  

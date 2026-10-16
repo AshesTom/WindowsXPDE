@@ -15,11 +15,11 @@ Reference: https://learn.microsoft.com/en-us/windows/win32/menurc/wm-changeuista
 Scope: only with WIN4WINE_EXTERNAL_SHELL.
 Old patches: 0050.
 ---
- dlls/win32u/defwnd.c | 94 ++++++++++++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 94 insertions(+)
+ dlls/win32u/defwnd.c | 89 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 89 insertions(+)
 
 diff --git a/dlls/win32u/defwnd.c b/dlls/win32u/defwnd.c
-index 280f1f3..f3b81dc 100644
+index 280f1f3..7b12d55 100644
 --- a/dlls/win32u/defwnd.c
 +++ b/dlls/win32u/defwnd.c
 @@ -27,6 +27,7 @@
@@ -30,7 +30,7 @@ index 280f1f3..f3b81dc 100644
  
  WINE_DEFAULT_DEBUG_CHANNEL(win);
  
-@@ -2491,6 +2492,84 @@ static LRESULT handle_nc_mouse_leave( HWND hwnd )
+@@ -2491,6 +2492,79 @@ static LRESULT handle_nc_mouse_leave( HWND hwnd )
  }
  
  
@@ -43,11 +43,6 @@ index 280f1f3..f3b81dc 100644
 +static const WCHAR ui_state_prop[] = {'_','_','w','i','n','e','_','u','i','_','s','t','a','t','e',0};
 +#define UI_STATE_SET 0x100
 +#define UI_STATE_MASK (UISF_HIDEFOCUS | UISF_HIDEACCEL | UISF_ACTIVE)
-+
-+static BOOL external_ui_state(void)
-+{
-+    return win4wine_external_shell();
-+}
 +
 +static BOOL keyboard_cues(void)
 +{
@@ -115,30 +110,30 @@ index 280f1f3..f3b81dc 100644
  LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam, BOOL ansi )
  {
      LRESULT result = 0;
-@@ -2586,6 +2665,18 @@ LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam,
+@@ -2586,6 +2660,18 @@ LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam,
          }
          break;
  
 +    case WM_QUERYUISTATE:
-+        if (external_ui_state()) result = get_ui_state( hwnd );
++        if (win4wine_external_shell()) result = get_ui_state( hwnd );
 +        break;
 +
 +    case WM_CHANGEUISTATE:
-+        if (external_ui_state()) change_ui_state( hwnd, wparam, lparam );
++        if (win4wine_external_shell()) change_ui_state( hwnd, wparam, lparam );
 +        break;
 +
 +    case WM_UPDATEUISTATE:
-+        if (external_ui_state()) update_ui_state( hwnd, wparam );
++        if (win4wine_external_shell()) update_ui_state( hwnd, wparam );
 +        break;
 +
      case WM_CONTEXTMENU:
          if (get_window_long( hwnd, GWL_STYLE ) & WS_CHILD)
              send_message( get_parent( hwnd ), msg, (WPARAM)hwnd, lparam );
-@@ -2847,6 +2938,9 @@ LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam,
+@@ -2847,6 +2933,9 @@ LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam,
      case WM_SYSKEYDOWN:
          if (HIWORD( lparam ) & KEYDATA_ALT)
          {
-+            if ((wparam == VK_MENU || wparam == VK_LMENU || wparam == VK_RMENU) && external_ui_state() &&
++            if ((wparam == VK_MENU || wparam == VK_LMENU || wparam == VK_RMENU) && win4wine_external_shell() &&
 +                !(HIWORD( lparam ) & KF_REPEAT))
 +                send_message( hwnd, WM_CHANGEUISTATE, MAKEWPARAM( UIS_CLEAR, UISF_HIDEACCEL | UISF_HIDEFOCUS ), 0 );
              if ((wparam == VK_MENU || wparam == VK_LMENU || wparam == VK_RMENU) && !menu_sys_key)

@@ -18,10 +18,10 @@ Scope: callers that pass these flags.
  1 file changed, 65 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 2b27139..c6dc530 100644
+index e87bfcf..30d39ba 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
-@@ -2083,6 +2083,65 @@ static void draw_continuous_shadow(HDC hdc, LPCWSTR text, int count, DWORD flags
+@@ -2080,6 +2080,65 @@ static void draw_continuous_shadow(HDC hdc, LPCWSTR text, int count, DWORD flags
      if (shadow_dc) DeleteDC(shadow_dc);
  }
  
@@ -84,9 +84,9 @@ index 2b27139..c6dc530 100644
 +    free(before);
 +}
 +
- HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId,
-     LPCWSTR pszText, int iCharCount, DWORD flags, RECT *rect, const DTTOPTS *options)
- {
+ /***********************************************************************
+  *      DrawThemeTextEx                                     (UXTHEME.@)
+  */
 @@ -2102,7 +2161,7 @@ HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId
          return E_HANDLE;
  

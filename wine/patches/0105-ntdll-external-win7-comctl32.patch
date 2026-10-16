@@ -31,30 +31,17 @@ Scope: only with WIN4WINE_SHELL=win7 and only comctl32.dll: in
 w7-explorer.exe with a non-builtin copy beside it, elsewhere for
 non-builtin DLLs' manifests with a non-builtin copy in C:\w7.
 ---
- dlls/ntdll/loader.c | 115 ++++++++++++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 115 insertions(+)
+ dlls/ntdll/loader.c | 102 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 102 insertions(+)
 
 diff --git a/dlls/ntdll/loader.c b/dlls/ntdll/loader.c
-index 5c32fb1..98a77c6 100644
+index 5c32fb1..607a569 100644
 --- a/dlls/ntdll/loader.c
 +++ b/dlls/ntdll/loader.c
-@@ -3249,6 +3249,112 @@ done:
+@@ -3249,6 +3249,99 @@ done:
      return status;
  }
  
-+/* The session of Windows 7's shell (win4wine) */
-+static BOOL windows7_shell(void)
-+{
-+    UNICODE_STRING name = RTL_CONSTANT_STRING( L"WIN4WINE_SHELL" ), value;
-+    WCHAR buffer[8];
-+
-+    value.Buffer = buffer;
-+    value.Length = 0;
-+    value.MaximumLength = sizeof(buffer);
-+    return !RtlQueryEnvironmentVariable_U( NULL, &name, &value ) &&
-+           value.Length == 4 * sizeof(WCHAR) && !wcsnicmp( buffer, L"win7", 4 );
-+}
-+
 +/* whether PATH is a PE file that is not a Wine builtin */
 +static BOOL native_pe_file( const WCHAR *path )
 +{
@@ -124,7 +111,7 @@ index 5c32fb1..98a77c6 100644
 +    unsigned int dir;
 +    BOOL shell;
 +
-+    if (!windows7_shell() || !image->Buffer) return NULL;
++    if (win4wine_shell() != WIN4WINE_SHELL_WIN7 || !image->Buffer) return NULL;
 +    for (dir = image->Length / sizeof(WCHAR); dir && image->Buffer[dir - 1] != '\\'; dir--);
 +    shell = image->Length / sizeof(WCHAR) - dir == 15 && !wcsnicmp( image->Buffer + dir, L"w7-explorer.exe", 15 );
 +    if (shell)
@@ -151,7 +138,7 @@ index 5c32fb1..98a77c6 100644
  /***********************************************************************
   *	find_dll_file
   *
-@@ -3275,6 +3381,15 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname, UNI
+@@ -3275,6 +3368,15 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname, UNI
          {
              status = find_actctx_dll( libname, &fullname );
              if (status == STATUS_SUCCESS) *redirected = TRUE;

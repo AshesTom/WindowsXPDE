@@ -50,53 +50,50 @@ for layered windows that the taskbar or the Start menu owns (the window
 manager change only for the taskbar's). XP's Start button is a child
 of the taskbar and is not layered.
 ---
- dlls/comctl32_v6/button.c    |  24 +++-
+ dlls/comctl32_v6/button.c    |  21 +++-
  dlls/win32u/dce.c            |   4 +
  dlls/win32u/win32u_private.h |   2 +
- dlls/win32u/window.c         | 265 ++++++++++++++++++++++++++++++++++++++++++-
- dlls/winex11.drv/window.c    |  24 ++++
+ dlls/win32u/window.c         | 264 ++++++++++++++++++++++++++++++++++++++++++-
+ dlls/winex11.drv/window.c    |  23 ++++
  dlls/winex11.drv/x11drv.h    |   1 +
- 6 files changed, 315 insertions(+), 5 deletions(-)
+ 6 files changed, 310 insertions(+), 5 deletions(-)
 
 diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
-index 24da589..97e0b5e 100644
+index aa166bf..1fa5535 100644
 --- a/dlls/comctl32_v6/button.c
 +++ b/dlls/comctl32_v6/button.c
-@@ -239,9 +239,21 @@ static inline BOOL button_centers_text( LONG window_style )
+@@ -240,9 +240,18 @@ static inline BOOL button_centers_text( LONG window_style )
      return type <= BS_DEFPUSHBUTTON || type == BS_SPLITBUTTON || type == BS_DEFSPLITBUTTON;
  }
  
 +/* Windows 7's Start button is a layered window that explorer draws with
 + * UpdateLayeredWindow; drawing on its DC would overwrite that image (on Windows
 + * it has no effect). */
-+static BOOL layered_start_button( HWND hwnd )
++static BOOL layered_start_button( const BUTTON_INFO *info )
 +{
-+    WCHAR name[64];
-+    return win4wine_external_shell() &&
-+        (GetWindowLongW( hwnd, GWL_EXSTYLE ) & WS_EX_LAYERED) &&
-+        GetClassNameW( hwnd, name, ARRAY_SIZE(name) ) && !wcscmp( name, L"Win4WineStartButton" );
++    return info->start_button && (GetWindowLongW( info->hwnd, GWL_EXSTYLE ) & WS_EX_LAYERED);
 +}
 +
  /* paint a button of any type */
  static inline void paint_button( BUTTON_INFO *infoPtr, LONG style, UINT action )
  {
-+    if (layered_start_button( infoPtr->hwnd )) return;
++    if (layered_start_button( infoPtr )) return;
      if (btnPaintFunc[style] && IsWindowVisible(infoPtr->hwnd))
      {
          HDC hdc = GetDC( infoPtr->hwnd );
-@@ -561,6 +573,7 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
+@@ -562,6 +571,7 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
          return COMCTL32_ThemeChanged( hWnd, WC_BUTTONW, TRUE, TRUE );
  
      case WM_ERASEBKGND:
-+        if (layered_start_button( hWnd )) return 1;
++        if (layered_start_button( infoPtr )) return 1;
          if (btn_type == BS_OWNERDRAW)
          {
              HDC hdc = (HDC)wParam;
-@@ -583,6 +596,15 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
+@@ -584,6 +594,15 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
          PAINTSTRUCT ps;
          HDC hdc;
  
-+        if (layered_start_button( hWnd ))
++        if (layered_start_button( infoPtr ))
 +        {
 +            if (!wParam)
 +            {
@@ -108,12 +105,12 @@ index 24da589..97e0b5e 100644
          theme = GetWindowTheme( hWnd );
          hdc = wParam ? (HDC)wParam : BeginPaint( hWnd, &ps );
  
-@@ -735,7 +757,7 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
+@@ -736,7 +755,7 @@ static LRESULT CALLBACK BUTTON_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
      case WM_SETTEXT:
      {
          /* Clear an old text here as Windows does */
 -        if (IsWindowVisible(hWnd))
-+        if (IsWindowVisible(hWnd) && !layered_start_button( hWnd ))
++        if (IsWindowVisible(hWnd) && !layered_start_button( infoPtr ))
          {
              HDC hdc = GetDC(hWnd);
              HBRUSH hbrush;
@@ -156,10 +153,10 @@ index e21de9c..bbd23fe 100644
  extern HWND is_current_process_window( HWND hwnd );
  extern HWND is_current_thread_window( HWND hwnd );
 diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
-index 7333a83..d4ab030 100644
+index cbf4126..8cd4223 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
-@@ -2646,6 +2646,226 @@ BOOL WINAPI NtUserSetLayeredWindowAttributes( HWND hwnd, COLORREF key, BYTE alph
+@@ -2646,6 +2646,225 @@ BOOL WINAPI NtUserSetLayeredWindowAttributes( HWND hwnd, COLORREF key, BYTE alph
      return ret;
  }
  
@@ -172,12 +169,11 @@ index 7333a83..d4ab030 100644
 +{
 +    static const WCHAR trayW[] = {'S','h','e','l','l','_','T','r','a','y','W','n','d'};
 +    static const WCHAR menuW[] = {'D','V','2','C','o','n','t','r','o','l','H','o','s','t'};
-+    const char *shell = getenv( "WIN4WINE_SHELL" );
 +    WCHAR nameW[MAX_ATOM_LEN + 1];
 +    UNICODE_STRING name = RTL_CONSTANT_STRING(nameW);
 +    HWND owner;
 +
-+    if (!win4wine_external_shell() || !shell || strcasecmp( shell, "win7" )) return 0;
++    if (win4wine_shell() != WIN4WINE_SHELL_WIN7) return 0;
 +    if (!(owner = get_window_relative( hwnd, GW_OWNER ))) return 0;
 +    name.Length = NtUserGetClassName( owner, FALSE, &name ) * sizeof(WCHAR);
 +    /* the taskbar (Start button) or the Start menu (user picture) */
@@ -386,7 +382,7 @@ index 7333a83..d4ab030 100644
  /*****************************************************************************
   *           UpdateLayeredWindow (win32u.@)
   */
-@@ -2659,6 +2879,8 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2659,6 +2878,8 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      struct window_surface *surface;
      RECT surface_rect;
      SIZE offset;
@@ -395,7 +391,7 @@ index 7333a83..d4ab030 100644
      BOOL ret = FALSE;
  
      if (flags & ~(ULW_COLORKEY | ULW_ALPHA | ULW_OPAQUE | ULW_EX_NORESIZE) ||
-@@ -2706,7 +2928,12 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2706,7 +2927,12 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      TRACE( "window %p new_rects %s\n", hwnd, debugstr_window_rects( &new_rects ) );
  
      surface = get_window_surface( hwnd, swp_flags, TRUE, &new_rects, &surface_rect );
@@ -409,7 +405,7 @@ index 7333a83..d4ab030 100644
      if (!surface) return FALSE;
  
      if (!hdc_src || surface == &dummy_surface)
-@@ -2718,16 +2945,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2718,16 +2944,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      {
          BLENDFUNCTION src_blend = { AC_SRC_OVER, 0, 255, 0 };
          RECT rect = new_rects.window, src_rect;
@@ -438,7 +434,7 @@ index 7333a83..d4ab030 100644
          NtGdiPatBlt( hdc, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, BLACKNESS );
  
          src_rect = rect;
-@@ -2737,10 +2974,30 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2737,10 +2973,30 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
          ret = NtGdiAlphaBlend( hdc, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
                                 hdc_src, src_rect.left, src_rect.top, src_rect.right - src_rect.left, src_rect.bottom - src_rect.top,
                                 *(DWORD *)&src_blend, 0 );
@@ -471,10 +467,10 @@ index 7333a83..d4ab030 100644
          if (!(flags & ULW_COLORKEY)) key = CLR_INVALID;
          window_surface_set_layered( surface, key, -1, 0xff000000 );
 diff --git a/dlls/winex11.drv/window.c b/dlls/winex11.drv/window.c
-index 9ad98c8..8161ea7 100644
+index 9ad98c8..ea966e6 100644
 --- a/dlls/winex11.drv/window.c
 +++ b/dlls/winex11.drv/window.c
-@@ -432,6 +432,25 @@ static struct x11drv_win_data *alloc_win_data( Display *display, HWND hwnd )
+@@ -432,6 +432,24 @@ static struct x11drv_win_data *alloc_win_data( Display *display, HWND hwnd )
  }
  
  
@@ -485,12 +481,11 @@ index 9ad98c8..8161ea7 100644
 +BOOL is_windows7_tray_layered( HWND hwnd )
 +{
 +    static const WCHAR trayW[] = {'S','h','e','l','l','_','T','r','a','y','W','n','d'};
-+    const char *shell = getenv( "WIN4WINE_SHELL" );
 +    WCHAR buffer[64];
 +    UNICODE_STRING name = { 0, sizeof(buffer), buffer };
 +    HWND owner;
 +
-+    if (!win4wine_external_shell() || !shell || strcasecmp( shell, "win7" )) return FALSE;
++    if (win4wine_shell() != WIN4WINE_SHELL_WIN7) return FALSE;
 +    if (!(NtUserGetWindowLongW( hwnd, GWL_EXSTYLE ) & WS_EX_LAYERED)) return FALSE;
 +    if (!(owner = NtUserGetWindowRelative( hwnd, GW_OWNER ))) return FALSE;
 +    name.Length = NtUserGetClassName( owner, FALSE, &name ) * sizeof(WCHAR);
@@ -500,7 +495,7 @@ index 9ad98c8..8161ea7 100644
  /***********************************************************************
   *		is_window_managed
   *
-@@ -446,6 +465,7 @@ static BOOL is_window_managed( HWND hwnd, UINT swp_flags, BOOL fullscreen )
+@@ -446,6 +464,7 @@ static BOOL is_window_managed( HWND hwnd, UINT swp_flags, BOOL fullscreen )
      /* child windows are not managed */
      style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
      if ((style & (WS_CHILD|WS_POPUP)) == WS_CHILD) return FALSE;
@@ -508,7 +503,7 @@ index 9ad98c8..8161ea7 100644
      /* activated windows are managed */
      if (!(swp_flags & (SWP_NOACTIVATE|SWP_HIDEWINDOW))) return TRUE;
      if (hwnd == get_active_window()) return TRUE;
-@@ -1660,6 +1680,10 @@ static void window_set_config( struct x11drv_win_data *data, RECT rect, BOOL abo
+@@ -1660,6 +1679,10 @@ static void window_set_config( struct x11drv_win_data *data, RECT rect, BOOL abo
      TRACE( "window %p/%lx, requesting config %s mask %#x above %u, serial %lu\n", data->hwnd, data->whole_window,
             wine_dbgstr_rect(new_rect), mask, above, data->configure_serial );
      XReconfigureWMWindow( data->display, data->whole_window, data->vis.screen, mask, &changes );

@@ -20,12 +20,12 @@ bridge.
 Scope: only with WIN4WINE_EXTERNAL_SHELL and themed frames.
 Old patches: 0074, 0075.
 ---
- dlls/user32/defwnd.c  | 38 ++++++++++++++++++++++++++++++++++++--
+ dlls/user32/defwnd.c  | 32 ++++++++++++++++++++++++++++++++
  dlls/uxtheme/window.c | 20 +++++++++++++++++---
- 2 files changed, 53 insertions(+), 5 deletions(-)
+ 2 files changed, 49 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/user32/defwnd.c b/dlls/user32/defwnd.c
-index 2b30c16..b9aa343 100644
+index 0c303a0..92ecf6d 100644
 --- a/dlls/user32/defwnd.c
 +++ b/dlls/user32/defwnd.c
 @@ -92,6 +92,36 @@ static void external_shell_draw_nonclient( HWND hwnd, HDC dc )
@@ -65,28 +65,15 @@ index 2b30c16..b9aa343 100644
  static LRESULT external_shell_nonclient_hit( HWND hwnd, LPARAM point, LRESULT original )
  {
      HMODULE theme;
-@@ -273,7 +303,9 @@ LRESULT WINAPI DefWindowProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
- 
+@@ -214,6 +244,8 @@ static LRESULT external_shell_defwnd( HWND hwnd, UINT msg, WPARAM wparam, LPARAM
+     switch (msg)
+     {
+     case WM_NCPAINT:
++        external_shell_paint_nonclient( hwnd, (HRGN)wparam );
++        break;
+     case WM_NCACTIVATE:
+     case WM_SETTEXT:
      /* WM_SETICON repaints the caption with the classic code too, as when a
-      * folder window shows the icon of the folder it navigated to. */
--    if (msg == WM_NCPAINT || msg == WM_NCACTIVATE || msg == WM_SETTEXT || msg == WM_SETICON)
-+    if (msg == WM_NCPAINT)
-+        external_shell_paint_nonclient( hwnd, (HRGN)wParam );
-+    else if (msg == WM_NCACTIVATE || msg == WM_SETTEXT || msg == WM_SETICON)
-         external_shell_draw_nonclient( hwnd, NULL );
-     else if (msg == WM_PRINT && (lParam & PRF_NONCLIENT) && !(lParam & (PRF_CHILDREN | PRF_OWNED)))
-         external_shell_draw_nonclient( hwnd, (HDC)wParam );
-@@ -353,7 +385,9 @@ LRESULT WINAPI DefWindowProcW(
-     }
-     /* WM_SETICON repaints the caption with the classic code too, as when a
-      * folder window shows the icon of the folder it navigated to. */
--    if (msg == WM_NCPAINT || msg == WM_NCACTIVATE || msg == WM_SETTEXT || msg == WM_SETICON)
-+    if (msg == WM_NCPAINT)
-+        external_shell_paint_nonclient( hwnd, (HRGN)wParam );
-+    else if (msg == WM_NCACTIVATE || msg == WM_SETTEXT || msg == WM_SETICON)
-         external_shell_draw_nonclient( hwnd, NULL );
-     else if (msg == WM_PRINT && (lParam & PRF_NONCLIENT) && !(lParam & (PRF_CHILDREN | PRF_OWNED)))
-         external_shell_draw_nonclient( hwnd, (HDC)wParam );
 diff --git a/dlls/uxtheme/window.c b/dlls/uxtheme/window.c
 index a8fe3b4..2385d9a 100644
 --- a/dlls/uxtheme/window.c

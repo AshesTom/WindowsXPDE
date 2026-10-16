@@ -19,7 +19,7 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 - 0072 は、さらに `WIN4WINE_FOLDER_SHELL` があるときだけ効きます（ReactOS のシェルのセッションだけが設定します）。
 - ReactOS のシェルのセッションは `WIN4WINE_SHELL=reactos` も設定します。0053 はそのとき、XP のための部品の差し替えをしません。
 - 「XP のセッション」と書いたものは、`WIN4WINE_EXTERNAL_SHELL` があって `WIN4WINE_SHELL` が無いとき（XP のシェルのセッション）だけ効きます。ReactOS と Windows 7 のシェルには影響しません。
-- Windows 7 のシェルのセッションと見た目（0100〜0115）の多くは、`WIN4WINE_SHELL=win7` のときだけ効きます（どこまでかは表の opt-in の欄にあります。0100 は wineserver が起動したときの環境で判断します）。
+- Windows 7 のシェルのセッションと見た目（0100〜0115）の多くは、`WIN4WINE_EXTERNAL_SHELL` があって `WIN4WINE_SHELL=win7` のときだけ効きます（どこまでかは表の opt-in の欄にあります。0100 は wineserver が起動したときの環境で判断します）。シェルの種類の判定は、0013 のヘッダーの `win4wine_shell()` 一つにまとめています。
   0101 はそのとき 0065 と 0066 の XP のための置き換えをしません。
 
 ## 一覧
@@ -54,7 +54,7 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 
 | 番号 | 内容 | opt-in |
 |---|---|---|
-| 0013 | include: opt-in の判定を加える | — |
+| 0013 | include: opt-in と、セッションのシェルの種類（XP・Windows 7・ReactOS）の判定を加える | — |
 | 0014 | explorer: シェルのウィンドウと endpoint を外部のシェルに任せる | あり |
 | 0015 | kernelbase: explorer.exe の名前を、名前を変えた XP のシェルに解決する | あり |
 | 0016 | ntdll: comctl32 を実行ファイルの隣から読ませる | あり |

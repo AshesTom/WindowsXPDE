@@ -208,7 +208,7 @@ index 35531f1..dcabd54 100644
  @ stdcall Win4WineNcHitTest(ptr long long)
 +@ stdcall Win4WineMenuTheme(long ptr ptr long long ptr ptr)
 diff --git a/dlls/win32u/defwnd.c b/dlls/win32u/defwnd.c
-index 42fc315..f807738 100644
+index 8655d55..a7511e1 100644
 --- a/dlls/win32u/defwnd.c
 +++ b/dlls/win32u/defwnd.c
 @@ -2494,6 +2494,10 @@ static LRESULT handle_nc_mouse_move( HWND hwnd, WPARAM wparam, LPARAM lparam )

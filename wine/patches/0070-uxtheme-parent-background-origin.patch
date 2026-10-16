@@ -26,7 +26,7 @@ Scope: all applications (documented behavior).
  1 file changed, 5 insertions(+), 10 deletions(-)
 
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index ef5f26f..0f7a00f 100644
+index 932d8c9..5551cce 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
 @@ -155,8 +155,7 @@ static BOOL external_shell_taskbar_background(HWND hwnd, HDC dc, const RECT *cli

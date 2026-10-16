@@ -15,29 +15,14 @@ Change: with WIN4WINE_SHELL=reactos, title such controls "#number".
 Evidence: +resource traces; the dialogs' screenshots.
 Scope: only with WIN4WINE_SHELL=reactos.
 ---
- dlls/user32/dialog.c | 23 +++++++++++++++++++----
- 1 file changed, 19 insertions(+), 4 deletions(-)
+ dlls/user32/dialog.c | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
 
 diff --git a/dlls/user32/dialog.c b/dlls/user32/dialog.c
-index 4e4a682..43d3cfd 100644
+index 4e4a682..478bd00 100644
 --- a/dlls/user32/dialog.c
 +++ b/dlls/user32/dialog.c
-@@ -185,6 +185,14 @@ static const WORD *DIALOG_GetControl32( const WORD *p, DLG_CONTROL_INFO *info,
- }
- 
- 
-+/* ReactOS's shell instead of XP's (win4wine). */
-+static BOOL reactos_shell(void)
-+{
-+    WCHAR value[8];
-+    DWORD len = GetEnvironmentVariableW( L"WIN4WINE_SHELL", value, ARRAY_SIZE(value) );
-+    return len && len < ARRAY_SIZE(value) && !wcsicmp( value, L"reactos" );
-+}
-+
- /***********************************************************************
-  *           DIALOG_CreateControls32
-  *
-@@ -214,13 +222,20 @@ static BOOL DIALOG_CreateControls32( HWND hwnd, LPCSTR template, const DLG_TEMPL
+@@ -214,13 +214,20 @@ static BOOL DIALOG_CreateControls32( HWND hwnd, LPCSTR template, const DLG_TEMPL
          if (unicode)
          {
              const WCHAR *caption = info.windowName;
@@ -51,7 +36,7 @@ index 4e4a682..43d3cfd 100644
 -                caption_buf[2] = 0;
 +                /* ReactOS's user32 names a control's resource "#id", and ReactOS's
 +                 * controls (its shell's Common Controls 6) only read that form. */
-+                if (reactos_shell())
++                if (win4wine_shell() == WIN4WINE_SHELL_REACTOS)
 +                    swprintf( caption_buf, ARRAY_SIZE(caption_buf), L"#%u", PtrToUlong( caption ) );
 +                else
 +                {

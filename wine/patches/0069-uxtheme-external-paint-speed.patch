@@ -52,7 +52,7 @@ are unchanged.
  5 files changed, 222 insertions(+), 41 deletions(-)
 
 diff --git a/dlls/user32/defwnd.c b/dlls/user32/defwnd.c
-index 84a8e59..9676863 100644
+index 6b7bb39..9095c57 100644
 --- a/dlls/user32/defwnd.c
 +++ b/dlls/user32/defwnd.c
 @@ -122,6 +122,43 @@ static void external_shell_paint_nonclient( HWND hwnd, HRGN update )
@@ -99,7 +99,7 @@ index 84a8e59..9676863 100644
  static LRESULT external_shell_nonclient_hit( HWND hwnd, LPARAM point, LRESULT original )
  {
      HMODULE theme;
-@@ -348,6 +385,10 @@ LRESULT WINAPI DefWindowProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
+@@ -380,6 +417,10 @@ LRESULT WINAPI DefWindowProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
              result = NtUserMessageCall( hwnd, msg, wParam, lParam, 0, NtUserDefWindowProc, TRUE );
          break;
  
@@ -110,7 +110,7 @@ index 84a8e59..9676863 100644
      case WM_SYSCOMMAND:
          result = NC_HandleSysCommand( hwnd, wParam, lParam );
          break;
-@@ -434,6 +475,10 @@ LRESULT WINAPI DefWindowProcW(
+@@ -454,6 +495,10 @@ LRESULT WINAPI DefWindowProcW(
              result = NtUserMessageCall( hwnd, msg, wParam, lParam, 0, NtUserDefWindowProc, FALSE );
          break;
  
@@ -122,7 +122,7 @@ index 84a8e59..9676863 100644
          result = NC_HandleSysCommand( hwnd, wParam, lParam );
          break;
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 0935d11..ef5f26f 100644
+index 204c036..932d8c9 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
 @@ -405,50 +405,69 @@ static int xp_stretch_source(int d, int src, int dst)

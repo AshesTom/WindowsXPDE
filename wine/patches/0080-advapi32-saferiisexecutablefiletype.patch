@@ -30,13 +30,13 @@ index 4a9db82..d8b67d6 100644
  # @ stub SaferiRecordEventLogEntry
  # @ stub SaferiReplaceProcessThreadTokens
 diff --git a/dlls/advapi32/security.c b/dlls/advapi32/security.c
-index d9a8b68..0c2a35d 100644
+index d9a8b68..b6dca4b 100644
 --- a/dlls/advapi32/security.c
 +++ b/dlls/advapi32/security.c
-@@ -3123,6 +3123,34 @@ BOOL WINAPI SaferComputeTokenFromLevel(SAFER_LEVEL_HANDLE handle, HANDLE token,
- /******************************************************************************
-  * SaferCloseLevel   [ADVAPI32.@]
-  */
+@@ -3120,6 +3120,34 @@ BOOL WINAPI SaferComputeTokenFromLevel(SAFER_LEVEL_HANDLE handle, HANDLE token,
+     return TRUE;
+ }
+ 
 +/******************************************************************************
 + * SaferiIsExecutableFileType [ADVAPI32.@]
 + *
@@ -65,6 +65,6 @@ index d9a8b68..0c2a35d 100644
 +    return FALSE;
 +}
 +
- BOOL WINAPI SaferCloseLevel(SAFER_LEVEL_HANDLE handle)
- {
-     FIXME("(%p) stub\n", handle);
+ /******************************************************************************
+  * SaferCloseLevel   [ADVAPI32.@]
+  */

@@ -37,39 +37,39 @@ window does not show yet.
 Scope: the marshaler change only with WIN4WINE_SHELL=win7; the other
 changes are new 64-bit exports.
 ---
- dlls/combase/marshal.c    | 32 +++++++++++++++++++++++++++++++-
+ dlls/combase/marshal.c    | 25 ++++++++++++++++++++++++-
  dlls/dwmapi/dwmapi.spec   |  6 ++++--
  dlls/dwmapi/dwmapi_main.c | 29 +++++++++++++++++++++++++++++
  dlls/ole32/ole32.spec     | 24 ++++++++++++++++++++++++
- 4 files changed, 88 insertions(+), 3 deletions(-)
+ 4 files changed, 81 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/combase/marshal.c b/dlls/combase/marshal.c
-index f638604..1e1315f 100644
+index f638604..c5c63c2 100644
 --- a/dlls/combase/marshal.c
 +++ b/dlls/combase/marshal.c
-@@ -299,6 +299,17 @@ static HRESULT WINAPI ftmarshaler_GetMarshalSizeMax(IMarshal *iface, REFIID riid
+@@ -28,6 +28,7 @@
+ #include "combase_private.h"
+ 
+ #include "wine/debug.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(ole);
+ 
+@@ -299,6 +300,9 @@ static HRESULT WINAPI ftmarshaler_GetMarshalSizeMax(IMarshal *iface, REFIID riid
      return hr;
  }
  
-+/* Windows 7's shell (win4wine: WIN4WINE_SHELL is win7). */
-+static BOOL windows7_shell(void)
-+{
-+    WCHAR value[8];
-+    DWORD len = GetEnvironmentVariableW(L"WIN4WINE_SHELL", value, ARRAY_SIZE(value));
-+    return len && len < ARRAY_SIZE(value) && !wcsicmp(value, L"win7");
-+}
-+
 +/* Marks in the marshaled data a pointer passed as it was given. */
 +#define FTM_AS_GIVEN 0x77346d66
 +
  static HRESULT WINAPI ftmarshaler_MarshalInterface(IMarshal *iface, IStream *stream, REFIID riid,
          void *pv, DWORD dest_context, void *pvDestContext, DWORD mshlflags)
  {
-@@ -317,6 +328,17 @@ static HRESULT WINAPI ftmarshaler_MarshalInterface(IMarshal *iface, IStream *str
+@@ -317,6 +321,17 @@ static HRESULT WINAPI ftmarshaler_MarshalInterface(IMarshal *iface, IStream *str
  
          data.value = 0;
          hr = IUnknown_QueryInterface((IUnknown *)pv, riid, (void **)&data.object);
-+        if (FAILED(hr) && windows7_shell())
++        if (FAILED(hr) && win4wine_shell() == WIN4WINE_SHELL_WIN7)
 +        {
 +            /* Windows 7's explorer registers in the global interface table
 +             * interfaces of its own objects that their QueryInterface does
@@ -83,7 +83,7 @@ index f638604..1e1315f 100644
          if (FAILED(hr))
              return hr;
  
-@@ -361,7 +383,15 @@ static HRESULT WINAPI ftmarshaler_UnmarshalInterface(IMarshal *iface, IStream *s
+@@ -361,7 +376,15 @@ static HRESULT WINAPI ftmarshaler_UnmarshalInterface(IMarshal *iface, IStream *s
      hr = IStream_Read(stream, &unknown_guid, sizeof(unknown_guid), NULL);
      if (hr != S_OK) return STG_E_READFAULT;
  

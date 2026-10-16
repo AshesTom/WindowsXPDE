@@ -23,20 +23,18 @@ match from -40 to 30 apart from 1 and 2 pixels, and linkw.exe's
 Japanese glyphs are identical to Windows 7.
 Scope: the Windows 7 shell (WIN4WINE_SHELL=win7).
 ---
- dlls/win32u/font.c     | 18 ++++++++++++++++--
- dlls/win32u/freetype.c | 10 +++++++++-
- 2 files changed, 25 insertions(+), 3 deletions(-)
+ dlls/win32u/font.c     | 16 ++++++++++++++--
+ dlls/win32u/freetype.c |  9 ++++++++-
+ 2 files changed, 22 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/win32u/font.c b/dlls/win32u/font.c
-index 0d9e0e4..8847cd0 100644
+index eb6a319..a2e2ac7 100644
 --- a/dlls/win32u/font.c
 +++ b/dlls/win32u/font.c
-@@ -2751,15 +2751,29 @@ static UINT get_GSUB_vert_glyph( struct gdi_font *font, UINT glyph )
+@@ -2751,15 +2751,27 @@ static UINT get_GSUB_vert_glyph( struct gdi_font *font, UINT glyph )
      return GSUB_apply_feature( font->gsub_table, font->vert_feature, glyph );
  }
  
-+static BOOL win7_shell(void);
-+
 +/* Windows 7 sizes a linked font from the base font's em, not its LOGFONT
 + * (a cell height asks for the base's em), and draws em 11 and 13 with the
 + * linked font's 12 and 15: measured on Windows 7 SP1 (Japanese, 96 dpi)
@@ -55,7 +53,7 @@ index 0d9e0e4..8847cd0 100644
 +    LOGFONTW lf = font->lf;
  
 -    if (!(face = find_matching_face_by_name( family_name, NULL, &font->lf, fs, FALSE, NULL ))) return;
-+    if (win7_shell() && font->ppem > 0) lf.lfHeight = -win7_linked_ppem( font->ppem );
++    if (win4wine_shell() == WIN4WINE_SHELL_WIN7 && font->ppem > 0) lf.lfHeight = -win7_linked_ppem( font->ppem );
 +    if (!(face = find_matching_face_by_name( family_name, NULL, &lf, fs, FALSE, NULL ))) return;
  
 -    if (!(child = create_gdi_font( face, family_name, &font->lf ))) return;
@@ -64,10 +62,10 @@ index 0d9e0e4..8847cd0 100644
      child->can_use_bitmap = font->can_use_bitmap;
      child->scale_y = font->scale_y;
 diff --git a/dlls/win32u/freetype.c b/dlls/win32u/freetype.c
-index 79c060e..18a5212 100644
+index 040a878..06ac4e0 100644
 --- a/dlls/win32u/freetype.c
 +++ b/dlls/win32u/freetype.c
-@@ -3218,7 +3218,15 @@ static UINT freetype_get_glyph_outline( struct gdi_font *font, UINT glyph, UINT
+@@ -3217,7 +3217,14 @@ static UINT freetype_get_glyph_outline( struct gdi_font *font, UINT glyph, UINT
                     !(load_flags & FT_LOAD_NO_HINTING) && !has_bitmap_strike( font );
      if (xp_cleartype) load_flags = get_load_flags( GGO_BITMAP );
  
@@ -77,8 +75,7 @@ index 79c060e..18a5212 100644
 +     * antialiased text (seen on Windows 7 SP1 with linkw.exe). */
 +    if (font->base_font && !matrices && !vertical_metrics && !(load_flags & FT_LOAD_NO_HINTING) &&
 +        format != GGO_BITMAP && format != GGO_METRICS && format != GGO_NATIVE && format != GGO_BEZIER &&
-+        has_bitmap_strike( font ) && win4wine_external_shell() && getenv( "WIN4WINE_SHELL" ) &&
-+        !strcmp( getenv( "WIN4WINE_SHELL" ), "win7" ))
++        has_bitmap_strike( font ) && win4wine_shell() == WIN4WINE_SHELL_WIN7)
 +        load_flags = get_load_flags( GGO_BITMAP );
 +    else if (matrices || format != GGO_BITMAP) load_flags |= FT_LOAD_NO_BITMAP;
      if (vertical_metrics) load_flags |= FT_LOAD_VERTICAL_LAYOUT;

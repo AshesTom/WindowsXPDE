@@ -16,13 +16,13 @@ the rounding of its alpha corners shared with the close button.
 Scope: only with WIN4WINE_EXTERNAL_SHELL.
 Old patches: 0067.
 ---
- dlls/user32/defwnd.c  | 84 ++++++++++++++++++++++++++++++++++++++++++++++++++-
+ dlls/user32/defwnd.c  | 86 ++++++++++++++++++++++++++++++++++++++++++++++++++-
  dlls/user32/dialog.c  |  5 +++
  dlls/uxtheme/window.c | 14 ++++++++-
- 3 files changed, 101 insertions(+), 2 deletions(-)
+ 3 files changed, 103 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/user32/defwnd.c b/dlls/user32/defwnd.c
-index b9aa343..84a8e59 100644
+index 92ecf6d..6b7bb39 100644
 --- a/dlls/user32/defwnd.c
 +++ b/dlls/user32/defwnd.c
 @@ -143,7 +143,7 @@ static void external_shell_nonclient_mouse( HWND hwnd, UINT msg )
@@ -119,24 +119,19 @@ index b9aa343..84a8e59 100644
  /* XP captures the Start panel through WM_PRINT before its show animation.
   * The win32u default only prints the parent; include visible descendants in
   * the caller's DC for the explicitly selected external shell. */
-@@ -311,6 +389,8 @@ LRESULT WINAPI DefWindowProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
-         external_shell_draw_nonclient( hwnd, (HDC)wParam );
- 
-     if (msg == WM_NCHITTEST) result = external_shell_nonclient_hit( hwnd, lParam, result );
-+    if (msg == WM_NCLBUTTONDOWN && wParam == HTHELP) external_shell_track_help( hwnd );
-+    if (msg == WM_SYSCOMMAND && (wParam & 0xfff0) == SC_CONTEXTHELP) external_shell_context_help( hwnd );
-     if (msg == WM_NCMOUSEMOVE || msg == WM_NCMOUSELEAVE) external_shell_nonclient_mouse(hwnd, msg);
- 
-     SPY_ExitMessage( SPY_RESULT_DEFWND, hwnd, msg, result, wParam, lParam );
-@@ -393,6 +473,8 @@ LRESULT WINAPI DefWindowProcW(
-         external_shell_draw_nonclient( hwnd, (HDC)wParam );
- 
-     if (msg == WM_NCHITTEST) result = external_shell_nonclient_hit( hwnd, lParam, result );
-+    if (msg == WM_NCLBUTTONDOWN && wParam == HTHELP) external_shell_track_help( hwnd );
-+    if (msg == WM_SYSCOMMAND && (wParam & 0xfff0) == SC_CONTEXTHELP) external_shell_context_help( hwnd );
-     if (msg == WM_NCMOUSEMOVE || msg == WM_NCMOUSELEAVE) external_shell_nonclient_mouse(hwnd, msg);
- 
-     SPY_ExitMessage( SPY_RESULT_DEFWND, hwnd, msg, result, wParam, lParam );
+@@ -259,6 +337,12 @@ static LRESULT external_shell_defwnd( HWND hwnd, UINT msg, WPARAM wparam, LPARAM
+         break;
+     case WM_NCHITTEST:
+         return external_shell_nonclient_hit( hwnd, lparam, result );
++    case WM_NCLBUTTONDOWN:
++        if (wparam == HTHELP) external_shell_track_help( hwnd );
++        break;
++    case WM_SYSCOMMAND:
++        if ((wparam & 0xfff0) == SC_CONTEXTHELP) external_shell_context_help( hwnd );
++        break;
+     case WM_NCMOUSEMOVE:
+     case WM_NCMOUSELEAVE:
+         external_shell_nonclient_mouse( hwnd, msg );
 diff --git a/dlls/user32/dialog.c b/dlls/user32/dialog.c
 index ad530d7..4e4a682 100644
 --- a/dlls/user32/dialog.c

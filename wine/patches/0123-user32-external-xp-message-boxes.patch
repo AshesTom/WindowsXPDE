@@ -23,23 +23,15 @@ XP's; xpcmp.exe's message box is pixel-identical apart from its position
 (Wine centres it on the work area).
 Scope: the XP shell session (WIN4WINE_EXTERNAL_SHELL, no WIN4WINE_SHELL).
 ---
- dlls/user32/msgbox.c  | 110 ++++++++++++++++++++++++++++++++++++++++++++++++++
- dlls/user32/uitools.c |  45 +++++++++++++++++++++
- 2 files changed, 155 insertions(+)
+ dlls/user32/msgbox.c  | 75 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ dlls/user32/uitools.c | 44 +++++++++++++++++++++---------
+ 2 files changed, 106 insertions(+), 13 deletions(-)
 
 diff --git a/dlls/user32/msgbox.c b/dlls/user32/msgbox.c
-index be29b5c..ebf169b 100644
+index 5e0a2de..e69b2ee 100644
 --- a/dlls/user32/msgbox.c
 +++ b/dlls/user32/msgbox.c
-@@ -28,6 +28,7 @@
- #include "winternl.h"
- #include "dlgs.h"
- #include "user_private.h"
-+#include "wine/win4wine.h"
- #include "resources.h"
- #include "wine/debug.h"
- 
-@@ -162,6 +163,109 @@ static void MSGBOX_Win7Layout( HWND hwnd, const MSGBOXPARAMSW *lpmb, const WCHAR
+@@ -192,6 +192,75 @@ static void MSGBOX_Win7Layout( HWND hwnd, const MSGBOXPARAMSW *lpmb, const WCHAR
      SetPropW( hwnd, WIN7_BAND_PROP, ULongToHandle( top - 12 ));
  }
  
@@ -54,11 +46,11 @@ index be29b5c..ebf169b 100644
 + * the icon and 11 above the bottom. */
 +static void MSGBOX_XPLayout( HWND hwnd, const MSGBOXPARAMSW *lpmb, const WCHAR *text )
 +{
-+    HWND icon = GetDlgItem( hwnd, MSGBOX_IDICON ), label = GetDlgItem( hwnd, MSGBOX_IDTEXT ), item;
++    HWND buttons[10];
 +    BOOL has_icon = (lpmb->dwStyle & MB_ICONMASK) != 0;
-+    int i, buttons = 0, bw, bh, gap, total, text_left, text_top, wrap, tw, lh, bottom, top, width, height, left, x;
++    int bw, bh, gap, total, text_left, text_top, wrap, tw, lh, bottom, top, width, height, x;
++    unsigned int i, count;
 +    LONG cx, cy;
-+    HMONITOR monitor;
 +    MONITORINFO info;
 +    HFONT old_font;
 +    RECT rc;
@@ -77,23 +69,8 @@ index be29b5c..ebf169b 100644
 +    bw = MulDiv( 50, cx, 4 );
 +    bh = MulDiv( 14, cy, 8 );
 +    gap = MulDiv( 4, cx, 4 );
-+    for (i = 0; i < ARRAY_SIZE(win7_button_order); i++)
-+    {
-+        WCHAR caption[256];
-+        item = GetDlgItem( hwnd, win7_button_order[i] );
-+        if (!(GetWindowLongW( item, GWL_STYLE ) & WS_VISIBLE)) continue;
-+        buttons++;
-+        if (GetWindowTextW( item, caption, ARRAY_SIZE(caption) ))
-+        {
-+            SetRectEmpty( &rc );
-+            DrawTextW( hdc, caption, -1, &rc, DT_SINGLELINE | DT_CALCRECT );
-+            bw = max( bw, rc.right + 2 * gap );
-+        }
-+    }
-+
-+    monitor = MonitorFromWindow( lpmb->hwndOwner ? lpmb->hwndOwner : GetActiveWindow(), MONITOR_DEFAULTTOPRIMARY );
-+    info.cbSize = sizeof(info);
-+    GetMonitorInfoW( monitor, &info );
++    count = MSGBOX_GetButtons( hwnd, hdc, buttons, 2 * gap, &bw );
++    MSGBOX_GetMonitorInfo( lpmb, &info );
 +
 +    text_left = has_icon ? 12 + GetSystemMetrics( SM_CXICON ) + 24 : 18;
 +    /* about 5/8 of the screen (a long text wraps at about 600 pixels on a
@@ -112,35 +89,16 @@ index be29b5c..ebf169b 100644
 +    if (has_icon) bottom = max( bottom, 11 + GetSystemMetrics( SM_CYICON ));
 +    top = bottom + 14;
 +    height = top + bh + 11;
-+    total = buttons * bw + (buttons - 1) * gap;
++    total = (int)count * bw + ((int)count - 1) * gap;
 +    width = max( text_left + tw + 6, total + 24 );
-+    left = (width - total) / 2;
 +
-+    SetRect( &rc, 0, 0, XP_X(width), XP_Y(height) );
-+    AdjustWindowRectEx( &rc, GetWindowLongW( hwnd, GWL_STYLE ), FALSE, GetWindowLongW( hwnd, GWL_EXSTYLE ));
-+    NtUserSetWindowPos( hwnd, 0, (info.rcWork.left + info.rcWork.right - (rc.right - rc.left)) / 2,
-+                        (info.rcWork.top + info.rcWork.bottom - (rc.bottom - rc.top)) / 2,
-+                        rc.right - rc.left, rc.bottom - rc.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW );
-+
-+    NtUserSetWindowPos( icon, 0, XP_X(12), XP_Y(11), GetSystemMetrics( SM_CXICON ), GetSystemMetrics( SM_CYICON ),
-+                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW );
-+    NtUserSetWindowPos( label, 0, XP_X(text_left), XP_Y(text_top), XP_CX(width - text_left - 5), XP_Y(lh + 2),
-+                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW );
-+
-+    for (buttons = i = 0, x = left; i < ARRAY_SIZE(win7_button_order); i++)
-+    {
-+        item = GetDlgItem( hwnd, win7_button_order[i] );
-+        if (!(GetWindowLongW( item, GWL_STYLE ) & WS_VISIBLE)) continue;
-+        if (buttons == ((lpmb->dwStyle & MB_DEFMASK) >> 8))
-+        {
-+            NtUserSetFocus( item );
-+            SendMessageW( item, BM_SETSTYLE, BS_DEFPUSHBUTTON, TRUE );
-+        }
-+        NtUserSetWindowPos( item, 0, XP_X(x), XP_Y(top), XP_X(bw), XP_Y(bh),
-+                            SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW );
-+        x += bw + gap;
-+        buttons++;
-+    }
++    MSGBOX_Center( hwnd, &info.rcWork, XP_X(width), XP_Y(height) );
++    MSGBOX_Move( GetDlgItem( hwnd, MSGBOX_IDICON ), XP_X(12), XP_Y(11),
++                 GetSystemMetrics( SM_CXICON ), GetSystemMetrics( SM_CYICON ));
++    MSGBOX_Move( GetDlgItem( hwnd, MSGBOX_IDTEXT ), XP_X(text_left), XP_Y(text_top),
++                 XP_CX(width - text_left - 5), XP_Y(lh + 2) );
++    for (i = 0, x = (width - total) / 2; i < count; i++, x += bw + gap)
++        MSGBOX_PlaceButton( lpmb, buttons[i], i, XP_X(x), XP_Y(top), XP_X(bw), XP_Y(bh) );
 +#undef XP_X
 +#undef XP_Y
 +#undef XP_CX
@@ -149,11 +107,11 @@ index be29b5c..ebf169b 100644
  static void MSGBOX_OnInit(HWND hwnd, LPMSGBOXPARAMSW lpmb)
  {
      HFONT hPrevFont;
-@@ -323,6 +427,12 @@ static void MSGBOX_OnInit(HWND hwnd, LPMSGBOXPARAMSW lpmb)
+@@ -348,6 +417,12 @@ static void MSGBOX_OnInit(HWND hwnd, LPMSGBOXPARAMSW lpmb)
          HeapFree( GetProcessHeap(), 0, buffer );
          return;
      }
-+    if (win4wine_external_shell() && !GetEnvironmentVariableW( L"WIN4WINE_SHELL", NULL, 0 ))
++    if (win4wine_shell() == WIN4WINE_SHELL_XP)
 +    {
 +        MSGBOX_XPLayout( hwnd, lpmb, lpszText );
 +        HeapFree( GetProcessHeap(), 0, buffer );
@@ -163,65 +121,88 @@ index be29b5c..ebf169b 100644
      /* Position everything */
      GetWindowRect(hwnd, &rect);
 diff --git a/dlls/user32/uitools.c b/dlls/user32/uitools.c
-index 27b6485..70a6fea 100644
+index 0815512..5b29659 100644
 --- a/dlls/user32/uitools.c
 +++ b/dlls/user32/uitools.c
-@@ -1551,6 +1551,45 @@ BOOL win4wine_win7_shell(void)
-     return win7;
+@@ -1495,17 +1495,22 @@ INT WINAPI FrameRect( HDC hdc, const RECT *rect, HBRUSH hbrush )
  }
  
-+/* the XP shell session: an external shell without WIN4WINE_SHELL */
-+static BOOL xp_focus_rect(void)
-+{
-+    static int xp = -1;
-+    if (xp < 0) xp = win4wine_external_shell() && !GetEnvironmentVariableW( L"WIN4WINE_SHELL", NULL, 0 );
-+    return xp;
-+}
-+
-+/* XP's focus rectangle: a checkerboard XORed onto the edges in the DC's text
-+ * colour and, on every other pixel, its background colour (a themed button's
-+ * dots on its face, and the orange and black dots of a selected tree view
-+ * label, on the reference XP machine), the pixel after the corner first */
-+static void xp_focus_pattern( HDC hdc, const RECT *rc )
-+{
-+    static const WORD bits[8] = { 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa };
-+    int cx = rc->right - rc->left, cy = rc->bottom - rc->top;
-+    POINT origin = { rc->left, rc->top };
-+    HBITMAP bitmap;
-+    HBRUSH brush, old_brush;
-+
-+    if (cx <= 0 || cy <= 0) return;
-+    LPtoDP( hdc, &origin, 1 );
-+    bitmap = CreateBitmap( 8, 8, 1, 1, bits );
-+    brush = CreatePatternBrush( bitmap );
-+    DeleteObject( bitmap );
-+    SetBrushOrgEx( hdc, origin.x & 7, origin.y & 7, &origin );
-+    old_brush = SelectObject( hdc, brush );
-+    PatBlt( hdc, rc->left, rc->top, cx, 1, PATINVERT );
-+    if (cy > 1) PatBlt( hdc, rc->left, rc->bottom - 1, cx, 1, PATINVERT );
-+    if (cy > 2)
-+    {
-+        PatBlt( hdc, rc->left, rc->top + 1, 1, cy - 2, PATINVERT );
-+        if (cx > 1) PatBlt( hdc, rc->right - 1, rc->top + 1, 1, cy - 2, PATINVERT );
-+    }
-+    SelectObject( hdc, old_brush );
-+    SetBrushOrgEx( hdc, origin.x, origin.y, NULL );
-+    DeleteObject( brush );
-+}
-+
- BOOL WINAPI DrawFocusRect( HDC hdc, const RECT* rc )
+ 
+-/* Windows 7 inverts the focus rectangle with a gray checkerboard aligned to
+- * the DC's brush origin, its pixel (0, 0) left alone (measured on SP1);
+- * Wine's dotted pen starts at the rectangle's corner instead. For the
+- * Windows 7 shell session (WIN4WINE_SHELL=win7). */
+-static void draw_focus_pattern( HDC hdc, const RECT *rc )
++/* The focus rectangle of the Windows 7 and XP shell sessions: a checkerboard
++ * XORed onto the edges, where Wine's dotted pen starts at the rectangle's
++ * corner. Windows 7 inverts the pixels with a gray one aligned to the DC's
++ * brush origin, its pixel (0, 0) left alone (measured on SP1). XP draws it
++ * in the DC's text colour and, on every other pixel, its background colour
++ * (a themed button's dots on its face, and the orange and black dots of a
++ * selected tree view label, on the reference XP machine), the pixel after
++ * the corner first. */
++static void draw_focus_pattern( HDC hdc, const RECT *rc, BOOL xp )
  {
-     HBRUSH hOldBrush;
-@@ -1564,6 +1603,12 @@ BOOL WINAPI DrawFocusRect( HDC hdc, const RECT* rc )
+     static const WORD bits[8] = { 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa };
+     UINT width = 1, height = 1;
+     HBITMAP bitmap;
+     HBRUSH brush, old_brush;
+-    COLORREF old_text, old_bk;
++    COLORREF old_text = 0, old_bk = 0;
++    POINT origin = { rc->left, rc->top };
+     int cx = rc->right - rc->left, cy = rc->bottom - rc->top;
+ 
+     SystemParametersInfoW( SPI_GETFOCUSBORDERWIDTH, 0, &width, 0 );
+@@ -1513,9 +1518,18 @@ static void draw_focus_pattern( HDC hdc, const RECT *rc )
+     if (cx <= 0 || cy <= 0) return;
+     bitmap = CreateBitmap( 8, 8, 1, 1, bits );
+     brush = CreatePatternBrush( bitmap );
++    DeleteObject( bitmap );
++    if (xp)
++    {
++        LPtoDP( hdc, &origin, 1 );
++        SetBrushOrgEx( hdc, origin.x & 7, origin.y & 7, &origin );
++    }
++    else
++    {
++        old_text = SetTextColor( hdc, RGB(0, 0, 0) );
++        old_bk = SetBkColor( hdc, RGB(255, 255, 255) );
++    }
+     old_brush = SelectObject( hdc, brush );
+-    old_text = SetTextColor( hdc, RGB(0, 0, 0) );
+-    old_bk = SetBkColor( hdc, RGB(255, 255, 255) );
+     PatBlt( hdc, rc->left, rc->top, cx, min( height, cy ), PATINVERT );
+     if (cy > height)
+         PatBlt( hdc, rc->left, rc->bottom - min( height, cy - height ), cx, min( height, cy - height ), PATINVERT );
+@@ -1526,11 +1540,14 @@ static void draw_focus_pattern( HDC hdc, const RECT *rc )
+             PatBlt( hdc, rc->right - min( width, cx - width ), rc->top + height, min( width, cx - width ),
+                     cy - 2 * height, PATINVERT );
+     }
+-    SetBkColor( hdc, old_bk );
+-    SetTextColor( hdc, old_text );
+     SelectObject( hdc, old_brush );
++    if (xp) SetBrushOrgEx( hdc, origin.x, origin.y, NULL );
++    else
++    {
++        SetBkColor( hdc, old_bk );
++        SetTextColor( hdc, old_text );
++    }
+     DeleteObject( brush );
+-    DeleteObject( bitmap );
+ }
+ 
+ /***********************************************************************
+@@ -1544,10 +1561,11 @@ BOOL WINAPI DrawFocusRect( HDC hdc, const RECT* rc )
+     HPEN hOldPen, hNewPen;
+     INT oldDrawMode, oldBkMode;
+     LOGBRUSH lb;
++    enum win4wine_shell shell = win4wine_shell();
+ 
+-    if (win4wine_shell() == WIN4WINE_SHELL_WIN7)
++    if (shell == WIN4WINE_SHELL_WIN7 || shell == WIN4WINE_SHELL_XP)
+     {
+-        draw_focus_pattern( hdc, rc );
++        draw_focus_pattern( hdc, rc, shell == WIN4WINE_SHELL_XP );
          return TRUE;
      }
  
-+    if (xp_focus_rect())
-+    {
-+        xp_focus_pattern( hdc, rc );
-+        return TRUE;
-+    }
-+
-     hOldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-     lb.lbStyle = BS_SOLID;
-     lb.lbColor = 0;

@@ -20,7 +20,7 @@ Scope: the XP shell session (WIN4WINE_EXTERNAL_SHELL, no WIN4WINE_SHELL).
  1 file changed, 26 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/win32u/menu.c b/dlls/win32u/menu.c
-index d71fdb9..70aa6c1 100644
+index d71fdb9..81167d4 100644
 --- a/dlls/win32u/menu.c
 +++ b/dlls/win32u/menu.c
 @@ -2047,6 +2047,15 @@ static BOOL themed_menus(void)
@@ -33,7 +33,7 @@ index d71fdb9..70aa6c1 100644
 + * on the reference XP machine. */
 +static BOOL xp_menu_bar(void)
 +{
-+    return win4wine_external_shell() && !getenv( "WIN4WINE_SHELL" ) && !themed_menus();
++    return win4wine_shell() == WIN4WINE_SHELL_XP && !themed_menus();
 +}
 +
  static void draw_menu_part( HWND hwnd, HDC hdc, int part, int state, const RECT *rect )

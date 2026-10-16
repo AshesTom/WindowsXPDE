@@ -65,7 +65,7 @@ index e16c2e7..ac2bdad 100644
  SOURCES = \
  	buffer.c \
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
-index 85abac6..42f6e8f 100644
+index b64c2b5..10c6e66 100644
 --- a/dlls/uxtheme/msstyles.c
 +++ b/dlls/uxtheme/msstyles.c
 @@ -18,6 +18,8 @@

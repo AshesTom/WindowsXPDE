@@ -163,6 +163,7 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
   → proxy → XP のシェル。
 - タスクバーが出たら起動できたとみなします。XP のシェルや proxy が落ちたら、Wine を止めてやり直します。
   120 秒に 3 回失敗すると、XP の DLL を使わない別の prefix で、Wine 標準の explorer と xterm を起動します（復旧用）。
+  このときは `WIN4WINE_EXTERNAL_SHELL` と `WIN4WINE_SHELL` を外し、パッチの変更が効かない素の Wine にします。
 - XP のログオフ・終了（パッチ 0018 が要求をファイルに書きます）では、ログオフの画面を出し、セッションを終えます。
   終了・再起動では `session.json` の `shutdown_command`・`reboot_command` を実行します。
 - 環境: Wine と Linux のアプリの `PATH` の先頭にセッションの Wine を置きます。日本語入力の変数（`XMODIFIERS` など）、

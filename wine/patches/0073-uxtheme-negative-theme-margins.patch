@@ -20,13 +20,13 @@ Scope: all processes; only themes with negative margins are affected.
  1 file changed, 24 insertions(+), 4 deletions(-)
 
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
-index 601b3d2..85abac6 100644
+index 601b3d2..b64c2b5 100644
 --- a/dlls/uxtheme/msstyles.c
 +++ b/dlls/uxtheme/msstyles.c
-@@ -1822,15 +1822,35 @@ HRESULT MSSTYLES_GetPropertyRect(PTHEME_PROPERTY tp, RECT *pRect)
-  *
-  * Retrieve a margins value for a property 
-  */
+@@ -1817,6 +1817,26 @@ HRESULT MSSTYLES_GetPropertyRect(PTHEME_PROPERTY tp, RECT *pRect)
+     return S_OK;
+ }
+ 
 +/* Like MSSTYLES_GetNextInteger, but keeps a minus sign: margins may be
 + * negative (ReactOS's Lautus, Lunar and Mizu use negative content margins). */
 +static BOOL MSSTYLES_GetNextSignedInteger(LPCWSTR lpStringStart, LPCWSTR lpStringEnd, LPCWSTR *lpValEnd, int *value)
@@ -47,8 +47,10 @@ index 601b3d2..85abac6 100644
 +    return TRUE;
 +}
 +
- HRESULT MSSTYLES_GetPropertyMargins(PTHEME_PROPERTY tp, RECT *prc, MARGINS *pMargins)
- {
+ /***********************************************************************
+  *      MSSTYLES_GetPropertyMargins
+  *
+@@ -1827,10 +1847,10 @@ HRESULT MSSTYLES_GetPropertyMargins(PTHEME_PROPERTY tp, RECT *prc, MARGINS *pMar
      LPCWSTR lpCur = tp->lpValue;
      LPCWSTR lpEnd = tp->lpValue + tp->dwValueLen;
  

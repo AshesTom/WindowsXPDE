@@ -152,10 +152,12 @@ class Prefix:
             self.reg(r'HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon', 'Shell', 'ros-explorer.exe',
                      view=view)
         # ReactOS's own registrations (class objects, icons, folders), written
-        # by its DLLs into the 32-bit view.
+        # by its DLLs into the 32-bit view. Their manifests lead to the Common
+        # Controls 6 assembly, which is Wine's (see place_files).
         key = r'HKCU\Software\Wine\AppDefaults\regsvr32.exe\DllOverrides'
         for name in SHELL_DLLS:
-            self.reg(key, name, 'native')
+            if name != 'comctl32':
+                self.reg(key, name, 'native')
         try:
             for name in ('shell32', 'browseui', 'shdocvw'):
                 self.run(r'C:\windows\syswow64\regsvr32.exe', '/s', f'C:\\windows\\system32\\{name}.dll')

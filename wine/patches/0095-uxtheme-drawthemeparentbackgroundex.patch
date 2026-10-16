@@ -20,7 +20,7 @@ Scope: a new export.
  3 files changed, 35 insertions(+)
 
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 0f7a00f..2b27139 100644
+index 5551cce..e87bfcf 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
 @@ -194,6 +194,34 @@ HRESULT WINAPI DrawThemeParentBackground(HWND hwnd, HDC hdc, RECT *prc)

@@ -21,13 +21,13 @@ preservation, owner-drawn builtin controls).
 Scope: only with WIN4WINE_EXTERNAL_SHELL; same-process windows only.
 Old patches: 0012, 0017.
 ---
- dlls/user32/defwnd.c  | 99 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ dlls/user32/defwnd.c  | 98 +++++++++++++++++++++++++++++++++++++++++++++++++++
  dlls/user32/uitools.c |  8 ++++-
- dlls/win32u/defwnd.c  | 49 ++++++++++++++++---------
- 3 files changed, 138 insertions(+), 18 deletions(-)
+ dlls/win32u/defwnd.c  | 49 +++++++++++++++++---------
+ 3 files changed, 137 insertions(+), 18 deletions(-)
 
 diff --git a/dlls/user32/defwnd.c b/dlls/user32/defwnd.c
-index fd45c78..79192d4 100644
+index fd45c78..6069166 100644
 --- a/dlls/user32/defwnd.c
 +++ b/dlls/user32/defwnd.c
 @@ -22,6 +22,7 @@
@@ -38,7 +38,7 @@ index fd45c78..79192d4 100644
  
  WINE_DEFAULT_DEBUG_CHANNEL(win);
  
-@@ -79,6 +80,90 @@ static void default_ime_compositionA( HWND hwnd, WPARAM wparam, LPARAM lparam )
+@@ -79,6 +80,89 @@ static void default_ime_compositionA( HWND hwnd, WPARAM wparam, LPARAM lparam )
      HeapFree( GetProcessHeap(), 0, buf );
  }
  
@@ -56,9 +56,8 @@ index fd45c78..79192d4 100644
 +    if (!(saved = SaveDC( dc ))) return 0;
 +    GetClientRect( hwnd, &rect );
 +    if (flags & PRF_NONCLIENT)
-+        NtUserMessageCall( hwnd, WM_PRINT, (WPARAM)dc, PRF_NONCLIENT, 0, NtUserDefWindowProc, FALSE );
-+    if (flags & PRF_NONCLIENT)
 +    {
++        NtUserMessageCall( hwnd, WM_PRINT, (WPARAM)dc, PRF_NONCLIENT, 0, NtUserDefWindowProc, FALSE );
 +        GetWindowRect( hwnd, &window );
 +        MapWindowPoints( hwnd, NULL, &origin, 1 );
 +        OffsetViewportOrgEx( dc, origin.x - window.left, origin.y - window.top, NULL );
@@ -129,7 +128,7 @@ index fd45c78..79192d4 100644
  /***********************************************************************
   *              DefWindowProcA (USER32.@)
   *
-@@ -101,6 +186,13 @@ LRESULT WINAPI DefWindowProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
+@@ -101,6 +185,13 @@ LRESULT WINAPI DefWindowProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
  
      switch(msg)
      {
@@ -143,7 +142,7 @@ index fd45c78..79192d4 100644
      case WM_SYSCOMMAND:
          result = NC_HandleSysCommand( hwnd, wParam, lParam );
          break;
-@@ -166,6 +258,13 @@ LRESULT WINAPI DefWindowProcW(
+@@ -166,6 +257,13 @@ LRESULT WINAPI DefWindowProcW(
  
      switch(msg)
      {
@@ -184,7 +183,7 @@ index a8f3a0a..d4b51a9 100644
      {
          rc.left++;
 diff --git a/dlls/win32u/defwnd.c b/dlls/win32u/defwnd.c
-index f3b81dc..4268708 100644
+index 7b12d55..d3798ed 100644
 --- a/dlls/win32u/defwnd.c
 +++ b/dlls/win32u/defwnd.c
 @@ -1805,7 +1805,7 @@ BOOL WINAPI NtUserDrawCaptionTemp( HWND hwnd, HDC hdc, const RECT *rect, HFONT f
@@ -280,7 +279,7 @@ index f3b81dc..4268708 100644
  
          if (NtUserGetAncestor( hwnd, GA_PARENT ) == get_desktop_window())
              NtUserPostMessage( get_desktop_window(), WM_PARENTNOTIFY, WM_NCACTIVATE, (LPARAM)hwnd );
-@@ -3031,6 +3043,9 @@ LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam,
+@@ -3026,6 +3038,9 @@ LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam,
          if ((lparam & PRF_CHECKVISIBLE) && !is_window_visible ( hwnd )) break;
          result = 1;
  

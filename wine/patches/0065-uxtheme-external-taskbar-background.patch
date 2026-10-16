@@ -29,7 +29,7 @@ Old patches: 0016.
  1 file changed, 59 insertions(+)
 
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index e323016..0935d11 100644
+index 66b51a4..204c036 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
 @@ -95,6 +95,61 @@ BOOL WINAPI IsThemeDialogTextureEnabled(HWND hwnd)

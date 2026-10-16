@@ -557,6 +557,7 @@ class Session:
         self.hide_welcome()
         env = dict(self.env)
         env.pop('WIN4WINE_EXTERNAL_SHELL', None)
+        env.pop('WIN4WINE_SHELL', None)
         # Native shell COM registrations can also affect builtin explorer. Keep
         # recovery independent of both the XP files and their registry entries.
         env['WINEPREFIX'] = str(self.prefix / 'recovery')
