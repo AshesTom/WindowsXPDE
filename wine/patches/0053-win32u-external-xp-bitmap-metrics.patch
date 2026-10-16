@@ -24,10 +24,10 @@ Scope: the XP shell session (WIN4WINE_EXTERNAL_SHELL, no WIN4WINE_SHELL).
  1 file changed, 36 insertions(+)
 
 diff --git a/dlls/win32u/freetype.c b/dlls/win32u/freetype.c
-index 06ac4e0..0e1136d 100644
+index c6a501c..8e346ac 100644
 --- a/dlls/win32u/freetype.c
 +++ b/dlls/win32u/freetype.c
-@@ -3247,6 +3247,42 @@ static UINT freetype_get_glyph_outline( struct gdi_font *font, UINT glyph, UINT
+@@ -3236,6 +3236,42 @@ static UINT freetype_get_glyph_outline( struct gdi_font *font, UINT glyph, UINT
      if (win4wine_external_shell() && !matrices && !vertical_metrics && FT_IS_SCALABLE( ft_face ) &&
          metrics.horiAdvance == ((((ft_face->glyph->linearHoriAdvance + 512) >> 10) + 32) & -64))
          metrics.horiAdvance = ((ft_face->glyph->linearHoriAdvance + 0x8000) >> 16) << 6;

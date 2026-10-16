@@ -3,26 +3,22 @@ Subject: [PATCH] uxtheme, user32: paint Luna frames and theme parts with fewer b
 
 Purpose: let the XP shell's windows (Luna) and the bridge's frames resize
 smoothly, also in virtual machines without a GPU.
-Wine before (with 0055-0059): each step of a resize painted the frame
-twice: on WM_NCPAINT, then all of it again when 0056 updated the caption
+Wine before (with 0058-0059): each step of a resize painted the frame
+twice: on WM_NCPAINT, then all of it again when 0059 updated the caption
 region on WM_WINDOWPOSCHANGED. DefWindowProc drew the classic caption, with
-themed buttons, under the Luna caption that covered it right after. 0059's
-XP stretch copied an enlarged part one source column and one row at a time,
-each a blit that converted the 8-bpp part again: about 2,500 conversions
-for one step of resizing Mousepad's frame. Every other blit of an 8- or
-24-bpp theme image converted it to the screen's 32 bpp too, colour-keyed
-parts went through TransparentBlt (two memory DCs, two bitmaps and five
-blits each), and the shaped windows' subclass asked wineserver for its
-window property at every message.
+themed buttons, under the Luna caption that covered it right after. Every
+blit of an 8- or 24-bpp theme image converted it to the screen's 32 bpp,
+colour-keyed parts went through TransparentBlt (two memory DCs, two
+bitmaps and five blits each), and the shaped windows' subclass asked
+wineserver for its window property at every message.
 Change:
 - Theme images of fewer than 32 bpp are kept as 32-bpp copies holding the
   bytes that converting them for a 32-bpp target gives (fourth byte zero);
   their default transparent colour is found before.
-- xp_stretch copies the part once and picks the pixels in memory, the same
-  source pixel for each target pixel as before. For a window's DC on a
-  32-bpp screen without a mapping, a colour-keyed part is drawn with
-  AlphaBlend from a copy whose key pixels have alpha 0 and the others 255,
-  which leaves the same pixels as TransparentBlt there.
+- For a window's DC on a 32-bpp screen without a mapping, 0062's resized
+  colour-keyed parts are drawn with AlphaBlend from a copy whose key pixels
+  have alpha 0 and the others 255, which leaves the same pixels as
+  TransparentBlt there.
 - A WM_WINDOWPOSCHANGED that only resizes updates the caption region
   without painting; the part that the new region uncovers is painted at
   once (RDW_ERASENOW) instead of later.
@@ -45,11 +41,11 @@ Scope: only with WIN4WINE_EXTERNAL_SHELL and a visual style; classic frames
 are unchanged.
 ---
  dlls/user32/defwnd.c      |  45 ++++++++++++++++++
- dlls/uxtheme/draw.c       |  67 +++++++++++++++++----------
+ dlls/uxtheme/draw.c       |  28 +++++++++--
  dlls/uxtheme/msstyles.c   |  35 ++++++++++++++
  dlls/uxtheme/uxtheme.spec |   1 +
  dlls/uxtheme/window.c     | 115 +++++++++++++++++++++++++++++++++++++++-------
- 5 files changed, 222 insertions(+), 41 deletions(-)
+ 5 files changed, 204 insertions(+), 20 deletions(-)
 
 diff --git a/dlls/user32/defwnd.c b/dlls/user32/defwnd.c
 index 6b7bb39..9095c57 100644
@@ -122,10 +118,10 @@ index 6b7bb39..9095c57 100644
          result = NC_HandleSysCommand( hwnd, wParam, lParam );
          break;
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 204c036..932d8c9 100644
+index 1645c5c..932d8c9 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
-@@ -405,50 +405,69 @@ static int xp_stretch_source(int d, int src, int dst)
+@@ -405,6 +405,14 @@ static int xp_stretch_source(int d, int src, int dst)
      return (int)(((2LL * d + 1) * src + 2LL * dst - 1) / (2LL * dst)) - 1;
  }
  
@@ -140,60 +136,26 @@ index 204c036..932d8c9 100644
  static BOOL xp_stretch(HDC hdcDst, int x, int y, int width, int height, HDC hdcSrc, int xs, int ys,
                         int src_width, int src_height, INT transparent, COLORREF transcolor)
  {
-     BITMAPINFO info = {{sizeof(BITMAPINFOHEADER)}};
--    HDC columns = CreateCompatibleDC(hdcSrc), rows = CreateCompatibleDC(hdcSrc);
--    HBITMAP column_bitmap = NULL, row_bitmap = NULL;
--    HGDIOBJ old_columns = NULL, old_rows = NULL;
--    void *bits;
-+    HDC source = CreateCompatibleDC(hdcSrc), rows = CreateCompatibleDC(hdcSrc);
-+    HBITMAP source_bitmap = NULL, row_bitmap = NULL;
-+    HGDIOBJ old_source = NULL, old_rows = NULL;
-+    DWORD *source_bits, *row_bits;
-+    int *columns = NULL, i, j;
+@@ -416,8 +424,10 @@ static BOOL xp_stretch(HDC hdcDst, int x, int y, int width, int height, HDC hdcS
+     int *columns = NULL, i, j;
      BOOL ret = FALSE;
--    int i, start;
  
+-    /* The part is copied once in 32 bpp, which converts it as a blit of each
+-     * column and row would, and then picked pixel by pixel. */
 +    /* The part is copied once in 32 bpp, which converts it as each of the
 +     * columns and rows copied from it would be, and then picked pixel by
 +     * pixel: the copies of single columns of an enlarged part took as many
 +     * blits as the frame is wide. */
      info.bmiHeader.biPlanes = 1;
      info.bmiHeader.biBitCount = 32;
--    info.bmiHeader.biWidth = width;
-+    info.bmiHeader.biWidth = src_width;
-     info.bmiHeader.biHeight = -src_height;
--    if (!columns || !rows || !(column_bitmap = CreateDIBSection(columns, &info, DIB_RGB_COLORS, &bits, NULL, 0)))
-+    if (!source || !rows || !(columns = malloc(width * sizeof(*columns))) ||
-+        !(source_bitmap = CreateDIBSection(source, &info, DIB_RGB_COLORS, (void **)&source_bits, NULL, 0)))
-         goto done;
-+    info.bmiHeader.biWidth = width;
-     info.bmiHeader.biHeight = -height;
--    if (!(row_bitmap = CreateDIBSection(rows, &info, DIB_RGB_COLORS, &bits, NULL, 0))) goto done;
--    old_columns = SelectObject(columns, column_bitmap);
-+    if (!(row_bitmap = CreateDIBSection(rows, &info, DIB_RGB_COLORS, (void **)&row_bits, NULL, 0))) goto done;
-+    old_source = SelectObject(source, source_bitmap);
-     old_rows = SelectObject(rows, row_bitmap);
--    ret = TRUE;
--    for (i = start = 0; ret && i < width; i++)
-+    if (!BitBlt(source, 0, 0, src_width, src_height, hdcSrc, xs, ys, SRCCOPY)) goto done;
-+    GdiFlush();
-+    for (i = 0; i < width; i++) columns[i] = xp_stretch_source(i, src_width, width);
-+    for (j = 0; j < height; j++)
-     {
--        int first = xp_stretch_source(start, src_width, width);
--        if (i + 1 < width && xp_stretch_source(i + 1, src_width, width) == first + i + 1 - start) continue;
--        ret = BitBlt(columns, start, 0, i + 1 - start, src_height, hdcSrc, xs + first, ys, SRCCOPY);
--        start = i + 1;
-+        const DWORD *line = source_bits + xp_stretch_source(j, src_height, height) * src_width;
-+        for (i = 0; i < width; i++) row_bits[j * width + i] = line[columns[i]];
+     info.bmiHeader.biWidth = src_width;
+@@ -438,7 +448,19 @@ static BOOL xp_stretch(HDC hdcDst, int x, int y, int width, int height, HDC hdcS
+         const DWORD *line = source_bits + xp_stretch_source(j, src_height, height) * src_width;
+         for (i = 0; i < width; i++) row_bits[j * width + i] = line[columns[i]];
      }
--    for (i = start = 0; ret && i < height; i++)
+-    ret = UXTHEME_StretchBlt(hdcDst, x, y, width, height, rows, 0, 0, width, height, transparent, transcolor);
 +    if (transparent == ALPHABLEND_BINARY && keyed_blend_target(hdcDst))
-     {
--        int first = xp_stretch_source(start, src_height, height);
--        if (i + 1 < height && xp_stretch_source(i + 1, src_height, height) == first + i + 1 - start) continue;
--        ret = BitBlt(rows, 0, start, width, i + 1 - start, columns, 0, first, SRCCOPY);
--        start = i + 1;
++    {
 +        /* What TransparentBlt leaves in such a target, in one blend instead
 +         * of its masks and temporary bitmaps: the key colour's pixels keep
 +         * the target's, the others are copied. */
@@ -202,23 +164,12 @@ index 204c036..932d8c9 100644
 +        for (i = 0; i < width * height; i++)
 +            row_bits[i] = (row_bits[i] & 0xffffff) == key ? 0 : row_bits[i] | 0xff000000;
 +        ret = GdiAlphaBlend(hdcDst, x, y, width, height, rows, 0, 0, width, height, blend);
-     }
--    if (ret)
++    }
 +    else
-         ret = UXTHEME_StretchBlt(hdcDst, x, y, width, height, rows, 0, 0, width, height, transparent, transcolor);
++        ret = UXTHEME_StretchBlt(hdcDst, x, y, width, height, rows, 0, 0, width, height, transparent, transcolor);
  done:
--    if (old_columns) SelectObject(columns, old_columns);
-+    free(columns);
-+    if (old_source) SelectObject(source, old_source);
-     if (old_rows) SelectObject(rows, old_rows);
--    if (column_bitmap) DeleteObject(column_bitmap);
-+    if (source_bitmap) DeleteObject(source_bitmap);
-     if (row_bitmap) DeleteObject(row_bitmap);
--    if (columns) DeleteDC(columns);
-+    if (source) DeleteDC(source);
-     if (rows) DeleteDC(rows);
-     return ret;
- }
+     free(columns);
+     if (old_source) SelectObject(source, old_source);
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
 index 4e92c09..601b3d2 100644
 --- a/dlls/uxtheme/msstyles.c

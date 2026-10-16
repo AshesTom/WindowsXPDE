@@ -29,7 +29,7 @@ Old patches: 0016.
  1 file changed, 59 insertions(+)
 
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 66b51a4..204c036 100644
+index c04f166..1645c5c 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
 @@ -95,6 +95,61 @@ BOOL WINAPI IsThemeDialogTextureEnabled(HWND hwnd)
@@ -102,7 +102,7 @@ index 66b51a4..204c036 100644
      hParent = GetParent(hwnd);
      if(!hParent)
          hParent = hwnd;
-@@ -2485,6 +2541,9 @@ BOOL WINAPI IsThemeBackgroundPartiallyTransparent(HTHEME hTheme, int iPartId,
+@@ -2482,6 +2538,9 @@ BOOL WINAPI IsThemeBackgroundPartiallyTransparent(HTHEME hTheme, int iPartId,
  
      GetThemeEnumValue(hTheme, iPartId, iStateId, TMT_BGTYPE, &bgtype);
  

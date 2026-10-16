@@ -2,7 +2,7 @@ From: Codex <codex@localhost>
 Subject: [PATCH] comctl32: XP's common controls 6 in the XP shell session
 
 Purpose: draw the common controls of applications in the XP shell session
-as XP SP3 does, as patch 0109 does for Windows 7.
+as XP SP3 does, as patch 0112 does for Windows 7.
 Windows behavior (xpcmp.exe, hh.exe and sh.exe on the reference XP
 machine, Luna, 96 dpi): progress bars repeat the style's chunk part with
 its chunk and space sizes; a status bar is 24 pixels tall whatever font it

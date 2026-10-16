@@ -62,7 +62,7 @@ index eb6a319..a2e2ac7 100644
      child->can_use_bitmap = font->can_use_bitmap;
      child->scale_y = font->scale_y;
 diff --git a/dlls/win32u/freetype.c b/dlls/win32u/freetype.c
-index 040a878..06ac4e0 100644
+index 32691a5..0e1136d 100644
 --- a/dlls/win32u/freetype.c
 +++ b/dlls/win32u/freetype.c
 @@ -3217,7 +3217,14 @@ static UINT freetype_get_glyph_outline( struct gdi_font *font, UINT glyph, UINT

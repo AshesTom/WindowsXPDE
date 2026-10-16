@@ -21,7 +21,7 @@ win4wine の主な判断とその理由を、話題ごとにまとめたもの�
 | explorer.exe | XP | タスクバー、スタートメニュー、デスクトップの本体です |
 | shell32、browseui、shdocvw、shlwapi | XP | Wine の browseui は XP の explorer が使う機能（序数 107 など）が未実装で、同じ世代の組で使う必要があります（調査 1） |
 | browselc、shdoclc、linkinfo、msgina、mydocs | XP（資源・一部の機能） | 日本語のメニューと文字、ショートカット、ログオフ・終了のダイアログ、アイコン（調査 8・14・36・39） |
-| comctl32 | XP の v6（XP のシェルのプロセスだけ） | Wine の comctl32 では XP の explorer の toolbar が動きません。ボタンなどは Wine のテーマ付きの実装を別名で使います（調査 7、パッチ 0052・0053） |
+| comctl32 | XP の v6（XP のシェルのプロセスだけ） | Wine の comctl32 では XP の explorer の toolbar が動きません。ボタンなどは Wine のテーマ付きの実装を別名で使います（調査 7、パッチ 0055・0056） |
 | uxtheme | Wine | 利用者の Luna のテーマファイルを Wine の uxtheme で描きます。XP のテーマのサービスは入れません |
 | user32.dll（データとして） | XP（アイコンだけ） | アプリの既定のアイコンやメッセージ ボックスのアイコンを XP のものにします。`C:\xp\res\user32-xp.dll` に置いて資源だけを読みます（パッチ 0122。カーソルもここから取り出しています） |
 | kernel32、ntdll、user32、gdi32 など | Wine | Linux の上で動かす基盤です |
@@ -89,7 +89,7 @@ prefix を作り、そのシェルの DLL はそのシェルのプロセスに�
 ## DPI
 
 - XP と同じく `LogPixels` 1 つで決めます。XP には DPI の仮想化が無く、どのアプリも自分で大きく描くので、Wine の画像の拡大
-  （ぼける）を止め、XP のシェルのプロセスを system DPI aware にしています（パッチ 0049）。
+  （ぼける）を止め、XP のシェルのプロセスを system DPI aware にしています（パッチ 0051）。
 - アイコンやカーソルの大きさなど、XP が独自の規則を持つものは、実際の XP を 96〜216 DPI にして測りました（「DPI の拡大」）。
 - Linux のアプリには同じ DPI を `Xft.dpi` などで渡します。
 
@@ -112,4 +112,4 @@ prefix を作り、そのシェルの DLL はそのシェルのプロセスに�
 - 測るのは寸法、色、規則などの数値だけで、XP の画素そのものはリポジトリに入れません。
 - 試験は `tests/` にあり、同じプローブを実際の XP と Wine の両方で動かして結果を比べます（[development.md](development.md)）。
 - コントロールやメッセージ ボックスは、同じ窓を実際の XP と XP のセッションの両方に出して画素で比べ、Wine の側を XP に合わせています
-  （パッチ 0118〜0123。Windows 7 は 0108〜0114）。
+  （パッチ 0053、0119〜0123。Windows 7 は 0111〜0117）。

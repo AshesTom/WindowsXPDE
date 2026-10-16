@@ -19,7 +19,8 @@ width and cropped the corners (a 6 pixel toolbar separator had its line one
 pixel right, narrower ones lost it), chose glyphs by the outer rectangle
 (19x19) and centred each size separately (an odd glyph in an even rectangle
 sat one pixel lower).
-Change: the same as XP.
+Change: the same as XP. A resized part is copied once in 32 bpp and picked
+pixel by pixel from that copy.
 Evidence: tests/margin-shrink.c prints XP's pixels for Luna's separators and
 gripper at widths 1 to 12; the folder window's separators, the Start button
 background, the address bar's drop-down button and an active close button
@@ -27,14 +28,14 @@ equal XP's on screen.
 Scope: only with WIN4WINE_EXTERNAL_SHELL.
 Old patches: 0046, 0061, 0063.
 ---
- dlls/uxtheme/draw.c | 138 ++++++++++++++++++++++++++++++++++++++++++++++++++--
- 1 file changed, 135 insertions(+), 3 deletions(-)
+ dlls/uxtheme/draw.c | 135 ++++++++++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 132 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index e205736..5b518e1 100644
+index e205736..40c4480 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
-@@ -336,14 +336,75 @@ static HRESULT UXTHEME_LoadImage(HTHEME hTheme, int iPartId, int iStateId, const
+@@ -336,14 +336,72 @@ static HRESULT UXTHEME_LoadImage(HTHEME hTheme, int iPartId, int iStateId, const
      return S_OK;
  }
  
@@ -55,46 +56,43 @@ index e205736..5b518e1 100644
 +                       int src_width, int src_height, INT transparent, COLORREF transcolor)
 +{
 +    BITMAPINFO info = {{sizeof(BITMAPINFOHEADER)}};
-+    HDC columns = CreateCompatibleDC(hdcSrc), rows = CreateCompatibleDC(hdcSrc);
-+    HBITMAP column_bitmap = NULL, row_bitmap = NULL;
-+    HGDIOBJ old_columns = NULL, old_rows = NULL;
-+    void *bits;
++    HDC source = CreateCompatibleDC(hdcSrc), rows = CreateCompatibleDC(hdcSrc);
++    HBITMAP source_bitmap = NULL, row_bitmap = NULL;
++    HGDIOBJ old_source = NULL, old_rows = NULL;
++    DWORD *source_bits, *row_bits;
++    int *columns = NULL, i, j;
 +    BOOL ret = FALSE;
-+    int i, start;
 +
++    /* The part is copied once in 32 bpp, which converts it as a blit of each
++     * column and row would, and then picked pixel by pixel. */
 +    info.bmiHeader.biPlanes = 1;
 +    info.bmiHeader.biBitCount = 32;
-+    info.bmiHeader.biWidth = width;
++    info.bmiHeader.biWidth = src_width;
 +    info.bmiHeader.biHeight = -src_height;
-+    if (!columns || !rows || !(column_bitmap = CreateDIBSection(columns, &info, DIB_RGB_COLORS, &bits, NULL, 0)))
++    if (!source || !rows || !(columns = malloc(width * sizeof(*columns))) ||
++        !(source_bitmap = CreateDIBSection(source, &info, DIB_RGB_COLORS, (void **)&source_bits, NULL, 0)))
 +        goto done;
++    info.bmiHeader.biWidth = width;
 +    info.bmiHeader.biHeight = -height;
-+    if (!(row_bitmap = CreateDIBSection(rows, &info, DIB_RGB_COLORS, &bits, NULL, 0))) goto done;
-+    old_columns = SelectObject(columns, column_bitmap);
++    if (!(row_bitmap = CreateDIBSection(rows, &info, DIB_RGB_COLORS, (void **)&row_bits, NULL, 0))) goto done;
++    old_source = SelectObject(source, source_bitmap);
 +    old_rows = SelectObject(rows, row_bitmap);
-+    ret = TRUE;
-+    for (i = start = 0; ret && i < width; i++)
++    if (!BitBlt(source, 0, 0, src_width, src_height, hdcSrc, xs, ys, SRCCOPY)) goto done;
++    GdiFlush();
++    for (i = 0; i < width; i++) columns[i] = xp_stretch_source(i, src_width, width);
++    for (j = 0; j < height; j++)
 +    {
-+        int first = xp_stretch_source(start, src_width, width);
-+        if (i + 1 < width && xp_stretch_source(i + 1, src_width, width) == first + i + 1 - start) continue;
-+        ret = BitBlt(columns, start, 0, i + 1 - start, src_height, hdcSrc, xs + first, ys, SRCCOPY);
-+        start = i + 1;
++        const DWORD *line = source_bits + xp_stretch_source(j, src_height, height) * src_width;
++        for (i = 0; i < width; i++) row_bits[j * width + i] = line[columns[i]];
 +    }
-+    for (i = start = 0; ret && i < height; i++)
-+    {
-+        int first = xp_stretch_source(start, src_height, height);
-+        if (i + 1 < height && xp_stretch_source(i + 1, src_height, height) == first + i + 1 - start) continue;
-+        ret = BitBlt(rows, 0, start, width, i + 1 - start, columns, 0, first, SRCCOPY);
-+        start = i + 1;
-+    }
-+    if (ret)
-+        ret = UXTHEME_StretchBlt(hdcDst, x, y, width, height, rows, 0, 0, width, height, transparent, transcolor);
++    ret = UXTHEME_StretchBlt(hdcDst, x, y, width, height, rows, 0, 0, width, height, transparent, transcolor);
 +done:
-+    if (old_columns) SelectObject(columns, old_columns);
++    free(columns);
++    if (old_source) SelectObject(source, old_source);
 +    if (old_rows) SelectObject(rows, old_rows);
-+    if (column_bitmap) DeleteObject(column_bitmap);
++    if (source_bitmap) DeleteObject(source_bitmap);
 +    if (row_bitmap) DeleteObject(row_bitmap);
-+    if (columns) DeleteDC(columns);
++    if (source) DeleteDC(source);
 +    if (rows) DeleteDC(rows);
 +    return ret;
 +}
@@ -113,7 +111,7 @@ index e205736..5b518e1 100644
  {
      static const BLENDFUNCTION blendFunc = 
      {
-@@ -357,6 +418,11 @@ static inline BOOL UXTHEME_StretchBlt(HDC hdcDst, int nXOriginDst, int nYOriginD
+@@ -357,6 +415,11 @@ static inline BOOL UXTHEME_StretchBlt(HDC hdcDst, int nXOriginDst, int nYOriginD
      int old_stretch_mode;
      POINT old_brush_org;
  
@@ -125,7 +123,7 @@ index e205736..5b518e1 100644
      old_stretch_mode = SetStretchBltMode(hdcDst, HALFTONE);
      SetBrushOrgEx(hdcDst, nXOriginDst, nYOriginDst, &old_brush_org);
  
-@@ -594,6 +660,21 @@ static HRESULT UXTHEME_DrawImageGlyph(HTHEME hTheme, HDC hdc, int iPartId,
+@@ -594,6 +657,21 @@ static HRESULT UXTHEME_DrawImageGlyph(HTHEME hTheme, HDC hdc, int iPartId,
      POINT srcSize;
      POINT topleft;
      BOOL hasAlpha, hasDefaultTransparentColour;
@@ -147,7 +145,7 @@ index e205736..5b518e1 100644
  
      hr = UXTHEME_LoadImage(hTheme, iPartId, iStateId, pRect, TRUE, &bmpSrc, &rcSrc, &hasAlpha,
                             &hasDefaultTransparentColour, NULL);
-@@ -622,6 +703,13 @@ static HRESULT UXTHEME_DrawImageGlyph(HTHEME hTheme, HDC hdc, int iPartId,
+@@ -622,6 +700,13 @@ static HRESULT UXTHEME_DrawImageGlyph(HTHEME hTheme, HDC hdc, int iPartId,
      else if(halign == HA_RIGHT)  topleft.x += dstSize.x-srcSize.x;
      if(valign == VA_CENTER)      topleft.y += (dstSize.y/2)-(srcSize.y/2);
      else if(valign == VA_BOTTOM) topleft.y += dstSize.y-srcSize.y;
@@ -161,7 +159,7 @@ index e205736..5b518e1 100644
  
      if(!UXTHEME_Blt(hdc, topleft.x, topleft.y, srcSize.x, srcSize.y,
                      hdcSrc, rcSrc.left, rcSrc.top,
-@@ -835,6 +923,49 @@ static HRESULT UXTHEME_DrawImageBackground(HTHEME hTheme, HDC hdc, int iPartId,
+@@ -835,6 +920,49 @@ static HRESULT UXTHEME_DrawImageBackground(HTHEME hTheme, HDC hdc, int iPartId,
  
          GetThemeMargins(hTheme, hdc, iPartId, iStateId, TMT_SIZINGMARGINS, NULL, &sm);
  
@@ -211,7 +209,7 @@ index e205736..5b518e1 100644
          /* Resize sizing margins if destination is smaller */
          if (sm.cyTopHeight + sm.cyBottomHeight > dstSize.y || sm.cxLeftWidth + sm.cxRightWidth > dstSize.x) {
              if (sm.cyTopHeight + sm.cyBottomHeight > dstSize.y) {
-@@ -948,6 +1079,7 @@ static HRESULT UXTHEME_DrawImageBackground(HTHEME hTheme, HDC hdc, int iPartId,
+@@ -948,6 +1076,7 @@ static HRESULT UXTHEME_DrawImageBackground(HTHEME hTheme, HDC hdc, int iPartId,
  draw_error:
          SetViewportOrgEx (hdcDst, org.x, org.y, NULL);
      }

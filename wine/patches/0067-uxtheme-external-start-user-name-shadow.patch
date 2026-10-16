@@ -15,10 +15,10 @@ Old patches: 0057 (its draw.c part).
  1 file changed, 66 insertions(+)
 
 diff --git a/dlls/uxtheme/draw.c b/dlls/uxtheme/draw.c
-index 5b518e1..66b51a4 100644
+index 40c4480..c04f166 100644
 --- a/dlls/uxtheme/draw.c
 +++ b/dlls/uxtheme/draw.c
-@@ -1920,6 +1920,68 @@ HRESULT WINAPI DrawThemeText(HTHEME hTheme, HDC hdc, int iPartId, int iStateId,
+@@ -1917,6 +1917,68 @@ HRESULT WINAPI DrawThemeText(HTHEME hTheme, HDC hdc, int iPartId, int iStateId,
      return DrawThemeTextEx(hTheme, hdc, iPartId, iStateId, pszText, iCharCount, flags, &rt, &opts);
  }
  
@@ -87,7 +87,7 @@ index 5b518e1..66b51a4 100644
  /***********************************************************************
   *      DrawThemeTextEx                                     (UXTHEME.@)
   */
-@@ -1987,6 +2049,10 @@ HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId
+@@ -1984,6 +2046,10 @@ HRESULT WINAPI DrawThemeTextEx(HTHEME hTheme, HDC hdc, int iPartId, int iStateId
              DrawTextW(hdc, pszText, iCharCount, &shadow, flags);
              SetTextColor(hdc, textColor);
          }
