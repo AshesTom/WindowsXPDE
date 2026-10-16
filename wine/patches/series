@@ -113,3 +113,5 @@
 0113-win32u-external-win7-cleartype.patch
 0114-win32u-external-win7-linked-fonts.patch
 0115-riched20-external-win7-gdi-layout.patch
+0116-winex11-external-click-outside-capture.patch
+0117-riched20-external-ime-composition.patch
