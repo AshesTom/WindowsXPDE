@@ -121,3 +121,4 @@
 0121-uxtheme-external-xp-details.patch
 0122-user32-external-xp-system-icons.patch
 0123-user32-external-xp-message-boxes.patch
+0124-ntdll-external-reactos-comctl32.patch

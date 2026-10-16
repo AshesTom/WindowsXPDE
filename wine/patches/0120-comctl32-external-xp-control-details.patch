@@ -148,7 +148,7 @@ index 5c061bf..9be9842 100644
      }
      else if (format & DT_RIGHT) rcLabel.right -= LABEL_HOR_PADDING;
 diff --git a/dlls/comctl32/progress.c b/dlls/comctl32/progress.c
-index bcffd20..0ce0c4b 100644
+index bcffd20..eab59d3 100644
 --- a/dlls/comctl32/progress.c
 +++ b/dlls/comctl32/progress.c
 @@ -36,6 +36,7 @@
@@ -168,11 +168,11 @@ index bcffd20..0ce0c4b 100644
 +
 +/* XP's styles (format 3) have no fill part: the bar is the chunk part,
 + * repeated with the style's chunk and space sizes, over the bar's content.
-+ * With an external shell, as XP draws it (xpcmp.exe on the reference XP
-+ * machine); Wine drew one band. */
++ * In the XP shell session, as XP draws it (xpcmp.exe on the reference XP
++ * machine); Wine drew one band, as ReactOS does. */
 +static BOOL use_theme_chunks (HTHEME theme)
 +{
-+    return win4wine_external_shell() && !IsThemePartDefined (theme, PP_FILL, 0) &&
++    return COMCTL32_IsXPShell() && !IsThemePartDefined (theme, PP_FILL, 0) &&
 +           IsThemePartDefined (theme, PP_CHUNK, 0);
 +}
 +

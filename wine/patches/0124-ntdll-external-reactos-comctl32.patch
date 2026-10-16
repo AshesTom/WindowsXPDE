@@ -1,0 +1,74 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] ntdll: ReactOS's shell takes ReactOS's Common Controls 6 from beside it
+
+Purpose: let ReactOS's shell use ReactOS's Common Controls 6 while every
+other program of the ReactOS shell session keeps Wine's.
+Windows behavior: not applicable (a separate shell on Wine).
+Wine before: the prefix replaced the file of Wine's own x86 Common Controls
+6 assembly with ReactOS's, for ReactOS's explorer; other 32-bit programs
+that ask for Common Controls 6 then loaded Wine's builtin version 5
+(the prefix's builtin override), which does not register the versioned
+user controls: their buttons, edit controls, list boxes and combo boxes
+were not created.
+Change: in the ReactOS shell session (WIN4WINE_SHELL=reactos),
+ros-explorer.exe takes C:\ros\comctl32.dll, beside it, where its manifest's
+SxS redirection leads to Wine's assembly, as 0105 does for Windows 7's
+shell; prefix/reactos.py places ReactOS's file there and keeps Wine's in
+the assembly.
+Evidence: xpcmp.exe in the ReactOS session shows all its controls; the
+shell (its Start menu and taskbar) loads C:\ros\comctl32.dll.
+Scope: the ReactOS shell session.
+---
+ dlls/ntdll/loader.c | 25 ++++++++++++++++++++++---
+ 1 file changed, 22 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/ntdll/loader.c b/dlls/ntdll/loader.c
+index 98a77c6..757538a 100644
+--- a/dlls/ntdll/loader.c
++++ b/dlls/ntdll/loader.c
+@@ -3262,6 +3262,19 @@ static BOOL windows7_shell(void)
+            value.Length == 4 * sizeof(WCHAR) && !wcsnicmp( buffer, L"win7", 4 );
+ }
+ 
++/* The session of ReactOS's shell (win4wine) */
++static BOOL reactos_shell(void)
++{
++    UNICODE_STRING name = RTL_CONSTANT_STRING( L"WIN4WINE_SHELL" ), value;
++    WCHAR buffer[8];
++
++    value.Buffer = buffer;
++    value.Length = 0;
++    value.MaximumLength = sizeof(buffer);
++    return !RtlQueryEnvironmentVariable_U( NULL, &name, &value ) &&
++           value.Length == 7 * sizeof(WCHAR) && !wcsnicmp( buffer, L"reactos", 7 );
++}
++
+ /* whether PATH is a PE file that is not a Wine builtin */
+ static BOOL native_pe_file( const WCHAR *path )
+ {
+@@ -3331,16 +3344,22 @@ static WCHAR *shell_comctl32(void)
+     unsigned int dir;
+     BOOL shell;
+ 
+-    if (!windows7_shell() || !image->Buffer) return NULL;
++    if (!image->Buffer) return NULL;
+     for (dir = image->Length / sizeof(WCHAR); dir && image->Buffer[dir - 1] != '\\'; dir--);
+-    shell = image->Length / sizeof(WCHAR) - dir == 15 && !wcsnicmp( image->Buffer + dir, L"w7-explorer.exe", 15 );
++    /* ReactOS's shell (ros-explorer.exe) likewise takes ReactOS's from beside it
++     * (C:\ros\comctl32.dll); other programs keep Wine's assembly */
++    if (reactos_shell())
++        shell = image->Length / sizeof(WCHAR) - dir == 16 && !wcsnicmp( image->Buffer + dir, L"ros-explorer.exe", 16 );
++    else if (windows7_shell())
++        shell = image->Length / sizeof(WCHAR) - dir == 15 && !wcsnicmp( image->Buffer + dir, L"w7-explorer.exe", 15 );
++    else return NULL;
+     if (shell)
+     {
+         if (!dir || !(path = RtlAllocateHeap( GetProcessHeap(), 0, (dir + 13) * sizeof(WCHAR) ))) return NULL;
+         memcpy( path, image->Buffer, dir * sizeof(WCHAR) );
+         wcscpy( path + dir, L"comctl32.dll" );
+     }
+-    else if (native_module_context())
++    else if (windows7_shell() && native_module_context())
+     {
+         /* A Windows 7 DLL that another program loaded (the shell's DLLs in its file
+          * dialogs) binds to Windows 7's Common Controls 6, the program to Wine's. */

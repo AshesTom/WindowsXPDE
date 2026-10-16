@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 123 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 124 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -233,6 +233,7 @@ Windows 7 SP1 の実機（参照用の VM）と画素で比べて合わせたも
 | 0121 | uxtheme: XP のテーマでも TS_MIN を内容の余白から、アイコンの無いキャプションの文字を 2 px 内側に | あり（XP のセッション） |
 | 0122 | user32: XP のシステム アイコン（IDI_APPLICATION など）を XP の user32.dll（prefix がデータとして `C:\xp\res\user32-xp.dll` に置く）から読み、縮小は画素を拾う | あり（XP のセッション） |
 | 0123 | user32: XP のメッセージ ボックスの配置（画素で決めてダイアログ単位に丸める。実機の 30 通りと一致）と、DrawFocusRect の市松模様（DC の文字色と背景色との XOR） | あり（XP のセッション） |
+| 0124 | ntdll: ReactOS のシェル（ros-explorer.exe）が横の `C:\ros\comctl32.dll`（ReactOS の Common Controls 6）を使う（0105 と同じ仕組み）。ほかのプログラムは Wine のアセンブリのまま（以前は置き換えていて、32bit のアプリのボタンなどが作られなかった） | あり（`WIN4WINE_SHELL=reactos`） |
 
 ## 並び順の考え方
 
