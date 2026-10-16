@@ -34,7 +34,7 @@ XP にはモニターごとの DPI が無いので、XP のシェルの DPI は 
 | `wayland/labwc/` | labwc の設定（Alt+F4 だけのキー、空のメニュー、XP の Luna に近い色の枠） |
 | `wayland/session.sh` | IPC の場所（`WIN4WINE_IPC`）を決めて labwc を起動し、その中で supervisor を動かします。supervisor が終わるとセッションも終わります |
 | `session/supervisor.py` | labwc の中では bridge-wm を起動せず、`wlr-randr` で出力を設定し、主モニターの名前を IPC の `primary` に書きます |
-| Wine 0027, 0071 | Xwayland ではルートの窓から画面を読めないので、XP の影は透明度つきの黒い窓で描き（0027）、ログオフの灰色の画面は各窓の中身から作ります（0071） |
+| Wine 0027, 0074 | Xwayland ではルートの窓から画面を読めないので、XP の影は透明度つきの黒い窓で描き（0027）、ログオフの灰色の画面は各窓の中身から作ります（0074） |
 
 ## Xwayland を出力の画素で動かす（`xwayland-scale.c`）
 

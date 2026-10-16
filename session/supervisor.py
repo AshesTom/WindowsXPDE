@@ -84,7 +84,7 @@ class Session:
         if self.shell['name']:
             # Wine leaves ReactOS's own controls to it (Start button, dialogs);
             # with Windows 7's shell the XP shell's taskbar replacements are
-            # left out and the Windows 7 changes apply (patches 0100 to 0115).
+            # left out and the Windows 7 changes apply (patches 0103 to 0118).
             self.env['WIN4WINE_SHELL'] = self.shell['name']
         # Opt-in: the proxy snaps windows to half of the screen (Win+arrows, dragging to an edge).
         if config.get('window_snap'):
@@ -557,6 +557,7 @@ class Session:
         self.hide_welcome()
         env = dict(self.env)
         env.pop('WIN4WINE_EXTERNAL_SHELL', None)
+        env.pop('WIN4WINE_SHELL', None)
         # Native shell COM registrations can also affect builtin explorer. Keep
         # recovery independent of both the XP files and their registry entries.
         env['WINEPREFIX'] = str(self.prefix / 'recovery')

@@ -131,6 +131,13 @@ def stage_media(prefix, wine=None):
         if source.is_file() and not target.exists():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
+    # XP's system icons (IDI_APPLICATION and the message box icons) are read
+    # from XP's user32.dll as data (Wine 0122), under a name that is not taken
+    # for the loaded user32.
+    source, target = assets / 'resources/user32.dll', prefix / 'drive_c/xp/res/user32-xp.dll'
+    if source.is_file() and not (target.is_file() and filecmp.cmp(source, target, shallow=False)):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
     # XP converts a JPEG wallpaper to Wallpaper1.bmp; without it, XP's desktop
     # switches to the HTML Active Desktop that this shell does not provide.
     jpeg = prefix / 'drive_c/windows/Web/Wallpaper/Bliss.jpg'

@@ -117,7 +117,7 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 - 枠は、Linux の窓が X のキーボードを持っている間（`windows.tsv` の「有効」）だけ、アクティブの見た目にします。proxy は
   `WM_NCACTIVATE` で枠の見た目を直接切り替えます。Windows と同じく Wine は、最後の入力を受けていないプロセスの
   SetForegroundWindow を断り、入力は Linux の窓に届くので、代理は Win32 の前面にはなれないことが多いためです。
-  Luna の枠も、XP と同じく前面の窓ではなく `WM_NCACTIVATE` の状態で描きます（パッチ 0055）。
+  Luna の枠も、XP と同じく前面の窓ではなく `WM_NCACTIVATE` の状態で描きます（パッチ 0058）。
 - transient（ダイアログ）の Linux の窓には枠を付けず、タスクバーにも出しません。作業領域より大きいもの（小さい画面での GTK の
   ファイルを選ぶダイアログ）は作業領域に収まるように縮め、位置を指定しないもの（GTK 4）は親の窓の中央に置きます。
 
@@ -163,6 +163,7 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
   → proxy → XP のシェル。
 - タスクバーが出たら起動できたとみなします。XP のシェルや proxy が落ちたら、Wine を止めてやり直します。
   120 秒に 3 回失敗すると、XP の DLL を使わない別の prefix で、Wine 標準の explorer と xterm を起動します（復旧用）。
+  このときは `WIN4WINE_EXTERNAL_SHELL` と `WIN4WINE_SHELL` を外し、パッチの変更が効かない素の Wine にします。
 - XP のログオフ・終了（パッチ 0018 が要求をファイルに書きます）では、ログオフの画面を出し、セッションを終えます。
   終了・再起動では `session.json` の `shutdown_command`・`reboot_command` を実行します。
 - 環境: Wine と Linux のアプリの `PATH` の先頭にセッションの Wine を置きます。日本語入力の変数（`XMODIFIERS` など）、
@@ -192,7 +193,7 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 ## DPI
 
 - DPI は XP と同じく prefix の `HKCU\Control Panel\Desktop\LogPixels` で決めます（`prefix/display.py --dpi`）。
-- XP のシェルと Wine のアプリは、その DPI で自分で描きます（パッチ 0049 で system DPI aware にします）。
+- XP のシェルと Wine のアプリは、その DPI で自分で描きます（パッチ 0051 で system DPI aware にします）。
 - supervisor は同じ値を Linux のアプリに渡します（`session/dpi.py`）。`Xft.dpi`、fontconfig の dpi、`XCURSOR_SIZE`、
   192 以上では GTK の `GDK_SCALE` も設定します。
 - ようこそ画面の DPI は `/etc/win4wine/greeter.json` の `dpi` で決めます（XP でもマシン全体の設定です）。
@@ -201,7 +202,7 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 
 - XP の「画面のフォントの縁を滑らかにする」の「標準」と「ClearType」を、prefix の `HKCU\Control Panel\Desktop` の
   `FontSmoothing` と `FontSmoothingType`（1 か 2）で決めます（`prefix/display.py --font-smoothing`）。既定は XP と同じく「標準」です。
-- ClearType では、XP のシェルと Wine のアプリの文字をパッチ 0050 が XP と同じ方式で描きます。
+- ClearType では、XP のシェルと Wine のアプリの文字をパッチ 0052 が XP と同じ方式で描きます。
   MS UI Gothic などの埋め込みビットマップのある大きさ（22 ピクセルまで）は、XP と同じく ClearType になりません。
 - supervisor は Linux のアプリにも RGB のサブピクセルで描くように伝えます（`session/dpi.py`。`Xft.rgba`、fontconfig の `rgba`）。
   Wayland のアプリ（GTK など）は自分の設定（GNOME の `font-rgba-order` など）に従います。

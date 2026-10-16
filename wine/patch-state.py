@@ -2,6 +2,7 @@
 """Detect an ordered, overlapping patch series without changing local edits."""
 import argparse
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -9,9 +10,13 @@ import tempfile
 
 
 def git_apply(source, patch, *options, check=False):
+    # A source without its own .git (an unpacked tarball) must not be taken
+    # for a subdirectory of an enclosing repository: git apply would then
+    # skip every path outside it and still succeed.
+    env = dict(os.environ, GIT_CEILING_DIRECTORIES=str(Path(source).resolve().parent))
     result = subprocess.run(
         ["git", "-C", str(source), "apply", *options, str(patch)],
-        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     if result.returncode and not check:
         raise RuntimeError(f"{patch.name}: {result.stderr.strip()}")
     return result.returncode == 0

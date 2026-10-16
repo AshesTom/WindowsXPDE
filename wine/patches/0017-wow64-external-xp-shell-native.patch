@@ -23,13 +23,13 @@ Scope: only with WIN4WINE_EXTERNAL_SHELL, and only in XP Explorer.
  1 file changed, 23 insertions(+)
 
 diff --git a/dlls/wow64/process.c b/dlls/wow64/process.c
-index 6172810..e753d07 100644
+index 6172810..e0d2fb7 100644
 --- a/dlls/wow64/process.c
 +++ b/dlls/wow64/process.c
-@@ -557,6 +557,28 @@ NTSTATUS WINAPI wow64_NtOpenThread( UINT *args )
- /**********************************************************************
-  *           wow64_NtQueryInformationProcess
-  */
+@@ -554,6 +554,28 @@ NTSTATUS WINAPI wow64_NtOpenThread( UINT *args )
+ }
+ 
+ 
 +/* The XP shell was made for 32-bit Windows. Under WOW64, XP's shlwapi and
 + * shell32 take other paths, for example for the icons of shell folders, so
 + * the renamed XP Explorer of the external shell is not told of WOW64. */
@@ -52,9 +52,9 @@ index 6172810..e753d07 100644
 +    return hide;
 +}
 +
- NTSTATUS WINAPI wow64_NtQueryInformationProcess( UINT *args )
- {
-     HANDLE handle = get_handle( &args );
+ /**********************************************************************
+  *           wow64_NtQueryInformationProcess
+  */
 @@ -655,6 +677,7 @@ NTSTATUS WINAPI wow64_NtQueryInformationProcess( UINT *args )
  
              if (!(status = NtQueryInformationProcess( handle, class, &data, sizeof(data), NULL )))

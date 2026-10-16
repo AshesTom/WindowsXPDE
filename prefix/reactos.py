@@ -132,9 +132,15 @@ class Prefix:
         native = self.path / 'drive_c/ros/native'
         for name in SHELL_DLLS + EXTRA_DLLS:
             self.place(native / f'{name}.dll', self.system / f'{name}.dll')
-        # Same assembly version as Wine's own Common Controls 6: the file is
-        # replaced, and the prefix-wide builtin override keeps Wine's for others.
-        self.place(native / 'sxs/comctl32.dll', self.path / f'drive_c/windows/winsxs/{SXS}/comctl32.dll')
+        # ReactOS's Common Controls 6 beside the shell, which takes it from
+        # there (Wine 0124); the assembly stays Wine's, for every other 32-bit
+        # program (a replaced one gave them Wine's version 5, without buttons
+        # or edit controls).
+        self.place(native / 'sxs/comctl32.dll', self.path / 'drive_c/ros/comctl32.dll')
+        wine_controls = self.wine.parent.parent / 'lib/wine/i386-windows/comctl32_v6.dll'
+        assembly = self.path / f'drive_c/windows/winsxs/{SXS}/comctl32.dll'
+        if wine_controls.is_file() and assembly.is_file():
+            self.place(wine_controls, assembly)
 
     def registrations(self):
         """What a Wine update of the prefix rewrites or a locale change resets."""
@@ -146,10 +152,12 @@ class Prefix:
             self.reg(r'HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon', 'Shell', 'ros-explorer.exe',
                      view=view)
         # ReactOS's own registrations (class objects, icons, folders), written
-        # by its DLLs into the 32-bit view.
+        # by its DLLs into the 32-bit view. Their manifests lead to the Common
+        # Controls 6 assembly, which is Wine's (see place_files).
         key = r'HKCU\Software\Wine\AppDefaults\regsvr32.exe\DllOverrides'
         for name in SHELL_DLLS:
-            self.reg(key, name, 'native')
+            if name != 'comctl32':
+                self.reg(key, name, 'native')
         try:
             for name in ('shell32', 'browseui', 'shdocvw'):
                 self.run(r'C:\windows\syswow64\regsvr32.exe', '/s', f'C:\\windows\\system32\\{name}.dll')
