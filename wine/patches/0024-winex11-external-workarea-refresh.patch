@@ -1,25 +1,52 @@
 From: Codex <codex@localhost>
 Subject: [PATCH] winex11: refresh the external shell's work area without a mode change
 
-Purpose: follow the work area that the companion WM publishes for the XP
-taskbar.
-Wine before: the work area was read only on display mode changes.
+Purpose: follow the work area that the companion WM publishes for the
+shell's taskbar, and keep maximized windows inside it when the taskbar
+changes its size (the Windows 7 taskbar's small and large icons).
+Windows behavior: a maximized window is resized to the new work area at
+once (Windows 7 SP1: a maximized Notepad followed the taskbar from 40
+to 30 pixels high).
+Wine before: the work area was read only on display mode changes, and
+maximized windows kept their size.
 Change: on the desktop owner thread, watch the EWMH and GTK work-area
 properties of the root window, ignore unchanged contents, refresh the
-monitor data and send a bounded setting-change notification. A work area
-set explicitly with SPI_SETWORKAREA is kept. The new internal call is
-appended without renumbering existing ones.
-Evidence: tests/workarea.py on its own Xvfb display and prefix.
+monitor data, post an internal message to each maximized top-level
+window (its thread moves it to the position and size of
+WM_GETMINMAXINFO for the new work area) and send a bounded
+setting-change notification. A work area set explicitly with
+SPI_SETWORKAREA is kept. The new internal call and message are appended
+without renumbering existing ones.
+Evidence: tests/workarea.py on its own Xvfb display and prefix; a
+maximized Notepad and Mousepad follow the Windows 7 taskbar between 30
+and 40 pixels.
 Scope: only with WIN4WINE_EXTERNAL_SHELL.
 Old patches: 0039.
 ---
- dlls/win32u/sysparams.c  | 18 ++++++++++++++-
- dlls/winex11.drv/event.c | 58 ++++++++++++++++++++++++++++++++++++++++++++++++
- include/ntuser.h         |  1 +
- 3 files changed, 76 insertions(+), 1 deletion(-)
+ dlls/win32u/message.c        |  3 +++
+ dlls/win32u/sysparams.c      | 29 +++++++++++++++++++++-
+ dlls/win32u/win32u_private.h |  1 +
+ dlls/win32u/window.c         | 26 ++++++++++++++++++++
+ dlls/winex11.drv/event.c     | 58 ++++++++++++++++++++++++++++++++++++++++++++
+ include/ntuser.h             |  2 ++
+ 6 files changed, 118 insertions(+), 1 deletion(-)
 
+diff --git a/dlls/win32u/message.c b/dlls/win32u/message.c
+index 53a9794..00cceac 100644
+--- a/dlls/win32u/message.c
++++ b/dlls/win32u/message.c
+@@ -2258,6 +2258,9 @@ static LRESULT handle_internal_message( HWND hwnd, UINT msg, WPARAM wparam, LPAR
+     case WM_WINE_UPDATEWINDOWSTATE:
+         update_window_state( hwnd );
+         return 0;
++    case WM_WINE_REFIT_MAXIMIZED:
++        refit_maximized_window( hwnd );
++        return 0;
+     case WM_WINE_SETPIXELFORMAT:
+         set_window_pixel_format( hwnd, wparam, lparam );
+         return 0;
 diff --git a/dlls/win32u/sysparams.c b/dlls/win32u/sysparams.c
-index eee8149..411eb4a 100644
+index eee8149..3d85f0f 100644
 --- a/dlls/win32u/sysparams.c
 +++ b/dlls/win32u/sysparams.c
 @@ -36,6 +36,7 @@
@@ -56,14 +83,25 @@ index eee8149..411eb4a 100644
          {
              struct monitor *monitor;
  
-@@ -7470,6 +7474,18 @@ ULONG_PTR WINAPI NtUserCallNoParam( ULONG code )
+@@ -7470,6 +7474,29 @@ ULONG_PTR WINAPI NtUserCallNoParam( ULONG code )
          display_mode_changed( FALSE );
          return TRUE;
  
 +    case NtUserCallNoParam_WorkAreaChanged:
 +    {
 +        static const WCHAR emptyW[1];
++        HWND *list;
++
 +        if (!win4wine_external_shell() || !update_display_cache( TRUE )) return FALSE;
++        /* Each maximized window refits itself on its own thread. */
++        if ((list = list_window_children( 0 )))
++        {
++            int i;
++            for (i = 0; list[i]; i++)
++                if ((get_window_long( list[i], GWL_STYLE ) & (WS_MAXIMIZE | WS_MINIMIZE)) == WS_MAXIMIZE)
++                    NtUserPostMessage( list[i], WM_WINE_REFIT_MAXIMIZED, 0, 0 );
++            free( list );
++        }
 +        /* The screen mode is unchanged. Notify applications only after the
 +         * shared monitor work areas have been refreshed. Keep pointer data
 +         * in a bounded synchronous call, as for SPIF_SENDCHANGE above. */
@@ -75,6 +113,55 @@ index eee8149..411eb4a 100644
      /* temporary exports */
      case NtUserExitingThread:
          exiting_thread_id = GetCurrentThreadId();
+diff --git a/dlls/win32u/win32u_private.h b/dlls/win32u/win32u_private.h
+index 71b4976..39d9c00 100644
+--- a/dlls/win32u/win32u_private.h
++++ b/dlls/win32u/win32u_private.h
+@@ -296,6 +296,7 @@ extern LONG_PTR set_window_long( HWND hwnd, INT offset, UINT size, LONG_PTR newv
+ extern BOOL set_window_pos( WINDOWPOS *winpos, int parent_x, int parent_y );
+ extern UINT set_window_style_bits( HWND hwnd, UINT set_bits, UINT clear_bits );
+ extern void update_window_state( HWND hwnd );
++extern void refit_maximized_window( HWND hwnd );
+ extern HWND window_from_point( HWND hwnd, POINT pt, INT *hittest, BOOL send_nchittest );
+ extern HWND get_shell_window(void);
+ extern HWND get_progman_window(void);
+diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
+index 16a82a2..44ed14d 100644
+--- a/dlls/win32u/window.c
++++ b/dlls/win32u/window.c
+@@ -4725,6 +4725,32 @@ void update_window_state( HWND hwnd )
+     set_thread_dpi_awareness_context( context );
+ }
+ 
++/***********************************************************************
++ *              refit_maximized_window
++ *
++ * A maximized window follows a changed work area, as on Windows (a
++ * taskbar that grows or shrinks resizes the maximized windows).
++ */
++void refit_maximized_window( HWND hwnd )
++{
++    MINMAXINFO minmax;
++    UINT context;
++    RECT rect;
++
++    if (!is_current_thread_window( hwnd )) return;
++    if ((get_window_long( hwnd, GWL_STYLE ) & (WS_MAXIMIZE | WS_MINIMIZE | WS_CHILD)) != WS_MAXIMIZE) return;
++
++    context = set_thread_dpi_awareness_context( get_window_dpi_awareness_context( hwnd ));
++    minmax = get_min_max_info( hwnd );
++    if (get_window_rect( hwnd, &rect, get_thread_dpi() ) &&
++        (rect.left != minmax.ptMaxPosition.x || rect.top != minmax.ptMaxPosition.y ||
++         rect.right - rect.left != minmax.ptMaxSize.x || rect.bottom - rect.top != minmax.ptMaxSize.y))
++        NtUserSetWindowPos( hwnd, 0, minmax.ptMaxPosition.x, minmax.ptMaxPosition.y,
++                            minmax.ptMaxSize.x, minmax.ptMaxSize.y,
++                            SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE );
++    set_thread_dpi_awareness_context( context );
++}
++
+ /***********************************************************************
+  *              show_window
+  *
 diff --git a/dlls/winex11.drv/event.c b/dlls/winex11.drv/event.c
 index fdb6b63..195f2f0 100644
 --- a/dlls/winex11.drv/event.c
@@ -159,10 +246,18 @@ index fdb6b63..195f2f0 100644
      return TRUE;
  }
 diff --git a/include/ntuser.h b/include/ntuser.h
-index ce1b18f..82ed517 100644
+index ce1b18f..aed152e 100644
 --- a/include/ntuser.h
 +++ b/include/ntuser.h
-@@ -1077,6 +1077,7 @@ enum
+@@ -650,6 +650,7 @@ enum wine_internal_message
+     WM_WINE_UPDATEWINDOWSTATE,
+     WM_WINE_TRACKMOUSEEVENT,
+     WM_WINE_SETPIXELFORMAT,
++    WM_WINE_REFIT_MAXIMIZED,
+     WM_WINE_FIRST_DRIVER_MSG = 0x80001000,  /* range of messages reserved for the USER driver */
+     WM_WINE_CLIPCURSOR = 0x80001ff0, /* internal driver notification messages */
+     WM_WINE_SETCURSOR,
+@@ -1077,6 +1078,7 @@ enum
      /* temporary exports */
      NtUserExitingThread,
      NtUserThreadDetach,

@@ -22,7 +22,7 @@ Scope: only with WIN4WINE_EXTERNAL_SHELL.
  1 file changed, 3 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
-index 16a82a2..7ae8e08 100644
+index 44ed14d..6c2c0cb 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
 @@ -2390,7 +2390,9 @@ static BOOL expose_window_surface( HWND hwnd, UINT flags, const RECT *rect, UINT

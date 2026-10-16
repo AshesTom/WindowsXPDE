@@ -247,7 +247,7 @@ index e7fea6b..914cb80 100644
      buttons[0].left = buttons[0].right - width;
      buttons[0].bottom = caption->bottom - padding;
 diff --git a/dlls/win32u/sysparams.c b/dlls/win32u/sysparams.c
-index 00cbb6b..c4f48fc 100644
+index 804fcce..747245d 100644
 --- a/dlls/win32u/sysparams.c
 +++ b/dlls/win32u/sysparams.c
 @@ -6239,7 +6239,16 @@ BOOL WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT w

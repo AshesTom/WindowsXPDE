@@ -22,7 +22,7 @@ Scope: only with WIN4WINE_EXTERNAL_SHELL; the setting itself is kept.
  1 file changed, 4 insertions(+)
 
 diff --git a/dlls/win32u/sysparams.c b/dlls/win32u/sysparams.c
-index 411eb4a..ff1014f 100644
+index 3d85f0f..d8e988a 100644
 --- a/dlls/win32u/sysparams.c
 +++ b/dlls/win32u/sysparams.c
 @@ -6693,6 +6693,10 @@ BOOL WINAPI NtUserSystemParametersInfo( UINT action, UINT val, void *ptr, UINT w

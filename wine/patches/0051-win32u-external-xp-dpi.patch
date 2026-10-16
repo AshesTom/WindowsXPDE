@@ -26,7 +26,7 @@ Scope: only with WIN4WINE_EXTERNAL_SHELL.
  1 file changed, 39 insertions(+)
 
 diff --git a/dlls/win32u/sysparams.c b/dlls/win32u/sysparams.c
-index ff1014f..00cbb6b 100644
+index d8e988a..804fcce 100644
 --- a/dlls/win32u/sysparams.c
 +++ b/dlls/win32u/sysparams.c
 @@ -5953,6 +5953,10 @@ void sysparams_init(void)
