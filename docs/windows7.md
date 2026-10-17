@@ -171,6 +171,8 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
 - 壁紙は、モニターが複数あるときも、実機と同じくモニターごとに描きます（Wine の 0079 の PaintMonitor）。
+- タスクバーのボタンを指したときの窓の一覧は、実機の Windows 7 ベーシックと同じ見た目です（シェルにはデスクトップの合成が無いと
+  答えます。Wine の 0109）。
 - Wayland のセッション「Windows 7 Shell (Wine, Wayland)」もあります（`setup.sh --shell win7 --wayland`）。モニターごとの倍率が
   使え、スタート ボタンの縁は compositor が本物の透明度で描きます（[wayland.md](wayland.md)）。
 

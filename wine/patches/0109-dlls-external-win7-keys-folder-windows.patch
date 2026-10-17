@@ -17,11 +17,20 @@ Windows key, and at a click on a taskbar button; the free-threaded marshaler ask
 interface even within the process and failed with E_NOINTERFACE, which
 explorer showed as "ファイル システムのエラーです"; the NDR64 names were
 missing, so Windows 7's proxies could not marshal.
+Windows 7 Basic has no desktop composition: DwmIsCompositionEnabled
+gives FALSE there, and the taskbar then shows the window list of a
+button it is pointed at in its basic look (it calls SetWindowTheme with
+"BasicMenuMode" on TaskListThumbnailWnd; a hook of the reference
+machine's explorer logged both).
 Change: on 64-bit, DwmpActivateLivePreview returns S_OK without reading
 its arguments (there is no desktop composition, so no preview; the
 caller passes the arguments in registers and removes them); it stays a
 stub on 32-bit. DwmpRegisterThumbnail fails with E_NOTIMPL in the same way
-(as DwmRegisterThumbnail does: there is no thumbnail without composition). With WIN4WINE_SHELL=win7, the free-threaded marshaler
+(as DwmRegisterThumbnail does: there is no thumbnail without composition). In
+the Windows 7 shell's process (w7-explorer.exe, WIN4WINE_SHELL=win7),
+DwmIsCompositionEnabled gives FALSE, as on Windows 7 Basic (Wine gives
+TRUE from Windows 8.1 on, and the prefix is Windows 10's: the window list
+was drawn with Aero's glass image, black without the glass). With WIN4WINE_SHELL=win7, the free-threaded marshaler
 passes the given pointer within the process when the object's
 QueryInterface does not give the interface, marks it so in the marshaled
 data, and unmarshaling gives that pointer back without asking again
@@ -33,15 +42,18 @@ functions, as 0079 does for oleaut32.
 Evidence: Windows 7 SP1 x64 explorer.exe opens its Start menu for the
 Windows key and Ctrl+Esc, and stays when taskbar buttons are clicked; Win+E creates the folder window (CabinetWClass)
 with Windows 7's actxprxy.dll loaded for its interfaces. The folder
-window does not show yet.
-Scope: the marshaler change only with WIN4WINE_SHELL=win7; the other
-changes are new 64-bit exports.
+window does not show yet. Pointing at a taskbar button shows the window list in
+the reference machine's colors (the BasicMenuMode image, 117,134,154 in
+a 201,216,234 border).
+Scope: the marshaler change only with WIN4WINE_SHELL=win7, the
+composition only in w7-explorer.exe with it; the other changes are new
+64-bit exports.
 ---
- dlls/combase/marshal.c    | 25 ++++++++++++++++++++++++-
+ dlls/combase/marshal.c    | 25 +++++++++++++++++++++++-
  dlls/dwmapi/dwmapi.spec   |  6 ++++--
- dlls/dwmapi/dwmapi_main.c | 29 +++++++++++++++++++++++++++++
- dlls/ole32/ole32.spec     | 24 ++++++++++++++++++++++++
- 4 files changed, 81 insertions(+), 3 deletions(-)
+ dlls/dwmapi/dwmapi_main.c | 50 +++++++++++++++++++++++++++++++++++++++++++++++
+ dlls/ole32/ole32.spec     | 24 +++++++++++++++++++++++
+ 4 files changed, 102 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/combase/marshal.c b/dlls/combase/marshal.c
 index f638604..c5c63c2 100644
@@ -124,10 +136,48 @@ index d899a7a..a6e82ef 100644
  126 stub DwmpDxUnbindSwapChain
  127 stdcall -noname DwmpGetColorizationParameters(ptr)
 diff --git a/dlls/dwmapi/dwmapi_main.c b/dlls/dwmapi/dwmapi_main.c
-index 4b881b4..8b01e93 100644
+index 4b881b4..bf3a5df 100644
 --- a/dlls/dwmapi/dwmapi_main.c
 +++ b/dlls/dwmapi/dwmapi_main.c
-@@ -376,3 +376,32 @@ HRESULT WINAPI DwmpGetColorizationParameters(void *params)
+@@ -29,9 +29,28 @@
+ #include "winuser.h"
+ #include "dwmapi.h"
+ #include "wine/debug.h"
++#include "wine/win4wine.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(dwmapi);
+ 
++/* Windows 7's shell (w7-explorer.exe) in win4wine's session: as on Windows 7
++ * Basic, there is no desktop composition, so it chooses its basic looks (the
++ * taskbar's window list shows as "BasicMenuMode", not over glass). */
++static BOOL win7_shell_process(void)
++{
++    static int shell = -1;
++
++    if (shell < 0)
++    {
++        WCHAR path[MAX_PATH];
++        DWORD len = GetModuleFileNameW( NULL, path, MAX_PATH );
++        const WCHAR *name = path + len;
++
++        while (name > path && name[-1] != '\\' && name[-1] != '/') name--;
++        shell = win4wine_shell() == WIN4WINE_SHELL_WIN7 && !wcsicmp( name, L"w7-explorer.exe" );
++    }
++    return shell;
++}
+ 
+ /**********************************************************************
+  *           DwmIsCompositionEnabled         (DWMAPI.@)
+@@ -46,6 +65,8 @@ HRESULT WINAPI DwmIsCompositionEnabled(BOOL *enabled)
+         return E_INVALIDARG;
+ 
+     *enabled = FALSE;
++    if (win7_shell_process())
++        return S_OK;
+     version.dwOSVersionInfoSize = sizeof(version);
+     if (!RtlGetVersion(&version))
+         *enabled = (version.dwMajorVersion > 6 || (version.dwMajorVersion == 6 && version.dwMinorVersion >= 3));
+@@ -376,3 +397,32 @@ HRESULT WINAPI DwmpGetColorizationParameters(void *params)
      FIXME("(%p) stub\n", params);
      return E_NOTIMPL;
  }
