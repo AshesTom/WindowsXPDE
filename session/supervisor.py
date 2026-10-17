@@ -86,6 +86,10 @@ class Session:
             # with Windows 7's shell the XP shell's taskbar replacements are
             # left out and the Windows 7 changes apply (patches 0105 to 0120).
             self.env['WIN4WINE_SHELL'] = self.shell['name']
+        # Under the compositor, layered windows' translucent pixels are blended
+        # by it; Wine leaves them as they are (Windows 7's Start button, patch 0107).
+        if self.compositor:
+            self.env['WIN4WINE_COMPOSITED'] = '1'
         # Opt-in: the proxy snaps windows to half of the screen (Win+arrows, dragging to an edge).
         if config.get('window_snap'):
             self.env['WIN4WINE_WINDOW_SNAP'] = '1'

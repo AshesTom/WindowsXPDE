@@ -29,18 +29,34 @@ Ctrl+Esc under Linux windows; the taskbar's edge of the work area; Wine
 choosing the window to activate when one of its windows goes, and
 mapped windows activated as Wine marks them (_NET_WM_USER_TIME); the active
 Linux window's frame shown active through _NET_ACTIVE_WINDOW only; Wine's
-unmanaged windows (the ReactOS Start menu) leaving the keyboard with the
-Wine window that has it, and X's focus given back to that window when it
-falls to no window.
+unmanaged windows (the ReactOS Start menu, tooltips) taking no keyboard
+when they map, and X's focus given back to the Wine window that has the
+keyboard when it falls to no window.
+
+As bridge-wm does, also for Windows 7's shell:
+- X windows show only their bounding shape (X's SHAPE extension, read on
+  the bridge's X connection; wlroots patch 0003): Wine's window regions,
+  such as the rounded corners of XP's and Windows 7's frames and the
+  unused part of Windows 7's Start menu, were black.
+- A Linux window without a position of its own takes Windows' next
+  default-window slot (wm.py's cascade); one maximized before its frame's
+  borders were known is fitted again when they are.
+- The work area follows the taskbar's size and place (Windows 7's small
+  icons); Wine's own windows are left out of labwc's rearranging, since
+  Wine places them and fits its maximized windows itself. The edges the
+  taskbar sets come from its X geometry, exactly (through layout
+  coordinates they were one pixel into the taskbar on a fractional scale).
+- On a fractional scale an X window is drawn at its exact pixel position
+  on the output (wlroots patch 0003), not one pixel off.
 ---
  include/ssd.h              |    2 +
- include/view.h             |    3 +
- include/win4wine.h         |  110 +++
- include/xwayland-scale.h   |   72 ++
+ include/view.h             |    5 +
+ include/win4wine.h         |  116 +++
+ include/xwayland-scale.h   |   79 ++
  include/xwayland.h         |   15 +
- meson.build                |    2 +
+ meson.build                |    4 +
  protocols/meson.build      |    1 +
- src/desktop.c              |   13 +-
+ src/desktop.c              |   20 +-
  src/edges.c                |    8 +-
  src/input/cursor.c         |   20 +-
  src/input/keyboard.c       |   13 +
@@ -54,12 +70,12 @@ falls to no window.
  src/ssd/resize-indicator.c |    2 +-
  src/ssd/ssd.c              |   15 +-
  src/view-impl-common.c     |   14 +-
- src/view.c                 |   25 +-
- src/win4wine.c             | 1999 ++++++++++++++++++++++++++++++++++++++++++++
- src/xwayland-scale.c       |  445 ++++++++++
- src/xwayland-unmanaged.c   |   45 +-
- src/xwayland.c             |  304 +++++--
- 26 files changed, 3062 insertions(+), 98 deletions(-)
+ src/view.c                 |   34 +-
+ src/win4wine.c             | 2230 ++++++++++++++++++++++++++++++++++++++++++++
+ src/xwayland-scale.c       |  554 +++++++++++
+ src/xwayland-unmanaged.c   |   48 +-
+ src/xwayland.c             |  310 ++++--
+ 26 files changed, 3443 insertions(+), 99 deletions(-)
 
 diff --git a/include/ssd.h b/include/ssd.h
 index 5cbac60..2500f57 100644
@@ -75,7 +91,7 @@ index 5cbac60..2500f57 100644
  void ssd_update_margin(struct ssd *ssd);
  void ssd_set_active(struct ssd *ssd, bool active);
 diff --git a/include/view.h b/include/view.h
-index fa84911..a8ca55f 100644
+index fa84911..0e79996 100644
 --- a/include/view.h
 +++ b/include/view.h
 @@ -275,6 +275,9 @@ struct view {
@@ -88,12 +104,21 @@ index fa84911..a8ca55f 100644
  	struct {
  		struct wl_signal new_app_id;
  		struct wl_signal new_title;
+@@ -566,6 +569,8 @@ bool view_is_floating(struct view *view);
+ void view_move_to_workspace(struct view *view, struct workspace *workspace);
+ enum ssd_mode view_get_ssd_mode(struct view *view);
+ void view_set_ssd_mode(struct view *view, enum ssd_mode mode);
++/* win4wine: an XP frame's borders became known or changed */
++void view_reapply_special_geometry(struct view *view);
+ void view_set_decorations(struct view *view, enum ssd_mode mode, bool force_ssd);
+ void view_toggle_fullscreen(struct view *view);
+ void view_invalidate_last_layout_geometry(struct view *view);
 diff --git a/include/win4wine.h b/include/win4wine.h
 new file mode 100644
-index 0000000..7dc0c69
+index 0000000..8f10b97
 --- /dev/null
 +++ b/include/win4wine.h
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,116 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * win4wine: the Windows XP shell on Wine (Xwayland) as the desktop.
@@ -163,6 +188,8 @@ index 0000000..7dc0c69
 +bool win4wine_focus_on_map(struct view *view);
 +/* Whether a Wine window keeps the keyboard when Wine maps an unmanaged window */
 +bool win4wine_unmanaged_keeps_keyboard(struct wlr_xwayland_surface *xsurface);
++/* Follow a mapped X window's bounding shape (xwayland_shape_set) */
++void win4wine_watch_shape(uint32_t window);
 +/* The XP frame around a native view, in layout coordinates */
 +bool win4wine_margin(struct view *view, struct border *margin);
 +/* Whether labwc leaves a maximize request to the client (Wine sizes its own) */
@@ -171,6 +198,8 @@ index 0000000..7dc0c69
 +void win4wine_set_workareas(const struct wlr_box *areas, size_t count);
 +/* XP's taskbar takes its edge of the output's usable area */
 +void win4wine_adjust_usable_area(struct output *output, struct wlr_box *usable);
++/* The edges the taskbar sets, exactly in X space (XOB: the output's X box) */
++void win4wine_adjust_x_area(struct output *output, const struct wlr_box *xob, struct wlr_box *xarea);
 +/* Where a dragged window would snap (NULL: nowhere), for the proxy to show. True if it does. */
 +bool win4wine_snap_preview(const struct wlr_box *box);
 +/* Keys for XP: Alt+Tab, the Windows key and Ctrl+Esc. True if consumed. */
@@ -189,6 +218,8 @@ index 0000000..7dc0c69
 +static inline void win4wine_view_raised(struct view *view) {}
 +static inline void win4wine_view_moved(struct view *view) {}
 +static inline void win4wine_view_app_id(struct view *view) {}
++static inline void win4wine_watch_shape(uint32_t window) {}
++static inline void win4wine_adjust_x_area(struct output *output, const struct wlr_box *xob, struct wlr_box *xarea) {}
 +static inline struct view *win4wine_frame_owner(struct view *view) { return NULL; }
 +static inline enum win4wine_kind win4wine_kind(struct view *view) { return WIN4WINE_UNKNOWN; }
 +static inline struct view *win4wine_focus_target(struct view *view) { return view; }
@@ -206,10 +237,10 @@ index 0000000..7dc0c69
 +#endif /* LABWC_WIN4WINE_H */
 diff --git a/include/xwayland-scale.h b/include/xwayland-scale.h
 new file mode 100644
-index 0000000..3f30bcc
+index 0000000..ba09727
 --- /dev/null
 +++ b/include/xwayland-scale.h
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,79 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * win4wine: Xwayland clients at the outputs' own resolution.
@@ -223,6 +254,7 @@ index 0000000..3f30bcc
 + */
 +#ifndef LABWC_XWAYLAND_SCALE_H
 +#define LABWC_XWAYLAND_SCALE_H
++#include <pixman.h>
 +#include <stdbool.h>
 +#include <wayland-server-core.h>
 +#include <wlr/util/box.h>
@@ -281,6 +313,12 @@ index 0000000..3f30bcc
 +	struct wlr_scene_tree *tree, struct wlr_surface *surface, const struct wlr_box *xbox,
 +	int origin_x, int origin_y);
 +void xwayland_slices_clear(struct xwayland_slices *slices);
++/*
++ * An X window's bounding shape (X's SHAPE extension), in window coordinates:
++ * Xwayland shows the whole window, the slices only this part. NULL: none.
++ */
++void xwayland_shape_set(uint32_t window, const pixman_region32_t *shape);
++void xwayland_shape_forget(uint32_t window);
 +#endif
 diff --git a/include/xwayland.h b/include/xwayland.h
 index 1db3c36..a180c0b 100644
@@ -338,22 +376,24 @@ index 1db3c36..a180c0b 100644
  
  void xwayland_server_init(struct server *server,
 diff --git a/meson.build b/meson.build
-index a21c69b..1ca535e 100644
+index a21c69b..90afc5f 100644
 --- a/meson.build
 +++ b/meson.build
-@@ -63,6 +63,7 @@ wayland_protos = dependency('wayland-protocols', version: '>=1.35')
+@@ -63,6 +63,8 @@ wayland_protos = dependency('wayland-protocols', version: '>=1.35')
  xkbcommon = dependency('xkbcommon')
  xcb = dependency('xcb', required: get_option('xwayland'))
  xcb_icccm = dependency('xcb-icccm', required: get_option('xwayland'))
 +xcb_randr = dependency('xcb-randr', required: get_option('xwayland'))
++xcb_shape = dependency('xcb-shape', required: get_option('xwayland'))
  drm_full = dependency('libdrm')
  drm = drm_full.partial_dependency(compile_args: true, includes: true)
  xml2 = dependency('libxml-2.0')
-@@ -132,6 +133,7 @@ labwc_deps = [
+@@ -132,6 +134,8 @@ labwc_deps = [
    wlroots,
    xkbcommon,
    xcb_icccm,
 +  xcb_randr,
++  xcb_shape,
    xml2,
    glib,
    cairo,
@@ -370,7 +410,7 @@ index 9a90c09..b30af8b 100644
  	wl_protocol_dir / 'stable/tablet/tablet-v2.xml',
  	wl_protocol_dir / 'staging/cursor-shape/cursor-shape-v1.xml',
 diff --git a/src/desktop.c b/src/desktop.c
-index e338070..2eba38e 100644
+index e338070..824c23d 100644
 --- a/src/desktop.c
 +++ b/src/desktop.c
 @@ -10,6 +10,7 @@
@@ -381,7 +421,21 @@ index e338070..2eba38e 100644
  #include "window-rules.h"
  #include "workspaces.h"
  #include "xwayland.h"
-@@ -43,6 +44,11 @@ void
+@@ -33,7 +34,12 @@ desktop_arrange_all_views(struct server *server)
+ 	 */
+ 	struct view *view;
+ 	wl_list_for_each(view, &server->views, link) {
+-		if (!wlr_box_empty(&view->pending)) {
++		/*
++		 * win4wine: Wine places its windows itself and fits the
++		 * maximized ones to the new work area; moving the taskbar
++		 * into the work area it bounds would move that again.
++		 */
++		if (!wlr_box_empty(&view->pending) && !win4wine_client_maximizes(view)) {
+ 			view_adjust_for_layout_change(view);
+ 		}
+ 	}
+@@ -43,6 +49,11 @@ void
  desktop_focus_view(struct view *view, bool raise)
  {
  	assert(view);
@@ -393,7 +447,7 @@ index e338070..2eba38e 100644
  	/*
  	 * Guard against views with no mapped surfaces when handling
  	 * 'request_activate' and 'request_minimize'.
-@@ -121,7 +127,9 @@ desktop_topmost_focusable_view(struct server *server)
+@@ -121,7 +132,9 @@ desktop_topmost_focusable_view(struct server *server)
  			continue;
  		}
  		view = node_view_from_node(node);
@@ -404,7 +458,7 @@ index e338070..2eba38e 100644
  			return view;
  		}
  	}
-@@ -264,7 +272,8 @@ get_cursor_context(struct server *server)
+@@ -264,7 +277,8 @@ get_cursor_context(struct server *server)
  #if HAVE_XWAYLAND
  	if (node->type == WLR_SCENE_NODE_BUFFER) {
  		struct wlr_surface *surface = lab_wlr_surface_from_node(node);
@@ -825,7 +879,7 @@ index 0731122..d933554 100644
  		server->last_raised_view = NULL;
  	}
 diff --git a/src/view.c b/src/view.c
-index cc5af20..92c2358 100644
+index cc5af20..906c3e6 100644
 --- a/src/view.c
 +++ b/src/view.c
 @@ -23,6 +23,7 @@
@@ -924,7 +978,23 @@ index cc5af20..92c2358 100644
  		struct border border = ssd_thickness(view);
  		box.x += border.left;
  		box.y += border.top;
-@@ -1957,7 +1962,7 @@ view_move_to_edge(struct view *view, enum view_edge direction, bool snap_to_wind
+@@ -1640,6 +1645,15 @@ view_get_ssd_mode(struct view *view)
+ 	}
+ }
+ 
++/* win4wine: an XP frame's borders became known or changed */
++void
++view_reapply_special_geometry(struct view *view)
++{
++	if (!view_is_floating(view)) {
++		view_apply_special_geometry(view);
++	}
++}
++
+ void
+ view_set_ssd_mode(struct view *view, enum ssd_mode mode)
+ {
+@@ -1957,7 +1971,7 @@ view_move_to_edge(struct view *view, enum view_edge direction, bool snap_to_wind
  
  	/* When jumping to next output, attach to edge nearest the motion */
  	struct wlr_box usable = output_usable_area_in_layout_coords(output);
@@ -933,7 +1003,7 @@ index cc5af20..92c2358 100644
  
  	/* Bounds of the possible placement zone in this output */
  	int left = usable.x + rc.gap + margin.left;
-@@ -2289,6 +2294,7 @@ view_move_to_front(struct view *view)
+@@ -2289,6 +2303,7 @@ view_move_to_front(struct view *view)
  	if (view != root) {
  		move_to_front(view);
  	}
@@ -941,7 +1011,7 @@ index cc5af20..92c2358 100644
  
  	cursor_update_focus(view->server);
  	desktop_update_top_layer_visibility(view->server);
-@@ -2354,6 +2360,7 @@ view_update_title(struct view *view)
+@@ -2354,6 +2369,7 @@ view_update_title(struct view *view)
  	assert(view);
  	ssd_update_title(view->ssd);
  	wl_signal_emit_mutable(&view->events.new_title, NULL);
@@ -949,7 +1019,7 @@ index cc5af20..92c2358 100644
  }
  
  void
-@@ -2364,6 +2371,7 @@ view_update_app_id(struct view *view)
+@@ -2364,6 +2380,7 @@ view_update_app_id(struct view *view)
  		ssd_update_window_icon(view->ssd);
  	}
  	wl_signal_emit_mutable(&view->events.new_app_id, NULL);
@@ -957,7 +1027,7 @@ index cc5af20..92c2358 100644
  }
  
  void
-@@ -2502,6 +2510,7 @@ view_destroy(struct view *view)
+@@ -2502,6 +2519,7 @@ view_destroy(struct view *view)
  	struct server *server = view->server;
  
  	snap_constraints_invalidate(view);
@@ -967,10 +1037,10 @@ index cc5af20..92c2358 100644
  		mappable_disconnect(&view->mappable);
 diff --git a/src/win4wine.c b/src/win4wine.c
 new file mode 100644
-index 0000000..18d65c7
+index 0000000..c86f241
 --- /dev/null
 +++ b/src/win4wine.c
-@@ -0,0 +1,1999 @@
+@@ -0,0 +1,2230 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#define _POSIX_C_SOURCE 200809L
 +/*
@@ -1021,7 +1091,9 @@ index 0000000..18d65c7
 +#include <wlr/util/log.h>
 +#include <wlr/xwayland.h>
 +#include <xcb/randr.h>
++#include <xcb/shape.h>
 +#include <xcb/xcb.h>
++#include <xcb/xcb_icccm.h>
 +#include <xcb/xcbext.h>
 +#include "buffer.h"
 +#include "common/mem.h"
@@ -1058,6 +1130,9 @@ index 0000000..18d65c7
 +	int clip[2];                /* the frame's hidden border when maximized */
 +	bool frame_ready;
 +	bool placed;                /* the first position with a frame is done */
++	bool margin_changed;        /* frames.tsv changed its borders */
++	uint32_t last_frame_hwnd;   /* frame_hwnd before frames.tsv was read again */
++	struct wlr_box dock_box;    /* a taskbar's box when the work area was last set */
 +	bool icon_dirty;
 +	char *icon;                 /* the last icon written, and its size */
 +	size_t icon_size;
@@ -1078,6 +1153,8 @@ index 0000000..18d65c7
 +	uint32_t next_native;
 +	char *windows_text, *geometry_text, *tiled_text;
 +	unsigned int snapping_seq;
++	int cascade_slot;           /* the last default-window slot (cascade) */
++	bool dock_moved;            /* the taskbar changed: the work area follows */
 +	struct wlr_box snapping;    /* the box last written to snapping.tsv */
 +	/* the X connection */
 +	xcb_connection_t *x;
@@ -1088,6 +1165,9 @@ index 0000000..18d65c7
 +	int origin_x, origin_y;     /* the primary output in X space: Win32's 0,0 */
 +	bool randr;
 +	uint8_t randr_event;
++	bool shape;                 /* X's SHAPE extension (shaped Wine windows) */
++	uint8_t shape_event;
++	struct wl_list shape_requests; /* struct shape_request, in sequence order */
 +	xcb_randr_output_t randr_primary;
 +	struct timespec focus_time; /* when the keyboard last went to another surface */
 +	struct view *active_frame;  /* the frame named active for its window */
@@ -1311,6 +1391,74 @@ index 0000000..18d65c7
 +	}
 +}
 +
++/*
++ * Shaped windows: Xwayland shows an X window's whole buffer, also outside
++ * its bounding shape (Wine's window regions: the rounded corners of
++ * Windows 7's and XP's frames, the Start menu's unused part). The
++ * compositor reads the shape and shows only that part (xwayland_shape_set).
++ */
++struct shape_request {
++	unsigned int sequence;
++	xcb_window_t window;
++	bool rectangles;            /* xcb_shape_get_rectangles, else query_extents */
++	struct wl_list link;
++};
++
++static void
++request_shape(xcb_window_t window, bool rectangles)
++{
++	struct shape_request *request = znew(*request);
++	request->sequence = rectangles
++		? xcb_shape_get_rectangles(w.x, window, XCB_SHAPE_SK_BOUNDING).sequence
++		: xcb_shape_query_extents(w.x, window).sequence;
++	request->window = window;
++	request->rectangles = rectangles;
++	wl_list_insert(w.shape_requests.prev, &request->link);
++}
++
++/* Follow a mapped X window's shape */
++void
++win4wine_watch_shape(uint32_t window)
++{
++	if (!w.x || !w.shape) {
++		return;
++	}
++	xcb_shape_select_input(w.x, window, 1);
++	request_shape(window, false);
++	xcb_flush(w.x);
++}
++
++static void
++handle_shape_reply(struct shape_request *request, void *reply)
++{
++	if (!request->rectangles) {
++		xcb_shape_query_extents_reply_t *extents = reply;
++		if (extents && extents->bounding_shaped) {
++			request_shape(request->window, true);
++		} else {
++			xwayland_shape_set(request->window, NULL);
++		}
++		return;
++	}
++	xcb_shape_get_rectangles_reply_t *rectangles = reply;
++	if (!rectangles) {
++		xwayland_shape_set(request->window, NULL);
++		return;
++	}
++	xcb_rectangle_t *rect = xcb_shape_get_rectangles_rectangles(rectangles);
++	int count = xcb_shape_get_rectangles_rectangles_length(rectangles);
++	pixman_box32_t *boxes = znew_n(pixman_box32_t, count > 0 ? count : 1);
++	for (int i = 0; i < count; i++) {
++		boxes[i] = (pixman_box32_t){rect[i].x, rect[i].y,
++			rect[i].x + rect[i].width, rect[i].y + rect[i].height};
++	}
++	pixman_region32_t region;
++	pixman_region32_init_rects(&region, boxes, count);
++	xwayland_shape_set(request->window, &region);
++	pixman_region32_fini(&region);
++	free(boxes);
++}
++
 +/* Ask for a new Xwayland window's identity and follow its changes */
 +static void
 +watch_window(struct view *view)
@@ -1526,6 +1674,11 @@ index 0000000..18d65c7
 +			wl_list_remove(&request->link);
 +			free(request);
 +		}
++		struct shape_request *shape_request, *shape_tmp;
++		wl_list_for_each_safe(shape_request, shape_tmp, &w.shape_requests, link) {
++			wl_list_remove(&shape_request->link);
++			free(shape_request);
++		}
 +		xcb_disconnect(w.x);
 +		w.x = NULL;
 +		return 0;
@@ -1548,6 +1701,11 @@ index 0000000..18d65c7
 +					&& ev->detail == XCB_NOTIFY_DETAIL_NONE) {
 +				refocus = true;
 +			}
++		} else if (w.shape && type == w.shape_event + XCB_SHAPE_NOTIFY) {
++			xcb_shape_notify_event_t *ev = (void *)event;
++			if (ev->shape_kind == XCB_SHAPE_SK_BOUNDING) {
++				request_shape(ev->affected_window, false);
++			}
 +		} else if (w.randr && (type == w.randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY
 +				|| type == w.randr_event + XCB_RANDR_NOTIFY)) {
 +			origin = true;
@@ -1566,6 +1724,19 @@ index 0000000..18d65c7
 +		free(error);
 +		wl_list_remove(&request->link);
 +		free(request);
++	}
++	struct shape_request *shape_request, *shape_tmp;
++	wl_list_for_each_safe(shape_request, shape_tmp, &w.shape_requests, link) {
++		void *reply = NULL;
++		xcb_generic_error_t *error = NULL;
++		if (!xcb_poll_for_reply(w.x, shape_request->sequence, &reply, &error)) {
++			break;
++		}
++		handle_shape_reply(shape_request, reply);
++		free(reply);
++		free(error);
++		wl_list_remove(&shape_request->link);
++		free(shape_request);
 +	}
 +	if (origin) {
 +		set_randr_primary();
@@ -1611,6 +1782,9 @@ index 0000000..18d65c7
 +	const xcb_query_extension_reply_t *randr = xcb_get_extension_data(w.x, &xcb_randr_id);
 +	w.randr = randr && randr->present;
 +	w.randr_event = w.randr ? randr->first_event : 0;
++	const xcb_query_extension_reply_t *shape = xcb_get_extension_data(w.x, &xcb_shape_id);
++	w.shape = shape && shape->present;
++	w.shape_event = w.shape ? shape->first_event : 0;
 +	if (w.randr) {
 +		xcb_randr_select_input(w.x, w.root, XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE
 +			| XCB_RANDR_NOTIFY_MASK_OUTPUT_CHANGE | XCB_RANDR_NOTIFY_MASK_CRTC_CHANGE);
@@ -1903,6 +2077,15 @@ index 0000000..18d65c7
 +	if (data->kind == WIN4WINE_NATIVE) {
 +		place_frame(view);
 +	}
++	/*
++	 * The taskbar changed its size (Windows 7's small icons) or place:
++	 * the work area follows, and maximized windows with it
++	 */
++	if (data->kind == WIN4WINE_DOCK && view->mapped
++			&& !wlr_box_equal(&data->dock_box, &view->current)) {
++		data->dock_box = view->current;
++		w.dock_moved = true;    /* after this commit (sync_now) */
++	}
 +	win4wine_changed();
 +}
 +
@@ -2054,6 +2237,7 @@ index 0000000..18d65c7
 +	wl_list_for_each(view, &w.server->views, link) {
 +		struct win4wine_view *data = data_of(view);
 +		if (data && data->kind == WIN4WINE_NATIVE) {
++			data->last_frame_hwnd = data->frame_hwnd;
 +			data->frame_hwnd = 0;
 +		}
 +	}
@@ -2073,6 +2257,11 @@ index 0000000..18d65c7
 +		if (!data || data->kind != WIN4WINE_NATIVE) {
 +			continue;
 +		}
++		if (data->last_frame_hwnd != hwnd || data->extents[0] != left || data->extents[1] != right
++				|| data->extents[2] != top || data->extents[3] != bottom
++				|| data->clip[0] != clip_x || data->clip[1] != clip_y) {
++			data->margin_changed = true;
++		}
 +		data->frame_hwnd = hwnd;
 +		data->extents[0] = left, data->extents[1] = right;
 +		data->extents[2] = top, data->extents[3] = bottom;
@@ -2080,6 +2269,39 @@ index 0000000..18d65c7
 +		data->frame_ready = !iconic;
 +	}
 +	fclose(f);
++}
++
++/*
++ * Windows' default-window slots, as wm.py: 22 pixels right (at 96 DPI,
++ * scaled by the frame's border) and the caption's height minus one down,
++ * again from the first after a quarter of the work area.
++ */
++static void
++cascade(struct wlr_box area, struct border margin, int *x, int *y)
++{
++	int step_x = (int)lround(22.0 * (margin.left > 1 ? margin.left : 1) / 4);
++	int step_y = margin.top - 1;
++	step_x = step_x > 1 ? step_x : 1;
++	step_y = step_y > 1 ? step_y : 1;
++	int slot = w.cascade_slot + 1;
++	if (slot * step_x > area.width / 4 || slot * step_y > area.height / 4) {
++		slot = 1;
++	}
++	w.cascade_slot = slot;
++	*x = area.x + slot * step_x + margin.left;
++	*y = area.y + slot * step_y + margin.top;
++}
++
++/* An X11 window that asked for its position (Wayland windows have none) */
++static bool
++positioned(struct view *view)
++{
++	if (view->type != LAB_XWAYLAND_VIEW) {
++		return false;
++	}
++	struct wlr_xwayland_surface *xsurface = xwayland_surface_from_view(view);
++	return xsurface->size_hints && (xsurface->size_hints->flags
++		& (XCB_ICCCM_SIZE_HINT_US_POSITION | XCB_ICCCM_SIZE_HINT_P_POSITION));
 +}
 +
 +/* Pair frames (proxy windows) with their native windows */
@@ -2110,10 +2332,17 @@ index 0000000..18d65c7
 +			restack();
 +		}
 +		if (frame && !data->placed && data->frame_ready) {
-+			/* The first frame: keep the caption inside the work area */
++			/*
++			 * The first frame: a window without a position of its own
++			 * takes Windows' next default-window slot (wm.py's cascade);
++			 * one with a position keeps its caption inside the work area.
++			 */
 +			struct border margin;
 +			if (win4wine_margin(view, &margin) && view_is_floating(view)) {
 +				struct wlr_box area = work_area(view), box = view->pending;
++				if (!positioned(view)) {
++					cascade(area, margin, &box.x, &box.y);
++				}
 +				if (box.x < area.x + margin.left) {
 +					box.x = area.x + margin.left;
 +				}
@@ -2125,6 +2354,13 @@ index 0000000..18d65c7
 +				}
 +			}
 +			data->placed = true;
++		}
++		if (frame && data->frame_ready && data->margin_changed) {
++			/* A window maximized before its frame was known leaves room for it now */
++			data->margin_changed = false;
++			if (!view_is_floating(view)) {
++				view_reapply_special_geometry(view);
++			}
 +		}
 +		if (frame) {
 +			place_frame(view);
@@ -2378,6 +2614,10 @@ index 0000000..18d65c7
 +sync_now(void *unused)
 +{
 +	w.idle = NULL;
++	if (w.dock_moved) {
++		w.dock_moved = false;
++		output_update_all_usable_areas(w.server, false);
++	}
 +	write_geometry();  /* first: frames follow their windows */
 +	run_commands();
 +	write_windows();
@@ -2596,8 +2836,8 @@ index 0000000..18d65c7
 +}
 +
 +/*
-+ * Wine's own unmanaged windows (override-redirect) take no keyboard from a
-+ * Wine window: Wine moves X's focus among its windows itself. Taking the
++ * Wine's own unmanaged windows (override-redirect) take no keyboard when
++ * they map: Wine moves X's focus among its windows itself. Taking the
 + * keyboard made wlroots deactivate the Wine window and focus no X window;
 + * the ReactOS Start menu, shown without activation and read from its
 + * owner's (the taskbar's) keys, then had no keys (Esc), nor had Wine any
@@ -2606,20 +2846,35 @@ index 0000000..18d65c7
 +bool
 +win4wine_unmanaged_keeps_keyboard(struct wlr_xwayland_surface *xsurface)
 +{
-+	struct wlr_surface *focused = w.server ? w.server->seat.seat->keyboard_state.focused_surface : NULL;
-+	struct view *view = w.server ? w.server->active_view : NULL;
-+	if (!w.ipc || !focused || !view || view->surface != focused || view->type != LAB_XWAYLAND_VIEW) {
++	if (!w.ipc || !w.server) {
 +		return false;
 +	}
-+	switch (win4wine_kind(view)) {
-+	case WIN4WINE_WINE:
-+	case WIN4WINE_POPUP:
-+	case WIN4WINE_DESKTOP:
-+	case WIN4WINE_DOCK:
-+		return xwayland_surface_from_view(view)->pid == xsurface->pid;
-+	default:
-+		return false;
++	/*
++	 * Nor from a native window: a Wine tooltip (the Start button's,
++	 * shown after the Start menu closed with Esc) took the keyboard
++	 * from a Linux window, and the Windows key then went nowhere.
++	 * X11's window manager never focuses such windows either; Wine
++	 * asks for the keyboard itself when it wants it (request_activate).
++	 */
++	struct view *view;
++	wl_list_for_each(view, &w.server->views, link) {
++		if (view->type != LAB_XWAYLAND_VIEW) {
++			continue;
++		}
++		switch (win4wine_kind(view)) {
++		case WIN4WINE_WINE:
++		case WIN4WINE_POPUP:
++		case WIN4WINE_DESKTOP:
++		case WIN4WINE_DOCK:
++			if (xwayland_surface_from_view(view)->pid == xsurface->pid) {
++				return true;
++			}
++			break;
++		default:
++			break;
++		}
 +	}
++	return false;
 +}
 +
 +bool
@@ -2689,6 +2944,51 @@ index 0000000..18d65c7
 +		}
 +		usable->width = right - usable->x > 1 ? right - usable->x : 1;
 +		usable->height = bottom - usable->y > 1 ? bottom - usable->y : 1;
++	}
++}
++
++/*
++ * The same edges in X space, exactly: from the taskbar's X geometry rather
++ * than from its layout box, whose rounding on a fractional scale put the
++ * work area one pixel into the taskbar (maximized windows covered its top).
++ */
++void
++win4wine_adjust_x_area(struct output *output, const struct wlr_box *xob, struct wlr_box *xarea)
++{
++	if (!w.ipc) {
++		return;
++	}
++	struct wlr_box ob;
++	wlr_output_layout_get_box(w.server->output_layout, output->wlr_output, &ob);
++	struct view *view;
++	wl_list_for_each(view, &w.server->views, link) {
++		if (!view->mapped || view->minimized || win4wine_kind(view) != WIN4WINE_DOCK
++				|| view_has_strut_partial(view) || view->type != LAB_XWAYLAND_VIEW) {
++			continue;
++		}
++		struct wlr_box overlap, dock = view->current;
++		if (!wlr_box_intersection(&overlap, &dock, &ob)) {
++			continue;
++		}
++		struct wlr_xwayland_surface *xsurface = xwayland_surface_from_view(view);
++		int x = xsurface->x, y = xsurface->y;
++		int right = xarea->x + xarea->width, bottom = xarea->y + xarea->height;
++		/* the same sides as win4wine_adjust_usable_area */
++		if (dock.width >= ob.width / 2) {
++			if (dock.y - ob.y >= ob.height / 2) {
++				bottom = y < bottom && y > xob->y ? y : bottom;
++			} else {
++				int edge = y + xsurface->height;
++				xarea->y = edge > xarea->y ? edge : xarea->y;
++			}
++		} else if (dock.x - ob.x >= ob.width / 2) {
++			right = x < right && x > xob->x ? x : right;
++		} else {
++			int edge = x + xsurface->width;
++			xarea->x = edge > xarea->x ? edge : xarea->x;
++		}
++		xarea->width = right - xarea->x > 1 ? right - xarea->x : 1;
++		xarea->height = bottom - xarea->y > 1 ? bottom - xarea->y : 1;
 +	}
 +}
 +
@@ -2920,6 +3220,7 @@ index 0000000..18d65c7
 +	const char *ipc = getenv("WIN4WINE_IPC");
 +	w.server = server;
 +	wl_list_init(&w.requests);
++	wl_list_init(&w.shape_requests);
 +	if (!ipc || !*ipc) {
 +		return;
 +	}
@@ -2972,10 +3273,10 @@ index 0000000..18d65c7
 +}
 diff --git a/src/xwayland-scale.c b/src/xwayland-scale.c
 new file mode 100644
-index 0000000..392fd81
+index 0000000..a9c9d42
 --- /dev/null
 +++ b/src/xwayland-scale.c
-@@ -0,0 +1,445 @@
+@@ -0,0 +1,554 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/* win4wine: Xwayland clients at the outputs' own resolution (see xwayland-scale.h). */
 +#include <math.h>
@@ -2988,7 +3289,11 @@ index 0000000..392fd81
 +#include "common/macros.h"
 +#include "common/mem.h"
 +#include <wlr/util/log.h>
++#include <wlr/xwayland.h>
++#include "config.h"
 +#include "labwc.h"
++#include "view.h"
++#include "xwayland.h"
 +#include "xwayland-scale.h"
 +#include "xdg-output-unstable-v1-protocol.h"
 +
@@ -3145,6 +3450,8 @@ index 0000000..392fd81
 +/* An X window's part on one output, in X space and in layout coordinates */
 +struct part {
 +	struct wlr_box xbox, box;
++	struct output *output;      /* its pixels on this output start at px, py */
++	int px, py;
 +	float scale;
 +	double offset_x, offset_y; /* layout = offset + X / scale on this output */
 +};
@@ -3168,6 +3475,9 @@ index 0000000..392fd81
 +		parts[count++] = (struct part){
 +			.xbox = xpart,
 +			.box = {x0, y0, x1 - x0, y1 - y0},
++			.output = output,
++			.px = xpart.x - ob.x,
++			.py = xpart.y - ob.y,
 +			.scale = scale,
 +			.offset_x = lbox.x - ob.x / scale,
 +			.offset_y = lbox.y - ob.y / scale,
@@ -3188,6 +3498,9 @@ index 0000000..392fd81
 +	}
 +	float scale = output->wlr_output->scale;
 +	part->xbox = *xbox;
++	part->output = output;
++	part->px = xbox->x - ob.x;
++	part->py = xbox->y - ob.y;
 +	part->box.x = lbox.x + (int)lroundf((xbox->x - ob.x) / scale);
 +	part->box.y = lbox.y + (int)lroundf((xbox->y - ob.y) / scale);
 +	part->box.width = (int)lroundf(xbox->width / scale);
@@ -3270,6 +3583,99 @@ index 0000000..392fd81
 +	slices->surface = NULL;
 +}
 +
++static struct server *the_server;
++
++/* Shaped X windows (xwayland_shape_set) */
++struct shape {
++	uint32_t window;
++	pixman_region32_t region;
++	struct wl_list link;
++};
++static struct wl_list shapes = {&shapes, &shapes};
++
++static struct shape *
++shape_of(uint32_t window)
++{
++	struct shape *shape;
++	wl_list_for_each(shape, &shapes, link) {
++		if (shape->window == window) {
++			return shape;
++		}
++	}
++	return NULL;
++}
++
++/* Show the slices of X window WINDOW only in its shape (its slices' surface may be gone) */
++static void
++apply_shape(struct xwayland_slices *slices, uint32_t window)
++{
++	struct shape *shape = window ? shape_of(window) : NULL;
++	for (int i = 0; i < slices->count; i++) {
++		if (slices->slice[i].scene_surface) {
++			wlr_scene_surface_set_shape(slices->slice[i].scene_surface,
++				shape ? &shape->region : NULL);
++		}
++	}
++}
++
++static void
++reapply_shape(uint32_t window)
++{
++	if (!the_server) {
++		return;
++	}
++	struct view *view;
++	wl_list_for_each(view, &the_server->views, link) {
++		if (view->type == LAB_XWAYLAND_VIEW) {
++			struct xwayland_view *xview = wl_container_of(view, xview, base);
++			if (xview->xwayland_surface && xview->xwayland_surface->window_id == window) {
++				apply_shape(&xview->slices, window);
++			}
++		}
++	}
++	struct xwayland_unmanaged *unmanaged;
++	wl_list_for_each(unmanaged, &the_server->unmanaged_surfaces, link) {
++		if (unmanaged->xwayland_surface->window_id == window) {
++			apply_shape(&unmanaged->slices, window);
++		}
++	}
++}
++
++void
++xwayland_shape_set(uint32_t window, const pixman_region32_t *region)
++{
++	struct shape *shape = shape_of(window);
++	if (!region) {
++		if (!shape) {
++			return;
++		}
++		xwayland_shape_forget(window);
++	} else {
++		if (!shape) {
++			shape = znew(*shape);
++			shape->window = window;
++			pixman_region32_init(&shape->region);
++			wl_list_insert(&shapes, &shape->link);
++		} else if (pixman_region32_equal(&shape->region, region)) {
++			return;
++		}
++		pixman_region32_copy(&shape->region, region);
++	}
++	reapply_shape(window);
++}
++
++void
++xwayland_shape_forget(uint32_t window)
++{
++	struct shape *shape = shape_of(window);
++	if (shape) {
++		wl_list_remove(&shape->link);
++		pixman_region32_fini(&shape->region);
++		free(shape);
++		reapply_shape(window);
++	}
++}
++
 +void
 +xwayland_slices_show(struct server *server, struct xwayland_slices *slices,
 +		struct wlr_scene_tree *tree, struct wlr_surface *surface, const struct wlr_box *xbox,
@@ -3311,14 +3717,18 @@ index 0000000..392fd81
 +		}
 +		wlr_scene_surface_set_dest_scale(scene_surface, parts[i].scale);
 +		wlr_scene_surface_set_crop(scene_surface, &crop);
++		/* exact on a fractional scale, where the layout box is rounded */
++		wlr_scene_surface_set_output_pixels(scene_surface,
++			parts[i].output ? parts[i].output->wlr_output : NULL, parts[i].px, parts[i].py);
 +		wlr_scene_node_set_position(&scene_surface->buffer->node,
 +			parts[i].box.x - origin_x, parts[i].box.y - origin_y);
 +	}
++	struct wlr_xwayland_surface *xsurface = wlr_xwayland_surface_try_from_wlr_surface(surface);
++	apply_shape(slices, xsurface ? xsurface->window_id : 0);
 +}
 +
 +/* zxdg_output_manager_v1 for Xwayland: logical size and position in X space */
 +
-+static struct server *the_server;
 +
 +static void
 +send_details(struct xscale_output *xo)
@@ -3422,7 +3832,7 @@ index 0000000..392fd81
 +	}
 +}
 diff --git a/src/xwayland-unmanaged.c b/src/xwayland-unmanaged.c
-index 38d3c31..a99a42a 100644
+index 38d3c31..58e6585 100644
 --- a/src/xwayland-unmanaged.c
 +++ b/src/xwayland-unmanaged.c
 @@ -5,7 +5,33 @@
@@ -3477,7 +3887,7 @@ index 38d3c31..a99a42a 100644
  		cursor_update_focus(unmanaged->server);
  	}
  }
-@@ -46,15 +72,15 @@ handle_map(struct wl_listener *listener, void *data)
+@@ -46,15 +72,17 @@ handle_map(struct wl_listener *listener, void *data)
  
  	CONNECT_SIGNAL(xsurface, unmanaged, set_geometry);
  
@@ -3495,22 +3905,25 @@ index 38d3c31..a99a42a 100644
 -	wlr_scene_node_set_position(unmanaged->node, xsurface->x, xsurface->y);
 +	/* the slices go with the tree (and with the surface) */
 +	unmanaged->node = &wlr_scene_tree_create(unmanaged->server->unmanaged_tree)->node;
++	/* win4wine: show only the window's shape (Wine's window regions) */
++	win4wine_watch_shape(xsurface->window_id);
 +	place(unmanaged, xsurface->x, xsurface->y, xsurface->width, xsurface->height);
  	cursor_update_focus(unmanaged->server);
  }
  
-@@ -91,7 +117,8 @@ handle_unmap(struct wl_listener *listener, void *data)
+@@ -91,7 +119,9 @@ handle_unmap(struct wl_listener *listener, void *data)
  
  	wl_list_remove(&unmanaged->link);
  	wl_list_remove(&unmanaged->set_geometry.link);
 -	wlr_scene_node_set_enabled(unmanaged->node, false);
 +	xwayland_slices_clear(&unmanaged->slices);
++	xwayland_shape_forget(xsurface->window_id);
 +	wlr_scene_node_destroy(unmanaged->node);
  
  	/*
  	 * Mark the node as gone so a racing configure event
 diff --git a/src/xwayland.c b/src/xwayland.c
-index 1eb9c1a..6aa006b 100644
+index 1eb9c1a..66e72a3 100644
 --- a/src/xwayland.c
 +++ b/src/xwayland.c
 @@ -2,6 +2,7 @@
@@ -3677,7 +4090,7 @@ index 1eb9c1a..6aa006b 100644
  	/*
  	 * For unknown reasons, XWayland surfaces that are completely
  	 * offscreen seem not to generate commit events. In rare cases,
-@@ -354,15 +399,45 @@ xwayland_view_configure(struct view *view, struct wlr_box geo)
+@@ -354,13 +399,43 @@ xwayland_view_configure(struct view *view, struct wlr_box geo)
  		!wlr_output_layout_intersects(view->server->output_layout, NULL,
  			&view->current);
  
@@ -3700,9 +4113,9 @@ index 1eb9c1a..6aa006b 100644
  		view->current.y = geo.y;
  		view_moved(view);
 +		update_slices(view);
- 	}
- }
- 
++	}
++}
++
 +/* win4wine: place a view at an exact X geometry (an XP frame around its window) */
 +void
 +xwayland_view_configure_x(struct view *view, const struct wlr_box *xbox)
@@ -3712,17 +4125,15 @@ index 1eb9c1a..6aa006b 100644
 +	if (xsurface->x == xbox->x && xsurface->y == xbox->y
 +			&& xsurface->width == xbox->width && xsurface->height == xbox->height) {
 +		return;
-+	}
+ 	}
 +	struct wlr_box box;
 +	xwayland_scale_from_x(view->server, xbox, &box);
 +	xview->requested_xbox = *xbox;
 +	xview->requested_box = box;
 +	xwayland_view_configure(view, box);
-+}
-+
+ }
+ 
  static void
- handle_request_configure(struct wl_listener *listener, void *data)
- {
 @@ -375,8 +450,12 @@ handle_request_configure(struct wl_listener *listener, void *data)
  
  	if (view_is_floating(view) && !ignore_configure_requests) {
@@ -3818,7 +4229,16 @@ index 1eb9c1a..6aa006b 100644
  	/*
  	 * We could also call set_initial_position() here, but it's not
  	 * really necessary until the view is actually mapped (and at
-@@ -727,15 +842,25 @@ xwayland_view_map(struct view *view)
+@@ -695,6 +810,8 @@ xwayland_view_map(struct view *view)
+ 	if (view->mapped) {
+ 		return;
+ 	}
++	/* win4wine: show only the window's shape (Wine's window regions) */
++	win4wine_watch_shape(xwayland_surface->window_id);
+ 	if (!xwayland_surface->surface) {
+ 		/*
+ 		 * We may get here if a user minimizes an xwayland dialog at the
+@@ -727,15 +844,25 @@ xwayland_view_map(struct view *view)
  		view->surface_destroy.notify = handle_surface_destroy;
  		wl_signal_add(&view->surface->events.destroy, &view->surface_destroy);
  
@@ -3847,7 +4267,17 @@ index 1eb9c1a..6aa006b 100644
  	}
  
  	/*
-@@ -1005,6 +1130,7 @@ xwayland_view_create(struct server *server,
+@@ -786,6 +913,9 @@ xwayland_view_unmap(struct view *view, bool client_request)
+ 	view->mapped = false;
+ 	wl_list_remove(&view->commit.link);
+ 	wlr_scene_node_set_enabled(&view->scene_tree->node, false);
++	if (xwayland_view_from_view(view)->xwayland_surface) {
++		xwayland_shape_forget(xwayland_view_from_view(view)->xwayland_surface->window_id);
++	}
+ 	view_impl_unmap(view);
+ 
+ 	/* Update usable area to account for XWayland "struts" (panels) */
+@@ -1005,6 +1135,7 @@ xwayland_view_create(struct server *server,
  	CONNECT_SIGNAL(xsurface, xwayland_view, associate);
  	CONNECT_SIGNAL(xsurface, xwayland_view, dissociate);
  	CONNECT_SIGNAL(xsurface, xwayland_view, request_activate);
@@ -3855,7 +4285,7 @@ index 1eb9c1a..6aa006b 100644
  	CONNECT_SIGNAL(xsurface, xwayland_view, request_configure);
  	CONNECT_SIGNAL(xsurface, xwayland_view, set_class);
  	CONNECT_SIGNAL(xsurface, xwayland_view, set_decorations);
-@@ -1096,6 +1222,9 @@ handle_server_ready(struct wl_listener *listener, void *data)
+@@ -1096,6 +1227,9 @@ handle_server_ready(struct wl_listener *listener, void *data)
  	sync_atoms(xcb_conn);
  	wlr_log(WLR_DEBUG, "Disconnecting from xwayland");
  	xcb_disconnect(xcb_conn);
@@ -3865,7 +4295,7 @@ index 1eb9c1a..6aa006b 100644
  }
  
  static void
-@@ -1166,6 +1295,26 @@ xwayland_server_init(struct server *server, struct wlr_compositor *compositor)
+@@ -1166,6 +1300,26 @@ xwayland_server_init(struct server *server, struct wlr_compositor *compositor)
   * - start scrolling
   * - all scroll events should end up on the maximized window on the other workspace
   */
@@ -3892,7 +4322,7 @@ index 1eb9c1a..6aa006b 100644
  void
  xwayland_adjust_stacking_order(struct server *server)
  {
-@@ -1349,65 +1498,86 @@ xwayland_update_workarea(struct server *server)
+@@ -1349,65 +1503,87 @@ xwayland_update_workarea(struct server *server)
  		return;
  	}
  
@@ -3959,6 +4389,7 @@ index 1eb9c1a..6aa006b 100644
 +		if (usable.y + usable.height == ob.y + ob.height) {
 +			areas[count].height = xob.y + xob.height - areas[count].y;
 +		}
++		win4wine_adjust_x_area(output, &xob, &areas[count]);
 +		count++;
 +	}
  
@@ -4022,7 +4453,7 @@ index 1eb9c1a..6aa006b 100644
  	struct wlr_box workarea = {
  		.x = workarea_left,
  		.y = workarea_top,
-@@ -1415,4 +1585,6 @@ xwayland_update_workarea(struct server *server)
+@@ -1415,4 +1591,6 @@ xwayland_update_workarea(struct server *server)
  		.height = workarea_bottom - workarea_top,
  	};
  	wlr_xwayland_set_workareas(server->xwayland, &workarea, 1);

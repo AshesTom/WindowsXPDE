@@ -25,39 +25,50 @@ LoadStringByReference loads "@dll,-id" strings with RegLoadMUIString's
 loader; the 64-bit NDR64 names are the classic functions. On 64-bit,
 WerpNotifyUseStringResource returns 0 without reading its arguments (the
 caller passes them in registers and removes them itself); there is no
-error reporting. On 64-bit, PaintMonitor draws the monitor's wallpaper
-with PaintDesktop: traces of the Windows 7 desktop show a monitor, a
-memory DC and a rectangle such as (0,0)-(1024,728) on a 1024x768 monitor,
-so the DC's coordinates are taken as the monitor's. Other functions
-without a public signature (WinSqmAddToStreamEx, NdrStubCall3,
-CreateBitmapFromDxSurface, and WerpNotifyUseStringResource and
-PaintMonitor on 32-bit) are stubs. Signatures follow ReactOS's specs and the public documentation.
+error reporting. On 64-bit, PaintMonitor draws the wallpaper fitted to
+that monitor, as PaintDesktop fits it to the desktop: traces of the
+Windows 7 desktop show a monitor, a memory DC and a rectangle in the
+desktop's coordinates, such as (0,0)-(1024,728) on a 1024x768 monitor and
+(1280,0)-(2560,800) for a second monitor right of a 1280x800 one
+(PaintDesktop's body fills a given area for it). gdi32
+CreateBitmapFromDxSurface (ReactOS's NtGdiCreateBitmapFromDxSurface
+arguments) fails: there is no DirectX shared surface to give. Other
+functions without a public signature (WinSqmAddToStreamEx, NdrStubCall3,
+and WerpNotifyUseStringResource and PaintMonitor on 32-bit) are stubs. Signatures follow ReactOS's specs and the public documentation.
 Evidence: Windows 7 SP1 x64 explorer.exe and its DLLs load (their import
 tables are satisfied). shell32 and comctl32 call
 WerpNotifyUseStringResource on a shell thread; as a stub the thread ended
 in nested exceptions, with the function the thread goes on (it shows its
 message box). With a wallpaper set, the desktop thread called the
-PaintMonitor stub and ended; with the function the wallpaper shows.
+PaintMonitor stub and ended; with the function the wallpaper shows, on
+each monitor (with two monitors, the second one was black when the DC's
+coordinates were taken as the monitor's).
+Clicking in a folder window and then on the Start button called
+CreateBitmapFromDxSurface from explorerframe; as a stub the shell ended
+("unimplemented function"); failing, the shell and the window go on.
 Scope: new exports only; nothing that Wine already exported changes.
 ---
  dlls/gdi32/gdi32.spec           |  2 +-
+ dlls/gdi32/objects.c            | 13 +++++++
  dlls/kernel32/kernel32.spec     |  9 ++---
  dlls/kernel32/process.c         | 64 +++++++++++++++++++++++++++++++++
  dlls/kernelbase/kernelbase.spec |  2 +-
- dlls/kernelbase/registry.c      | 61 ++++++++++++++++++++++++++++++++
+ dlls/kernelbase/registry.c      | 61 +++++++++++++++++++++++++++++++
  dlls/ntdll/env.c                | 18 ++++++++++
  dlls/ntdll/misc.c               | 22 ++++++++++++
  dlls/ntdll/ntdll.spec           |  6 ++++
  dlls/oleaut32/oleaut32.spec     |  9 +++++
  dlls/rpcrt4/rpcrt4.spec         |  1 +
- dlls/user32/misc.c              | 78 +++++++++++++++++++++++++++++++++++++++++
+ dlls/user32/controls.h          |  1 +
+ dlls/user32/desktop.c           | 66 ++++++++++++++++++++--------------
+ dlls/user32/misc.c              | 80 +++++++++++++++++++++++++++++++++++++++++
  dlls/user32/user32.spec         | 11 +++---
  dlls/winsta/main.c              |  8 +++++
  dlls/winsta/winsta.spec         |  1 +
- 14 files changed, 281 insertions(+), 11 deletions(-)
+ 17 files changed, 337 insertions(+), 37 deletions(-)
 
 diff --git a/dlls/gdi32/gdi32.spec b/dlls/gdi32/gdi32.spec
-index 207549f..ed4e040 100644
+index 207549f..35fc828 100644
 --- a/dlls/gdi32/gdi32.spec
 +++ b/dlls/gdi32/gdi32.spec
 @@ -51,7 +51,7 @@
@@ -65,10 +76,34 @@ index 207549f..ed4e040 100644
  @ stdcall CopyMetaFileW(long wstr)
  @ stdcall CreateBitmap(long long long long ptr)
 -# @ stub CreateBitmapFromDxSurface
-+@ stub CreateBitmapFromDxSurface
++@ stdcall CreateBitmapFromDxSurface(long long long long ptr)
  # @ stub CreateBitmapFromDxSurface2
  @ stdcall CreateBitmapIndirect(ptr)
  @ stdcall CreateBrushIndirect(ptr)
+diff --git a/dlls/gdi32/objects.c b/dlls/gdi32/objects.c
+index 0c7eaca..464dc9a 100644
+--- a/dlls/gdi32/objects.c
++++ b/dlls/gdi32/objects.c
+@@ -613,6 +613,19 @@ HBITMAP WINAPI CreateBitmap( INT width, INT height, UINT planes,
+     return NtGdiCreateBitmap( width, height, planes, bpp, bits );
+ }
+ 
++/***********************************************************************
++ *           CreateBitmapFromDxSurface    (GDI32.@)
++ *
++ * A bitmap over a DirectX shared surface; Wine has none to give, so the
++ * caller (Windows 7's explorerframe) goes on without one.
++ */
++HBITMAP WINAPI CreateBitmapFromDxSurface( HDC hdc, UINT width, UINT height, DWORD format, HANDLE surface )
++{
++    FIXME( "%p %u %u %#lx %p: no DirectX surfaces\n", hdc, width, height, format, surface );
++    SetLastError( ERROR_NOT_SUPPORTED );
++    return 0;
++}
++
+ /******************************************************************************
+  *           CreateCompatibleBitmap    (GDI32.@)
+  *
 diff --git a/dlls/kernel32/kernel32.spec b/dlls/kernel32/kernel32.spec
 index 5c2501c..01742e3 100644
 --- a/dlls/kernel32/kernel32.spec
@@ -375,11 +410,157 @@ index 428bf0a..2711b38 100644
  @ stdcall NdrStubCall(ptr ptr ptr ptr)
  @ stdcall NdrStubForwardingFunction(ptr ptr ptr ptr)
  @ stdcall NdrStubGetBuffer(ptr ptr ptr)
+diff --git a/dlls/user32/controls.h b/dlls/user32/controls.h
+index df06c4f..8699f6c 100644
+--- a/dlls/user32/controls.h
++++ b/dlls/user32/controls.h
+@@ -80,6 +80,7 @@ extern LRESULT StaticWndProc_common(HWND,UINT,WPARAM,LPARAM,BOOL);
+ 
+ /* desktop */
+ extern BOOL update_wallpaper( const WCHAR *wallpaper, const WCHAR *pattern );
++extern BOOL paint_desktop_area( HDC hdc, const RECT *area );
+ 
+ /* nonclient area */
+ extern LRESULT NC_HandleSysCommand( HWND hwnd, WPARAM wParam, LPARAM lParam );
+diff --git a/dlls/user32/desktop.c b/dlls/user32/desktop.c
+index c7ebad1..163921b 100644
+--- a/dlls/user32/desktop.c
++++ b/dlls/user32/desktop.c
+@@ -127,17 +127,20 @@ LRESULT WINAPI DesktopWndProcW( HWND hwnd, UINT message, WPARAM wParam, LPARAM l
+ }
+ 
+ /***********************************************************************
+- *           PaintDesktop   (USER32.@)
++ *           paint_desktop_area
+  *
++ * Paint the desktop's pattern and wallpaper fitted to AREA (in HDC's
++ * coordinates): the desktop, or one monitor of it (PaintMonitor).
+  */
+-BOOL WINAPI PaintDesktop(HDC hdc)
++BOOL paint_desktop_area( HDC hdc, const RECT *area )
+ {
+     HWND hwnd = GetDesktopWindow();
+ 
+     /* check for an owning thread; otherwise don't paint anything (non-desktop mode) */
+     if (GetWindowThreadProcessId( hwnd, NULL ))
+     {
+-        RECT rect;
++        RECT rect = *area;
++        int width = rect.right - rect.left, height = rect.bottom - rect.top;
+ 
+         /* The XP shell paints its desktop in its own process, where the
+          * desktop thread's wallpaper bitmap is not loaded. */
+@@ -149,13 +152,11 @@ BOOL WINAPI PaintDesktop(HDC hdc)
+                 init_wallpaper( wallpaper );
+         }
+ 
+-        GetClientRect( hwnd, &rect );
+-
+         /* Paint desktop pattern (only if wall paper does not cover everything) */
+ 
+         if (!hbitmapWallPaper || scaled_wallpaper == 6 ||
+             (!fTileWallPaper && !scaled_wallpaper &&
+-             ((bitmapSize.cx < rect.right) || (bitmapSize.cy < rect.bottom))))
++             ((bitmapSize.cx < width) || (bitmapSize.cy < height))))
+         {
+             HBRUSH brush = hbrushPattern;
+             if (!brush) brush = (HBRUSH)GetClassLongPtrW( hwnd, GCLP_HBRBACKGROUND );
+@@ -177,50 +178,51 @@ BOOL WINAPI PaintDesktop(HDC hdc)
+             if (scaled_wallpaper)
+             {
+                 int mode = SetStretchBltMode( hdc, HALFTONE );
+-                int dst_x = 0, dst_y = 0, dst_cx = rect.right, dst_cy = rect.bottom;
++                int dst_x = 0, dst_y = 0, dst_cx = width, dst_cy = height;
+                 int src_x = 0, src_y = 0, src_cx = bitmapSize.cx, src_cy = bitmapSize.cy;
+                 POINT origin;
+-                if (scaled_wallpaper != 2 && rect.right && rect.bottom)
++                if (scaled_wallpaper != 2 && width && height)
+                 {
+                     /* Scale by the width when the desktop is relatively wider,
+                      * for fill, or narrower, for fit (as ReactOS does). */
+-                    BOOL wider = (LONGLONG)rect.right * bitmapSize.cy > (LONGLONG)rect.bottom * bitmapSize.cx;
++                    BOOL wider = (LONGLONG)width * bitmapSize.cy > (LONGLONG)height * bitmapSize.cx;
+                     BOOL by_width = (scaled_wallpaper == 10) == wider;
+-                    int num = by_width ? rect.right : rect.bottom, den = by_width ? bitmapSize.cx : bitmapSize.cy;
+-                    int width = MulDiv( bitmapSize.cx, num, den ), height = MulDiv( bitmapSize.cy, num, den );
++                    int num = by_width ? width : height, den = by_width ? bitmapSize.cx : bitmapSize.cy;
++                    int scaled_cx = MulDiv( bitmapSize.cx, num, den ), scaled_cy = MulDiv( bitmapSize.cy, num, den );
+                     if (scaled_wallpaper == 6)
+                     {
+-                        dst_x = (rect.right - width) / 2;
+-                        dst_y = (rect.bottom - height) / 2;
+-                        dst_cx = width;
+-                        dst_cy = height;
++                        dst_x = (width - scaled_cx) / 2;
++                        dst_y = (height - scaled_cy) / 2;
++                        dst_cx = scaled_cx;
++                        dst_cy = scaled_cy;
+                     }
+                     else
+                     {
+-                        src_x = (width - rect.right) * bitmapSize.cx / (2 * width);
+-                        src_y = (height - rect.bottom) * bitmapSize.cy / (2 * height);
+-                        src_cx = rect.right * bitmapSize.cx / width;
+-                        src_cy = rect.bottom * bitmapSize.cy / height;
++                        src_x = (scaled_cx - width) * bitmapSize.cx / (2 * scaled_cx);
++                        src_y = (scaled_cy - height) * bitmapSize.cy / (2 * scaled_cy);
++                        src_cx = width * bitmapSize.cx / scaled_cx;
++                        src_cy = height * bitmapSize.cy / scaled_cy;
+                     }
+                 }
+                 SetBrushOrgEx( hdc, 0, 0, &origin );
+-                StretchBlt( hdc, dst_x, dst_y, dst_cx, dst_cy, hMemDC, src_x, src_y, src_cx, src_cy, SRCCOPY );
++                StretchBlt( hdc, rect.left + dst_x, rect.top + dst_y, dst_cx, dst_cy,
++                            hMemDC, src_x, src_y, src_cx, src_cy, SRCCOPY );
+                 SetBrushOrgEx( hdc, origin.x, origin.y, NULL );
+                 SetStretchBltMode( hdc, mode );
+             }
+             else if (fTileWallPaper)
+             {
+-                for (y = 0; y < rect.bottom; y += bitmapSize.cy)
+-                    for (x = 0; x < rect.right; x += bitmapSize.cx)
+-                        BitBlt( hdc, x, y, bitmapSize.cx, bitmapSize.cy, hMemDC, 0, 0, SRCCOPY );
++                for (y = 0; y < height; y += bitmapSize.cy)
++                    for (x = 0; x < width; x += bitmapSize.cx)
++                        BitBlt( hdc, rect.left + x, rect.top + y, bitmapSize.cx, bitmapSize.cy, hMemDC, 0, 0, SRCCOPY );
+             }
+             else
+             {
+-                x = (rect.left + rect.right - bitmapSize.cx) / 2;
+-                y = (rect.top + rect.bottom - bitmapSize.cy) / 2;
++                x = (width - bitmapSize.cx) / 2;
++                y = (height - bitmapSize.cy) / 2;
+                 if (x < 0) x = 0;
+                 if (y < 0) y = 0;
+-                BitBlt( hdc, x, y, bitmapSize.cx, bitmapSize.cy, hMemDC, 0, 0, SRCCOPY );
++                BitBlt( hdc, rect.left + x, rect.top + y, bitmapSize.cx, bitmapSize.cy, hMemDC, 0, 0, SRCCOPY );
+             }
+             DeleteDC( hMemDC );
+         }
+@@ -228,6 +230,18 @@ BOOL WINAPI PaintDesktop(HDC hdc)
+     return TRUE;
+ }
+ 
++/***********************************************************************
++ *           PaintDesktop   (USER32.@)
++ *
++ */
++BOOL WINAPI PaintDesktop(HDC hdc)
++{
++    RECT rect;
++
++    GetClientRect( GetDesktopWindow(), &rect );
++    return paint_desktop_area( hdc, &rect );
++}
++
+ /***********************************************************************
+  *           SetDeskWallpaper   (USER32.@)
+  */
 diff --git a/dlls/user32/misc.c b/dlls/user32/misc.c
-index feb79ae..b2bcc48 100644
+index feb79ae..c77b9bb 100644
 --- a/dlls/user32/misc.c
 +++ b/dlls/user32/misc.c
-@@ -563,3 +563,81 @@ BOOL WINAPI DestroyReasons( void *reasons )
+@@ -563,3 +563,83 @@ BOOL WINAPI DestroyReasons( void *reasons )
      TRACE( "(%p)\n", reasons );
      return TRUE;
  }
@@ -437,17 +618,18 @@ index feb79ae..b2bcc48 100644
 +/***********************************************************************
 + *           PaintMonitor   (USER32.@)
 + *
-+ * Windows 7's desktop calls it when it has a wallpaper. There is no public
-+ * description; traces show a monitor, a memory DC and a rectangle, such as
-+ * (0,0)-(1024,728) on a 1024x768 monitor, so the DC's coordinates are taken
-+ * as the monitor's and the monitor's wallpaper is drawn in the rectangle.
-+ * Exported on 64-bit only, where the caller passes the arguments in
-+ * registers.
++ * Windows 7's desktop calls it for each monitor when it has a wallpaper.
++ * There is no public description; traces show a monitor, a memory DC and a
++ * rectangle in the desktop's coordinates, such as (0,0)-(1024,728) on a
++ * 1024x768 monitor and (1280,0)-(2560,800) on a second monitor right of a
++ * 1280x800 one, so the monitor's own wallpaper (fitted to that monitor, as
++ * Windows does on each) is drawn there, within the rectangle. Exported on
++ * 64-bit only, where the caller passes the arguments in registers.
 + */
 +BOOL WINAPI PaintMonitor( HMONITOR monitor, HDC hdc, const RECT *rect )
 +{
 +    MONITORINFO info = { sizeof(info) };
-+    POINT org;
++    RECT area;
 +    BOOL ret;
 +    int saved;
 +
@@ -455,9 +637,10 @@ index feb79ae..b2bcc48 100644
 +
 +    if (!GetMonitorInfoW( monitor, &info ) || !(saved = SaveDC( hdc ))) return FALSE;
 +    if (rect) IntersectClipRect( hdc, rect->left, rect->top, rect->right, rect->bottom );
-+    /* PaintDesktop draws in screen coordinates */
-+    OffsetViewportOrgEx( hdc, -info.rcMonitor.left, -info.rcMonitor.top, &org );
-+    ret = PaintDesktop( hdc );
++    /* the desktop's coordinates start at the virtual screen's corner */
++    area = info.rcMonitor;
++    OffsetRect( &area, -GetSystemMetrics( SM_XVIRTUALSCREEN ), -GetSystemMetrics( SM_YVIRTUALSCREEN ) );
++    ret = paint_desktop_area( hdc, &area );
 +    RestoreDC( hdc, saved );
 +    return ret;
 +}

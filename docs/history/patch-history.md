@@ -38,6 +38,11 @@
 - 2026-10-17 の taskbar-settings ブランチ（Windows 7 のタスクバーの設定）で、2 本を「Windows 7 のシェルが呼ぶ API と Wine の修正」の
   最後に加え（0096 SendNotifyMessage のブロードキャストの文字列、0097 DM_REPOSITION）、最大化した窓を作業領域に合わせ直す変更を
   0024 に含めた。旧 0096〜0124 は 0098〜0126 になった（下の「タスクバーの設定」）。
+- 2026-10-17 の win7-wayland ブランチ（Windows 7 のシェルの Wayland のセッション）で、0079 の gdi32 CreateBitmapFromDxSurface を
+  スタブから失敗を返す関数にし（フォルダの窓の後でスタートボタンを押すとシェルが落ちた）、0107 を Wayland のセッション
+  （`WIN4WINE_COMPOSITED`）では合成しないようにした。0079 の PaintMonitor をモニターごとの壁紙にし、0109 で Windows 7 の
+  シェルのプロセスには DwmIsCompositionEnabled を FALSE にした。番号と本数は変えていない。labwc のパッチを広げ、wlroots に
+  0003 を加えた。
 
 それ以前の文書（`docs/history/investigations.md` の各節と、Git 管理外の開発の記録）に出てくるパッチ番号は、書いた時点の番号（段階 2 より前の旧番号、
 段階 2〜4 の 10.0 版の番号、段階 5 の 11.0 版の番号、または段階 6 の番号）。下の対応表で今の番号に読み替える。

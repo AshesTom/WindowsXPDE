@@ -1,6 +1,7 @@
 # Wayland のセッション
 
-ログイン画面で選べる 2 つ目のセッション「XP Shell (Wine, Wayland)」の説明です。X11 のウィンドウマネージャー（bridge-wm）の
+ログイン画面で選べる 2 つ目のセッション「XP Shell (Wine, Wayland)」（ReactOS のシェルでは「ReactOS Shell (Wine, Wayland)」、
+Windows 7 のシェルでは「Windows 7 Shell (Wine, Wayland)」）の説明です。X11 のウィンドウマネージャー（bridge-wm）の
 代わりに、パッチを当てた labwc（wlroots の compositor）が同じ役を持ちます。X11 のセッションはそのまま残り、動きも変わりません。
 
 **X11 のセッション以上に実験的な機能です。** 作ったばかりで、確かめた範囲は X11 のセッションより狭く、下の「X11 のセッションとの違い・残っていること」の制限があります。どの compositor を選んだか、その比較と最初の試作の結果は [history/wayland-study.md](history/wayland-study.md) にあります。
@@ -17,8 +18,8 @@ XP にはモニターごとの DPI が無いので、XP のシェルの DPI は 
 ## 使い方
 
 - `scripts/setup.sh --media ISO --wayland` で、labwc と wlroots をビルドし（`wayland/build.sh`、`.local/labwc-install`）、
-  セッションを登録します（`session/install.sh --wayland`）。`--greeter` と一緒なら、XP のようこそ画面の既定のセッションも
-  Wayland になります。
+  セッションを登録します（`session/install.sh --wayland`）。`--shell reactos` や `--shell win7` と一緒なら、そのシェルの
+  Wayland のセッションを登録します。`--greeter` と一緒なら、ログオン画面の既定のセッションも Wayland になります。
 - 出力の倍率と位置は `session.json` の `"outputs"`、Win32 の主モニターは `"primary"`（出力の名前）で決めます。
   例: `"outputs": {"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}, "primary": "HDMI-A-1"`。
   `mode`（`wlr-randr --mode` の値）も書けます。出力の名前は `wlr-randr` で見られます。
@@ -30,10 +31,11 @@ XP にはモニターごとの DPI が無いので、XP のシェルの DPI は 
 | `wayland/upstream.env`, `wayland/build.sh` | labwc 0.8.3 に wlroots 0.18.2 と libsfdo を subproject として静的に組み込んでビルドします（システムの wlroots は使いません） |
 | `wayland/patches/wlroots/0001` | scene の surface を 1/倍率 の大きさで、また一部だけを切り取って表示します。その倍率の出力では 1 画素ずつ描きます |
 | `wayland/patches/wlroots/0002` | XWM が `_NET_WM_STATE_ABOVE`（Win32 の最前面の窓）を落とさずに保ち、変化を知らせます |
+| `wayland/patches/wlroots/0003` | scene の surface を形（X の窓の SHAPE）の中だけ描き、入力もその中だけで受けます。倍率が整数でない出力でも、X の窓を出力の画素の正しい位置に描きます |
 | `wayland/patches/labwc/0001` | `xwayland-scale.c`（Xwayland を出力の画素で動かす）と `win4wine.c`（bridge-wm の役） |
 | `wayland/labwc/` | labwc の設定（Alt+F4 だけのキー、空のメニュー、XP の Luna に近い色の枠） |
 | `wayland/session.sh` | IPC の場所（`WIN4WINE_IPC`）を決めて labwc を起動し、その中で supervisor を動かします。supervisor が終わるとセッションも終わります |
-| `session/supervisor.py` | labwc の中では bridge-wm を起動せず、`wlr-randr` で出力を設定し、主モニターの名前を IPC の `primary` に書きます |
+| `session/supervisor.py` | labwc の中では bridge-wm を起動せず、`wlr-randr` で出力を設定し、主モニターの名前を IPC の `primary` に書きます。Wine には `WIN4WINE_COMPOSITED` を渡します（下の「Windows 7 のシェル」） |
 | Wine 0027, 0074 | Xwayland ではルートの窓から画面を読めないので、XP の影は透明度つきの黒い窓で描き（0027）、ログオフの灰色の画面は各窓の中身から作ります（0074） |
 
 ## Xwayland を出力の画素で動かす（`xwayland-scale.c`）
@@ -73,6 +75,28 @@ XP にはモニターごとの DPI が無いので、XP のシェルの DPI は 
   仮想マシンのポインター）では動かないので、最初のクリックが別の場所に届いてしまいます。
 - 窓が大きくなるときは、X の窓に frame callback を送ります。最大化で Linux の窓の下に隠れた枠には callback が届かず、
   Xwayland が新しい大きさを描かないままになるためです。
+- X の窓の形（SHAPE の bounding）を、自前の X の接続で読んで、その中だけを描きます（wlroots 0003）。Xwayland は形の外も
+  そのまま出すので、Wine の窓の領域（SetWindowRgn。XP と Windows 7 の枠の丸い角、Windows 7 のスタートメニューの使わない部分）が
+  黒く出ていました。
+- 位置を持たない Linux の窓（Wayland の窓はいつもそう）は、bridge-wm と同じく Windows の既定の窓の位置（右下へずらした
+  次の位置）に置きます。枠の大きさが分かる前に最大化された窓は、分かったときに合わせ直します。
+- 作業領域は、タスクバーの大きさや位置が変わるとそれに従います（Windows 7 の「小さいアイコンを使う」）。最大化した Linux の窓も
+  それに合わせます。Wine の窓は labwc の並べ直しから外します。Wine が自分で置き、最大化した窓も Wine が合わせ直すためです
+  （タスクバーを作業領域に収めようとして動かすと、作業領域がまた変わって止まらなくなりました）。
+- Wine の管理外の窓（ツールチップなど）は、表示されてもキーボードを取りません（X11 のウィンドウマネージャーと同じ）。
+  Windows 7 のスタートメニューを Esc で閉じた後、スタート ボタンのツールチップが Linux の窓からキーボードを取り、
+  Windows キーが効かなくなっていました。
+- 倍率が整数でない出力でも、X の窓は出力の画素の正しい位置に描きます（wlroots 0003）。レイアウトの座標は整数なので、
+  位置を倍率で掛けて丸めると、X の位置によって 1 画素ずれていました。作業領域の、タスクバーが決める辺も、タスクバーの X の
+  位置からそのまま決めます（レイアウトの座標を通すと、倍率 1.5 で 1 画素タスクバーに重なっていました）。
+
+## Windows 7 のシェル
+
+- Windows 7 のスタート ボタンとスタートメニューの利用者の画像は、透明度を持つ窓です。X11 のセッションには合成が無いので、
+  Wine がタスクバーやスタートメニューの絵と混ぜて描いています（Wine の 0107）。Wayland のセッションでは compositor が
+  その下にある本当の絵と混ぜるので、supervisor が Wine に `WIN4WINE_COMPOSITED` を渡し、Wine は混ぜずにそのまま渡します。
+  スタート ボタンの縁は、参照用の実機（Windows 7）と 4 画素（最大 2 段階）しか違いません（X11 のセッションでは 199 画素）。
+- タスクバーの設定（小さいアイコン、ボタンの結合）はその場で反映され、作業領域と最大化した窓も従います。
 
 ## 確かめたこと
 
@@ -89,18 +113,33 @@ XP にはモニターごとの DPI が無いので、XP のシェルの DPI は 
 - 出力 2 つ: XP のデスクトップは主モニターに出て、Wine の窓は両方の出力に出せます。主モニターは `"primary"` で選べます。
 - セッションの終わり: XP のログオフで labwc が終わり、ログイン画面に戻ります。
 - X11 のセッション: 同じ仮想マシンで X11 のセッションに戻し、今までどおり動くことを確かめています。
-- 自動の試験: `tests/wayland_compositor.py`（Wine を使わず、Wine の窓の印を付けた X の窓で compositor の規則を確かめます）。
+- Windows 7 のシェル（2026-10-17）: 入れ子の labwc（出力 1 つ、倍率 1 と 1.5）で、同じ操作をした X11 のセッションと
+  画面を比べています。デスクトップ、スタートメニュー、メモ帳（通常と最大化）、Mousepad（Wayland）
+  の Windows 7 の枠と最大化、Alt+Tab、デスクトップとタスクバーの右クリックのメニュー、ジャンプ リスト、ファイル名を指定して実行、
+  タスク バーのプロパティ、Win+E のフォルダの窓、タスクバーの設定（小さいアイコン・結合）で、違いは時計、カーソル、Mousepad の
+  文字（GTK の Wayland と X11 の描き方の違い）と、X11 のセッションの方が実機と違う所（スタート ボタンと利用者の画像の縁）だけです。
+  倍率 1.5（144 DPI）でも同じです。XP と ReactOS のシェルでは、変更前の labwc と比べ、違いは丸い角と Linux の窓の置き方だけです。
+  試験用の仮想マシンの実際の出力（DRM、1280×800）でも、`setup.sh --shell win7 --wayland --greeter` から、ログオン画面、
+  スタートメニュー、メモ帳と Mousepad（Wayland）、日本語入力（Mousepad は text-input-v3、メモ帳は XIM）、Win+E、Alt+Tab、
+  タスクバーの右クリックのプロパティでの小さいアイコン、ログオフでログオン画面に戻ることを確かめています。
+- 自動の試験: `tests/wayland_compositor.py`（Wine を使わず、Wine の窓の印を付けた X の窓で compositor の規則を確かめます。
+  タスクバーの大きさに従う作業領域、既定の窓の位置、X の窓の形と倍率 1.5 での画素の位置（出力の画素を読みます）、
+  管理外の窓がキーボードを取らないことも含みます）。
   XP のシェルと proxy を使う確かめ（X11 の `tests/native_frames.py` などに当たるもの）は、まだ手で行っています。
 
 ## X11 のセッションとの違い・残っていること
 
 - ログオフ・終了の灰色の画面: Wayland のアプリの窓は X の窓ではないので写りません（その下にある Wine の窓やデスクトップが
   写ります）。
-- 主モニター以外の出力: XP のデスクトップの窓は広がりますが、壁紙は主モニターにだけ描かれ、ほかは背景色になります。
+- 主モニター以外の出力: XP と ReactOS のデスクトップの窓は広がりますが、壁紙は主モニターにだけ描かれ、ほかは背景色になります
+  （Windows 7 のシェルは、実機と同じく出力ごとに壁紙を描きます）。
 - X の空間では主モニターが先頭なので、主モニターの左にある出力へ Wine の窓をドラッグする途中は、隣の出力にはみ出した部分が
   元の出力の倍率で（小さく）描かれます。移し終えれば、その出力の倍率で描かれます。
-- 倍率が整数でない出力では、X の窓どうしの位置が出力の 1 画素ずれることがあります（レイアウトの座標が整数のためです）。
-  窓の中身は引き伸ばさずに 1 画素ずつ描きます。
+- 倍率が整数でない出力では、X の窓は正しい画素に描きますが、ポインターの位置は窓に対して 1 画素未満ずれることがあります
+  （レイアウトの座標が整数のためです）。
+- GTK のアプリの文字の間隔は、X11 のセッションと少し違います（GTK 自身の Wayland と X11 の描き方の違いです）。
+- XP のシェルで、フォルダの窓があるときにスタート ボタンを押すと、スタートメニューが開いてすぐ閉じることがあります（Wine が
+  スタートメニューの後にタスクバーの活性化を求めるためです。この版より前からあります）。
 - Linux のアプリのダイアログ（親のある窓）には XP の枠が付かず、labwc の枠（XP の Luna に近い色。
   `wayland/labwc/themerc-override`）になります（X11 のセッションでは枠が付きません）。
 - GTK4 と libadwaita のアプリはクライアント側の装飾を描くので、XP の枠と二重になるはずです（まだ確かめていません）。
