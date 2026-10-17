@@ -15,7 +15,7 @@ colour and, every other pixel, its background colour (a button's dots on
 its face; a selected tree view label's orange and black dots).
 Wine before: Wine's own layout (other margins, 48x24 buttons, wrapping at
 about a third of the screen); the focus rectangle's dots inverted.
-Change: MSGBOX_XPLayout for the XP shell session, beside 0115's Windows 7
+Change: MSGBOX_XPLayout for the XP shell session, beside 0116's Windows 7
 layout, and DrawFocusRect with a checkerboard pattern brush (PATINVERT)
 aligned to the rectangle.
 Evidence: the 30 boxes' window, client, text and button rectangles equal

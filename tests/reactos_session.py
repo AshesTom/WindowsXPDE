@@ -4,7 +4,7 @@
 Run on the display of a session that session/supervisor.py --config CONFIG
 started, with the same CONFIG; build the probes first (tests/build.sh). It
 checks that ReactOS's explorer is the taskbar and the desktop, that a folder
-opened by running explorer.exe opens in ReactOS's explorer (Wine patch 0075),
+opened by running explorer.exe opens in ReactOS's explorer (Wine patch 0076),
 and that a log off ends the session (patch 0018). The session ends."""
 import argparse
 import json
