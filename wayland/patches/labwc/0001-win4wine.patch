@@ -29,13 +29,29 @@ Ctrl+Esc under Linux windows; the taskbar's edge of the work area; Wine
 choosing the window to activate when one of its windows goes, and
 mapped windows activated as Wine marks them (_NET_WM_USER_TIME); the active
 Linux window's frame shown active through _NET_ACTIVE_WINDOW only; Wine's
-unmanaged windows (the ReactOS Start menu) leaving the keyboard with the
-Wine window that has it, and X's focus given back to that window when it
-falls to no window.
+unmanaged windows (the ReactOS Start menu, tooltips) taking no keyboard
+when they map, and X's focus given back to the Wine window that has the
+keyboard when it falls to no window.
+
+As bridge-wm does, also for Windows 7's shell:
+- X windows show only their bounding shape (X's SHAPE extension, read on
+  the bridge's X connection; wlroots patch 0003): Wine's window regions,
+  such as the rounded corners of XP's and Windows 7's frames and the
+  unused part of Windows 7's Start menu, were black.
+- A Linux window without a position of its own takes Windows' next
+  default-window slot (wm.py's cascade); one maximized before its frame's
+  borders were known is fitted again when they are.
+- The work area follows the taskbar's size and place (Windows 7's small
+  icons); Wine's own windows are left out of labwc's rearranging, since
+  Wine places them and fits its maximized windows itself. The edges the
+  taskbar sets come from its X geometry, exactly (through layout
+  coordinates they were one pixel into the taskbar on a fractional scale).
+- On a fractional scale an X window is drawn at its exact pixel position
+  on the output (wlroots patch 0003), not one pixel off.
 ---
  include/ssd.h              |    2 +
  include/view.h             |    5 +
- include/win4wine.h         |  113 +++
+ include/win4wine.h         |  116 +++
  include/xwayland-scale.h   |   79 ++
  include/xwayland.h         |   15 +
  meson.build                |    4 +
@@ -55,11 +71,11 @@ falls to no window.
  src/ssd/ssd.c              |   15 +-
  src/view-impl-common.c     |   14 +-
  src/view.c                 |   34 +-
- src/win4wine.c             | 2185 ++++++++++++++++++++++++++++++++++++++++++++
+ src/win4wine.c             | 2230 ++++++++++++++++++++++++++++++++++++++++++++
  src/xwayland-scale.c       |  554 +++++++++++
  src/xwayland-unmanaged.c   |   48 +-
- src/xwayland.c             |  309 +++++--
- 26 files changed, 3394 insertions(+), 99 deletions(-)
+ src/xwayland.c             |  310 ++++--
+ 26 files changed, 3443 insertions(+), 99 deletions(-)
 
 diff --git a/include/ssd.h b/include/ssd.h
 index 5cbac60..2500f57 100644
@@ -99,10 +115,10 @@ index fa84911..0e79996 100644
  void view_invalidate_last_layout_geometry(struct view *view);
 diff --git a/include/win4wine.h b/include/win4wine.h
 new file mode 100644
-index 0000000..8f3dacb
+index 0000000..8f10b97
 --- /dev/null
 +++ b/include/win4wine.h
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,116 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * win4wine: the Windows XP shell on Wine (Xwayland) as the desktop.
@@ -182,6 +198,8 @@ index 0000000..8f3dacb
 +void win4wine_set_workareas(const struct wlr_box *areas, size_t count);
 +/* XP's taskbar takes its edge of the output's usable area */
 +void win4wine_adjust_usable_area(struct output *output, struct wlr_box *usable);
++/* The edges the taskbar sets, exactly in X space (XOB: the output's X box) */
++void win4wine_adjust_x_area(struct output *output, const struct wlr_box *xob, struct wlr_box *xarea);
 +/* Where a dragged window would snap (NULL: nowhere), for the proxy to show. True if it does. */
 +bool win4wine_snap_preview(const struct wlr_box *box);
 +/* Keys for XP: Alt+Tab, the Windows key and Ctrl+Esc. True if consumed. */
@@ -201,6 +219,7 @@ index 0000000..8f3dacb
 +static inline void win4wine_view_moved(struct view *view) {}
 +static inline void win4wine_view_app_id(struct view *view) {}
 +static inline void win4wine_watch_shape(uint32_t window) {}
++static inline void win4wine_adjust_x_area(struct output *output, const struct wlr_box *xob, struct wlr_box *xarea) {}
 +static inline struct view *win4wine_frame_owner(struct view *view) { return NULL; }
 +static inline enum win4wine_kind win4wine_kind(struct view *view) { return WIN4WINE_UNKNOWN; }
 +static inline struct view *win4wine_focus_target(struct view *view) { return view; }
@@ -1018,10 +1037,10 @@ index cc5af20..906c3e6 100644
  		mappable_disconnect(&view->mappable);
 diff --git a/src/win4wine.c b/src/win4wine.c
 new file mode 100644
-index 0000000..1a401fe
+index 0000000..c86f241
 --- /dev/null
 +++ b/src/win4wine.c
-@@ -0,0 +1,2185 @@
+@@ -0,0 +1,2230 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#define _POSIX_C_SOURCE 200809L
 +/*
@@ -2928,6 +2947,51 @@ index 0000000..1a401fe
 +	}
 +}
 +
++/*
++ * The same edges in X space, exactly: from the taskbar's X geometry rather
++ * than from its layout box, whose rounding on a fractional scale put the
++ * work area one pixel into the taskbar (maximized windows covered its top).
++ */
++void
++win4wine_adjust_x_area(struct output *output, const struct wlr_box *xob, struct wlr_box *xarea)
++{
++	if (!w.ipc) {
++		return;
++	}
++	struct wlr_box ob;
++	wlr_output_layout_get_box(w.server->output_layout, output->wlr_output, &ob);
++	struct view *view;
++	wl_list_for_each(view, &w.server->views, link) {
++		if (!view->mapped || view->minimized || win4wine_kind(view) != WIN4WINE_DOCK
++				|| view_has_strut_partial(view) || view->type != LAB_XWAYLAND_VIEW) {
++			continue;
++		}
++		struct wlr_box overlap, dock = view->current;
++		if (!wlr_box_intersection(&overlap, &dock, &ob)) {
++			continue;
++		}
++		struct wlr_xwayland_surface *xsurface = xwayland_surface_from_view(view);
++		int x = xsurface->x, y = xsurface->y;
++		int right = xarea->x + xarea->width, bottom = xarea->y + xarea->height;
++		/* the same sides as win4wine_adjust_usable_area */
++		if (dock.width >= ob.width / 2) {
++			if (dock.y - ob.y >= ob.height / 2) {
++				bottom = y < bottom && y > xob->y ? y : bottom;
++			} else {
++				int edge = y + xsurface->height;
++				xarea->y = edge > xarea->y ? edge : xarea->y;
++			}
++		} else if (dock.x - ob.x >= ob.width / 2) {
++			right = x < right && x > xob->x ? x : right;
++		} else {
++			int edge = x + xsurface->width;
++			xarea->x = edge > xarea->x ? edge : xarea->x;
++		}
++		xarea->width = right - xarea->x > 1 ? right - xarea->x : 1;
++		xarea->height = bottom - xarea->y > 1 ? bottom - xarea->y : 1;
++	}
++}
++
 +/* Keys */
 +
 +static void
@@ -3859,7 +3923,7 @@ index 38d3c31..58e6585 100644
  	/*
  	 * Mark the node as gone so a racing configure event
 diff --git a/src/xwayland.c b/src/xwayland.c
-index 1eb9c1a..9341d9c 100644
+index 1eb9c1a..66e72a3 100644
 --- a/src/xwayland.c
 +++ b/src/xwayland.c
 @@ -2,6 +2,7 @@
@@ -4258,7 +4322,7 @@ index 1eb9c1a..9341d9c 100644
  void
  xwayland_adjust_stacking_order(struct server *server)
  {
-@@ -1349,65 +1503,86 @@ xwayland_update_workarea(struct server *server)
+@@ -1349,65 +1503,87 @@ xwayland_update_workarea(struct server *server)
  		return;
  	}
  
@@ -4325,6 +4389,7 @@ index 1eb9c1a..9341d9c 100644
 +		if (usable.y + usable.height == ob.y + ob.height) {
 +			areas[count].height = xob.y + xob.height - areas[count].y;
 +		}
++		win4wine_adjust_x_area(output, &xob, &areas[count]);
 +		count++;
 +	}
  
@@ -4388,7 +4453,7 @@ index 1eb9c1a..9341d9c 100644
  	struct wlr_box workarea = {
  		.x = workarea_left,
  		.y = workarea_top,
-@@ -1415,4 +1590,6 @@ xwayland_update_workarea(struct server *server)
+@@ -1415,4 +1591,6 @@ xwayland_update_workarea(struct server *server)
  		.height = workarea_bottom - workarea_top,
  	};
  	wlr_xwayland_set_workareas(server->xwayland, &workarea, 1);
