@@ -123,7 +123,11 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 
 - `C:\w7\w7-explorer.exe` を起動し、`prefix/win7.py stage` を使います。XP のようこそ画面は出しません。
 - `WIN4WINE_SHELL=win7` を設定します。Windows 7 のためだけの Wine のパッチ（0106、0108、0109、0110 の一部）は、これがあるときだけ効きます。
-- Linux の窓は、`WM_CLASS` ごとにタスクバーのボタンにまとまります（proxy が窓に AppUserModelID を付けます）。
+- Linux の窓は、アプリ（X11 の `WM_CLASS`、Wayland の app_id）ごとにタスクバーのボタンにまとまります（proxy が窓に
+  AppUserModelID を付けます）。スタートメニューにあるアプリなら、ジャンプリストの題とアイコンはそのアプリのもので、
+  「タスク バーにこのプログラムを表示する」で固定でき、固定したボタンから起動できます（`session/linux_apps.py` が
+  `C:\xp\linux-apps\relaunch.tsv` に名前・コマンド・アイコンを書き、proxy が Windows 7 の shell32 と同じ窓のプロパティ
+  （AppUserModel の RelaunchCommand、RelaunchIconResource、RelaunchDisplayNameResource）に付けます。以前は題が "proxy" でした）。
 - Linux のトレイアイコン（StatusNotifierItem と XEmbed）は、Windows 7 の通知領域に出ます（Wine の 0109）。
 - 日本語入力は XP のシェルと同じ fcitx5 + Mozc です。入力モード（「あ」など）は通知領域に出て、Wine のアプリでは窓の中で
   変換します。

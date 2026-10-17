@@ -34,7 +34,9 @@ win4wine がどの部品でできていて、どうつながっているかの�
 - ReactOS のシェル（`C:\ros\ros-explorer.exe`）と Windows 7 のシェル（`C:\w7\w7-explorer.exe`、64bit）も同じ形で、専用の prefix で
   動かします（[reactos.md](reactos.md)、[windows7.md](windows7.md)）。session.json の `shell` で選び、supervisor はその prefix の
   `stage`（`prefix/reactos.py`、`prefix/win7.py`）を使います。Windows 7 のシェルでは `WIN4WINE_SHELL=win7` も設定し、proxy は
-  Linux の窓に `WM_CLASS` ごとの AppUserModelID を付けます（Windows 7 のタスクバーはこれでボタンをまとめます）。
+  Linux の窓に `WM_CLASS` ごとの AppUserModelID を付けます（Windows 7 のタスクバーはこれでボタンをまとめます）。スタートメニューに
+  あるアプリなら、ジャンプリストの題とアイコン、固定したボタンのコマンドも付けます（`linux_apps.py` の `relaunch.tsv`）。
+  Wayland のセッションでは labwc が WM の代わりに `classes.tsv`（窓ごとの app_id か `WM_CLASS`）を書きます。
 
 ## WM（`bridge-wm/wm.py`）
 

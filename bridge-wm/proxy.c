@@ -20,6 +20,7 @@ struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; 
     RECT workarea;
     HICON icon; int icon_checked, icon_present; FILETIME icon_time; DWORD icon_size;
     ATOM app_id;
+    ATOM relaunch[3]; /* RelaunchCommand, RelaunchIconResource, RelaunchDisplayNameResource */
 };
 static struct client clients[MAX_CLIENTS];
 /* WM_TIMER of a frame whose caption is painted again after an activation change. */
@@ -571,6 +572,62 @@ static void frame_geometry(void)
  * PKEY_AppUserModel_ID on Windows 7 (its format string and id) holding a global
  * atom of the ID, as a probe with Windows 7's shell32 shows (EnumPropsEx). */
 static const WCHAR app_id_property[] = L"{9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3} 5";
+/* PKEY_AppUserModel_RelaunchCommand (2), RelaunchIconResource (3) and
+ * RelaunchDisplayNameResource (4), kept the same way (the probe again): the
+ * jump list's title and icon, and the command of a pinned button. */
+static const WCHAR *const relaunch_properties[3] = {
+    L"{9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3} 2",
+    L"{9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3} 3",
+    L"{9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3} 4",
+};
+
+/* The Linux application of class NAME from the Start menu's shortcuts
+ * (session/linux_apps.py writes relaunch.tsv: key, name, command, icon). */
+static void client_relaunch(struct client *c, const WCHAR *name)
+{
+    WCHAR key[101], *fields[4], line[2048], *p;
+    char raw[4096];
+    FILE *file;
+    unsigned i;
+
+    lstrcpynW(key, name, ARRAYSIZE(key));
+    CharLowerW(key);
+    if (!(file = _wfopen(L"C:\\xp\\linux-apps\\relaunch.tsv", L"rb"))) return;
+    while (fgets(raw, sizeof(raw), file))
+    {
+        raw[strcspn(raw, "\r\n")] = 0;
+        if (!MultiByteToWideChar(CP_UTF8, 0, raw, -1, line, ARRAYSIZE(line))) continue;
+        for (i = 0, p = line; i < 4; i++)
+        {
+            fields[i] = p;
+            if (i < 3)
+            {
+                if (!(p = wcschr(p, '\t'))) break;
+                *p++ = 0;
+            }
+        }
+        if (i < 4 || wcscmp(fields[0], key)) continue;
+        /* command, icon, name: an atom holds at most 255 characters */
+        for (i = 0; i < 3; i++)
+        {
+            const WCHAR *value = fields[i == 2 ? 1 : i + 2];
+            ATOM atom = *value && wcslen(value) <= 255 ? GlobalAddAtomW(value) : 0;
+            if (!atom && i != 1) break;  /* no command or name: none of them */
+            if (atom) SetPropW(c->hwnd, relaunch_properties[i], (HANDLE)(ULONG_PTR)atom);
+            c->relaunch[i] = atom;
+        }
+        if (i < 3)
+            for (i = 0; i < 3; i++)
+                if (c->relaunch[i])
+                {
+                    RemovePropW(c->hwnd, relaunch_properties[i]);
+                    GlobalDeleteAtom(c->relaunch[i]);
+                    c->relaunch[i] = 0;
+                }
+        break;
+    }
+    fclose(file);
+}
 
 
 static void client_app_id(struct client *c)
@@ -592,7 +649,10 @@ static void client_app_id(struct client *c)
             if (sscanf(line, "%lx\t%n", &xid, &offset) != 1 || !offset || xid != c->xid) continue;
             line[strcspn(line, "\r\n")] = 0;
             if (line[offset] && MultiByteToWideChar(CP_UTF8, 0, line + offset, -1, name, ARRAYSIZE(name)))
+            {
                 swprintf(id, ARRAYSIZE(id), L"Win4Wine.Linux.%ls", name);
+                if (!c->relaunch[0]) client_relaunch(c, name);
+            }
             break;
         }
         fclose(file);
@@ -678,6 +738,7 @@ static void snapshot(void)
             DestroyWindow(clients[i].hwnd);
             if (clients[i].icon) DestroyIcon(clients[i].icon);
             if (clients[i].app_id) GlobalDeleteAtom(clients[i].app_id);
+            for (unsigned j = 0; j < 3; j++) if (clients[i].relaunch[j]) GlobalDeleteAtom(clients[i].relaunch[j]);
             memset(&clients[i], 0, sizeof(clients[i]));
         }
     frame_geometry();

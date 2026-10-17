@@ -48,6 +48,11 @@ As bridge-wm does, also for Windows 7's shell:
   coordinates they were one pixel into the taskbar on a fractional scale).
 - On a fractional scale an X window is drawn at its exact pixel position
   on the output (wlroots patch 0003), not one pixel off.
+- Each Linux window's application (its app_id, or WM_CLASS's class) goes
+  to classes.tsv, as bridge-wm writes it: the proxy groups the windows of
+  an application under one taskbar button of Windows 7's and gives them
+  that application's jump list title and pinning (each window had a
+  button of its own).
 ---
  include/ssd.h              |    2 +
  include/view.h             |    5 +
@@ -71,11 +76,11 @@ As bridge-wm does, also for Windows 7's shell:
  src/ssd/ssd.c              |   15 +-
  src/view-impl-common.c     |   14 +-
  src/view.c                 |   34 +-
- src/win4wine.c             | 2230 ++++++++++++++++++++++++++++++++++++++++++++
+ src/win4wine.c             | 2247 ++++++++++++++++++++++++++++++++++++++++++++
  src/xwayland-scale.c       |  566 +++++++++++
  src/xwayland-unmanaged.c   |   48 +-
  src/xwayland.c             |  310 ++++--
- 26 files changed, 3455 insertions(+), 99 deletions(-)
+ 26 files changed, 3472 insertions(+), 99 deletions(-)
 
 diff --git a/include/ssd.h b/include/ssd.h
 index 5cbac60..2500f57 100644
@@ -1037,10 +1042,10 @@ index cc5af20..906c3e6 100644
  		mappable_disconnect(&view->mappable);
 diff --git a/src/win4wine.c b/src/win4wine.c
 new file mode 100644
-index 0000000..c86f241
+index 0000000..d29fe65
 --- /dev/null
 +++ b/src/win4wine.c
-@@ -0,0 +1,2230 @@
+@@ -0,0 +1,2247 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#define _POSIX_C_SOURCE 200809L
 +/*
@@ -1151,7 +1156,7 @@ index 0000000..c86f241
 +	struct wl_event_source *idle, *inotify_source, *x_source;
 +	int inotify_fd;
 +	uint32_t next_native;
-+	char *windows_text, *geometry_text, *tiled_text;
++	char *windows_text, *geometry_text, *tiled_text, *classes_text;
 +	unsigned int snapping_seq;
 +	int cascade_slot;           /* the last default-window slot (cascade) */
 +	bool dock_moved;            /* the taskbar changed: the work area follows */
@@ -2120,9 +2125,16 @@ index 0000000..c86f241
 +static void
 +write_windows(void)
 +{
-+	char *text = NULL;
-+	size_t size = 0;
++	char *text = NULL, *classes = NULL;
++	size_t size = 0, classes_size = 0;
 +	FILE *f = open_memstream(&text, &size);
++	/*
++	 * Each window's application (Wayland app_id, X11 WM_CLASS class), as
++	 * the X11 session's WM writes it: Windows 7's taskbar groups the
++	 * windows of an application (the proxy's AppUserModelID). Written
++	 * before windows.tsv, which makes the proxy create the frames.
++	 */
++	FILE *c = open_memstream(&classes, &classes_size);
 +	struct wlr_surface *focused = w.server->seat.seat->keyboard_state.focused_surface;
 +	struct view *view;
 +	wl_list_for_each_reverse(view, &w.server->views, link) {
@@ -2150,7 +2162,16 @@ index 0000000..c86f241
 +			fputc(*p == '\t' || *p == '\n' || *p == '\r' ? ' ' : *p, f);
 +		}
 +		fputc('\n', f);
++		const char *app_id = view_get_string_prop(view, "app_id");
++		fprintf(c, "%x\t", data->id);
++		n = 0;
++		for (const char *p = app_id ? app_id : ""; *p && n < 100; p++, n++) {
++			fputc(*p == '\t' || *p == '\n' || *p == '\r' ? ' ' : *p, c);
++		}
++		fputc('\n', c);
 +	}
++	fclose(c);
++	write_if_changed("classes.tsv", classes, &w.classes_text);
 +	fclose(f);
 +	write_if_changed("windows.tsv", text, &w.windows_text);
 +}
@@ -3265,6 +3286,7 @@ index 0000000..c86f241
 +		xcb_disconnect(w.x);
 +	}
 +	free(w.windows_text);
++	free(w.classes_text);
 +	free(w.geometry_text);
 +	free(w.tiled_text);
 +	free(w.workareas);
