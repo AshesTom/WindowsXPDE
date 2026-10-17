@@ -790,7 +790,7 @@ index 09e7984..d71fdb9 100644
  
  /**********************************************************************
 diff --git a/dlls/win32u/win32u_private.h b/dlls/win32u/win32u_private.h
-index 71b4976..e21de9c 100644
+index 39d9c00..528f1d9 100644
 --- a/dlls/win32u/win32u_private.h
 +++ b/dlls/win32u/win32u_private.h
 @@ -120,6 +120,7 @@ extern LRESULT popup_menu_window_proc( HWND hwnd, UINT message, WPARAM wparam, L
@@ -836,7 +836,7 @@ index 8304517..4ab6e92 100644
  {
  #define USER32_CALLBACK_ENTRY(name) wow64_NtUser##name,
 diff --git a/include/ntuser.h b/include/ntuser.h
-index 82ed517..b06f2be 100644
+index aed152e..34985c6 100644
 --- a/include/ntuser.h
 +++ b/include/ntuser.h
 @@ -95,7 +95,8 @@ struct user_entry

@@ -41,8 +41,8 @@ GPL と LGPL に従い、対応するソース（`manifest.json` の `source`、
 
 - ReactOS の DLL は `syswow64` に置きます（shell32 などは KnownDlls なので、exe の隣は探されません）。prefix 全体では
   Wine の DLL のまま（DllOverrides の `builtin`）にし、`ros-explorer.exe` だけに AppDefaults で `native` を使わせます。
-  Common Controls 6 は `C:\ros\comctl32.dll` に置き、ros-explorer.exe だけがそれを使います（Wine のパッチ 0124。Windows 7 の
-  0108 と同じ仕組み）。`winsxs` の Wine のアセンブリはそのままで、ほかのプログラムは Wine の Common Controls 6 を使います
+  Common Controls 6 は `C:\ros\comctl32.dll` に置き、ros-explorer.exe だけがそれを使います（Wine のパッチ 0126。Windows 7 の
+  0110 と同じ仕組み）。`winsxs` の Wine のアセンブリはそのままで、ほかのプログラムは Wine の Common Controls 6 を使います
   （以前は Wine のファイルを置き換えていたため、ほかの 32bit のアプリでボタンやエディットが作られませんでした）。
 - ReactOS の explorer は、`HKLM\...\Winlogon` の `Shell` に自分のファイル名があるときだけシェルになります。`ros-explorer.exe` にします。
 - COM の登録などは、ReactOS の shell32、browseui、shdocvw 自身の `DllRegisterServer` に書かせます（32bit の view）。
