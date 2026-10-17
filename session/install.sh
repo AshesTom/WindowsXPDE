@@ -3,7 +3,8 @@
 # labwc built by wayland/build.sh also the Wayland session. With --reactos, the
 # "ReactOS Shell" session, which reads ~/.config/win4wine/reactos-session.json
 # (with --wayland also its Wayland session). With --win7, the "Windows 7 Shell"
-# session (X11 only), which reads ~/.config/win4wine/win7-session.json.
+# session, which reads ~/.config/win4wine/win7-session.json (with --wayland
+# also its Wayland session).
 set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 [[ $root != *$'\n'* ]] || exit 1
@@ -55,5 +56,13 @@ if [[ -n $labwc ]]; then
         as_root install -Dm644 "$root/session/reactos-shell-wayland.desktop" \
             /usr/share/wayland-sessions/reactos-shell-wayland.desktop
         printf 'Installed the ReactOS shell Wayland session\n'
+    fi
+    if [[ $win7 == yes ]]; then
+        printf '#!/bin/bash\nexec %q %q --config "${XDG_CONFIG_HOME:-$HOME/.config}/win4wine/win7-session.json" "$@"\n' \
+            "$root/wayland/session.sh" "$labwc" > "$wrapper"
+        as_root install -Dm755 "$wrapper" /usr/local/bin/windows7-shell-wayland-session
+        as_root install -Dm644 "$root/session/windows7-shell-wayland.desktop" \
+            /usr/share/wayland-sessions/windows7-shell-wayland.desktop
+        printf 'Installed the Windows 7 shell Wayland session\n'
     fi
 fi

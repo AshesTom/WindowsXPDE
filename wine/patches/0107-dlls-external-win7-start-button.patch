@@ -26,7 +26,9 @@ image; apply_window_pos flushed the new image into the old geometry and
 left nothing to flush afterwards; and the image goes through gdi_display
 while the geometry goes through the window's display.
 Change: only with WIN4WINE_SHELL=win7, for a layered window that the
-taskbar or the Start menu owns. win32u: the partly transparent pixels are
+taskbar or the Start menu owns, and not under a compositor (win4wine's
+Wayland session sets WIN4WINE_COMPOSITED), which blends the premultiplied
+image with what really is under it. win32u: the partly transparent pixels are
 blended with what the owner shows under them (a copy of the owner's
 window surface, where its children draw too); where that is not known
 (outside the owner, or where the owner has not drawn yet, as for the
@@ -44,7 +46,9 @@ background at rest and with the glow; in 8 hover cycles captured with 6
 screenshots each (96 frames) no frame shows black, and the glow fades in
 and out. The user picture's frame edge is blended with the Start menu
 once the menu has drawn. bridge-wm keeps these unmanaged windows above the
-taskbar and the Start menu.
+taskbar and the Start menu. Under the Wayland compositor the button differs
+from the reference machine's in 4 pixels (by up to 2 levels); blended here
+on X11, in 199 pixels (also by up to 2 levels).
 Scope: only with WIN4WINE_SHELL=win7 and WIN4WINE_EXTERNAL_SHELL, and only
 for layered windows that the taskbar or the Start menu owns (the window
 manager change only for the taskbar's). XP's Start button is a child
@@ -53,10 +57,10 @@ of the taskbar and is not layered.
  dlls/comctl32_v6/button.c    |  21 +++-
  dlls/win32u/dce.c            |   4 +
  dlls/win32u/win32u_private.h |   2 +
- dlls/win32u/window.c         | 264 ++++++++++++++++++++++++++++++++++++++++++-
+ dlls/win32u/window.c         | 265 ++++++++++++++++++++++++++++++++++++++++++-
  dlls/winex11.drv/window.c    |  23 ++++
  dlls/winex11.drv/x11drv.h    |   1 +
- 6 files changed, 310 insertions(+), 5 deletions(-)
+ 6 files changed, 311 insertions(+), 5 deletions(-)
 
 diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
 index aa166bf..1fa5535 100644
@@ -153,10 +157,10 @@ index 528f1d9..e868f81 100644
  extern HWND is_current_process_window( HWND hwnd );
  extern HWND is_current_thread_window( HWND hwnd );
 diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
-index 7c55d5b..a13c1f7 100644
+index 7c55d5b..0d0c69f 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
-@@ -2646,6 +2646,225 @@ BOOL WINAPI NtUserSetLayeredWindowAttributes( HWND hwnd, COLORREF key, BYTE alph
+@@ -2646,6 +2646,226 @@ BOOL WINAPI NtUserSetLayeredWindowAttributes( HWND hwnd, COLORREF key, BYTE alph
      return ret;
  }
  
@@ -164,7 +168,8 @@ index 7c55d5b..a13c1f7 100644
 + * layered windows with per-pixel alpha, owned by the taskbar or the Start menu and
 + * drawn over it. Without a compositing manager their surface shows the premultiplied
 + * colours over black, so the partly transparent edges are dark. Blend those pixels
-+ * with what the owner shows under the window. */
++ * with what the owner shows under the window. A compositor (win4wine's Wayland
++ * session, WIN4WINE_COMPOSITED) blends the premultiplied image itself. */
 +static HWND get_tray_owner( HWND hwnd )
 +{
 +    static const WCHAR trayW[] = {'S','h','e','l','l','_','T','r','a','y','W','n','d'};
@@ -173,7 +178,7 @@ index 7c55d5b..a13c1f7 100644
 +    UNICODE_STRING name = RTL_CONSTANT_STRING(nameW);
 +    HWND owner;
 +
-+    if (win4wine_shell() != WIN4WINE_SHELL_WIN7) return 0;
++    if (win4wine_shell() != WIN4WINE_SHELL_WIN7 || getenv( "WIN4WINE_COMPOSITED" )) return 0;
 +    if (!(owner = get_window_relative( hwnd, GW_OWNER ))) return 0;
 +    name.Length = NtUserGetClassName( owner, FALSE, &name ) * sizeof(WCHAR);
 +    /* the taskbar (Start button) or the Start menu (user picture) */
@@ -382,7 +387,7 @@ index 7c55d5b..a13c1f7 100644
  /*****************************************************************************
   *           UpdateLayeredWindow (win32u.@)
   */
-@@ -2659,6 +2878,8 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2659,6 +2879,8 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      struct window_surface *surface;
      RECT surface_rect;
      SIZE offset;
@@ -391,7 +396,7 @@ index 7c55d5b..a13c1f7 100644
      BOOL ret = FALSE;
  
      if (flags & ~(ULW_COLORKEY | ULW_ALPHA | ULW_OPAQUE | ULW_EX_NORESIZE) ||
-@@ -2706,7 +2927,12 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2706,7 +2928,12 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      TRACE( "window %p new_rects %s\n", hwnd, debugstr_window_rects( &new_rects ) );
  
      surface = get_window_surface( hwnd, swp_flags, TRUE, &new_rects, &surface_rect );
@@ -405,7 +410,7 @@ index 7c55d5b..a13c1f7 100644
      if (!surface) return FALSE;
  
      if (!hdc_src || surface == &dummy_surface)
-@@ -2718,16 +2944,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2718,16 +2945,26 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
      {
          BLENDFUNCTION src_blend = { AC_SRC_OVER, 0, 255, 0 };
          RECT rect = new_rects.window, src_rect;
@@ -434,7 +439,7 @@ index 7c55d5b..a13c1f7 100644
          NtGdiPatBlt( hdc, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, BLACKNESS );
  
          src_rect = rect;
-@@ -2737,10 +2973,30 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
+@@ -2737,10 +2974,30 @@ BOOL WINAPI NtUserUpdateLayeredWindow( HWND hwnd, HDC hdc_dst, const POINT *pts_
          ret = NtGdiAlphaBlend( hdc, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
                                 hdc_src, src_rect.left, src_rect.top, src_rect.right - src_rect.left, src_rect.bottom - src_rect.top,
                                 *(DWORD *)&src_blend, 0 );

@@ -40,8 +40,9 @@
 #                  applications in its session. Given explicitly, it is applied to an
 #                  existing prefix too
 #   --wayland      also build win4wine's labwc (wayland/build.sh) and register the
-#                  "XP Shell (Wine, Wayland)" session: per-monitor and fractional
-#                  scales (session.json "outputs"), Wayland applications with XP frames
+#                  shell's Wayland session ("XP Shell (Wine, Wayland)", and so on):
+#                  per-monitor and fractional scales (session.json "outputs"),
+#                  Wayland applications with the shell's frames
 #   --wine-install DIR
 #                  use a Wine built elsewhere with this repository's patches (the
 #                  .local/wine-install of another Debian 13 machine, copied anywhere)
@@ -95,7 +96,6 @@ if [[ $shell == win7 ]]; then
     [[ -z $lang ]] || { printf -- '--lang is for the ReactOS shell; the Windows 7 shell follows its media\n' >&2; exit 2; }
     [[ $theme_given == no ]] || { printf -- '--theme is not available for the Windows 7 shell yet\n' >&2; exit 2; }
     [[ -z $smoothing ]] || { printf -- '--font-smoothing is for the XP shell\n' >&2; exit 2; }
-    [[ $wayland == no ]] || { printf -- '--wayland is not available for the Windows 7 shell yet\n' >&2; exit 2; }
 elif [[ $shell == reactos ]]; then
     [[ -z $media ]] || { printf -- '--media is for the XP shell; the ReactOS shell needs no media\n' >&2; exit 2; }
     [[ $theme_given == yes ]] || theme=classic
@@ -431,6 +431,8 @@ EOF
 fi
 if [[ $wayland == yes && $shell == reactos ]]; then
     "$root/session/install.sh" --reactos --wayland "$labwc"
+elif [[ $wayland == yes && $shell == win7 ]]; then
+    "$root/session/install.sh" --win7 --wayland "$labwc"
 elif [[ $wayland == yes ]]; then
     "$root/session/install.sh" --wayland "$labwc"
 elif [[ $shell == reactos ]]; then
@@ -487,7 +489,8 @@ if [[ $shell == win7 ]]; then
     rm -rf "$theme"
     printf 'Installed Windows 7 cursors\n'
     if [[ $greeter == yes ]]; then
-        "$root/greeter/install.sh" --win7 "$assets" windows7-shell
+        "$root/greeter/install.sh" --win7 "$assets" \
+            "$([[ $wayland == yes ]] && echo windows7-shell-wayland || echo windows7-shell)"
     fi
 elif [[ $shell == reactos ]]; then
     if [[ $greeter == yes ]]; then
@@ -541,6 +544,8 @@ else
 fi
 if [[ $wayland == yes && $shell == reactos ]]; then
     printf 'The Wayland session is "ReactOS Shell (Wine, Wayland)"; outputs and scales: reactos-session.json "outputs".\n'
+elif [[ $wayland == yes && $shell == win7 ]]; then
+    printf 'The Wayland session is "Windows 7 Shell (Wine, Wayland)"; outputs and scales: win7-session.json "outputs".\n'
 elif [[ $wayland == yes ]]; then
     printf 'The Wayland session is "XP Shell (Wine, Wayland)"; outputs and scales: session.json "outputs".\n'
 fi

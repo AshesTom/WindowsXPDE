@@ -170,6 +170,9 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
+- Wayland のセッション「Windows 7 Shell (Wine, Wayland)」もあります（`setup.sh --shell win7 --wayland`）。モニターごとの倍率が
+  使え、スタート ボタンの縁は compositor が本物の透明度で描きます（[wayland.md](wayland.md)）。
+
 Windows 7 のシェルのために足した Wine のパッチは 0079〜0120 です（[patches.md](patches.md)）。
 
 ## 制限
@@ -177,7 +180,6 @@ Windows 7 のシェルのために足した Wine のパッチは 0079〜0120 で
 - Aero の効果（ガラス、ライブ サムネイル、Aero Peek）はありません。デスクトップの合成（DWM）が無いためです。
 - ログオン画面（`--greeter`）は、利用者を 1 人だけ（LightDM が選ぶ利用者）表示します。「コンピューターの簡単操作」のボタンは何もしません。
   左上の入力言語のボタンはありません。
-- Wayland のセッションはまだありません。
 - 確かめたのは日本語版の Windows 7 Professional SP1（x64）だけです。英語版も同じ手順で作りますが、試していません。
 - ネットワーク、ヘルプとサポート、コントロール パネルの中身は、Wine にその部品が無いので使えません。
 - スタートメニューの「ロック」「スリープ」「休止状態」は何もしません。
