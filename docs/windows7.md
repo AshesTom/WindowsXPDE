@@ -116,12 +116,16 @@ prefix/win7.py builtin .local/prefix-win7 app.exe --undo   # Windows 7 の DLL �
   ファイル（UIFILE）と、Windows 7 SP1 の実機（1024x768 と 1280x800）で測ったものです。パスワードが違うときのメッセージ、
   シャットダウンのボタンと、その横の ▲ のメニュー（再起動、スリープ・休止状態（できる場合）、シャットダウン）があります。
   利用者の写真は、LightDM（AccountsService）に設定されたものか、Windows 7 の既定の `user.bmp` です。
+- ログオン後と終わるとき: シェルが動き出すまで「ようこそ」、ログオフ中は「ログオフしています...」、終了と再起動では
+  「シャットダウンしています...」を、ログオン画面の背景に回る印と一緒に出します（`greeter/w7-splash.py`）。文字は
+  winlogon.exe と wininit.exe の MUI、回る印は imageres.dll の BITMAP 5000〜5004（18 コマ）、並び方は authui のレイアウト（状態の表示）と
+  実機で測ったものです。ログオン画面と同じファイルを使うので、`--greeter` で入れたときに出ます（session.json の `welcome_screen` で止められます）。
 
 ## セッション
 
 session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` で、supervisor は次のように動きます。
 
-- `C:\w7\w7-explorer.exe` を起動し、`prefix/win7.py stage` を使います。XP のようこそ画面は出しません。
+- `C:\w7\w7-explorer.exe` を起動し、`prefix/win7.py stage` を使います。ようこそ画面は Windows 7 のもの（下の「カーソルとログオン画面」）です。
 - `WIN4WINE_SHELL=win7` を設定します。Windows 7 のためだけの Wine のパッチ（0106、0108、0109、0110 の一部）は、これがあるときだけ効きます。
 - Linux の窓は、アプリ（X11 の `WM_CLASS`、Wayland の app_id）ごとにタスクバーのボタンにまとまります（proxy が窓に
   AppUserModelID を付けます）。スタートメニューにあるアプリなら、ジャンプリストの題とアイコンはそのアプリのもので、

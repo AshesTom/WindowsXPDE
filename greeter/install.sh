@@ -36,6 +36,10 @@ if [[ ${1:-} == --win7 ]]; then
     sudo install -m644 "$assets"/system32/{authui,imageres}.dll "$assets/branding/basebrd.dll" "$assets/pictures/user.bmp" \
         "$share/win7/"
     sudo install -m644 "$assets/system32/$ui/authui.dll.mui" "$share/win7/$ui/"
+    # The session's Welcome and log-off screens (greeter/w7-splash.py); extracted since EXTRACT_VERSION 5
+    for f in winlogon.exe.mui wininit.exe.mui; do
+        [[ ! -f $assets/system32/$ui/$f ]] || sudo install -m644 "$assets/system32/$ui/$f" "$share/win7/$ui/"
+    done
     sudo install -m644 "$assets"/fonts/* "$share/win7/fonts/"
     printf '{"assets": "%s/win7", "fallback": "lightdm-gtk-greeter"}\n' "$share" |
         sudo install -Dm644 /dev/stdin /etc/win4wine/win7-greeter.json
