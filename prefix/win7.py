@@ -42,7 +42,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 15
+VERSION = 16
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -223,6 +223,14 @@ class Prefix:
                 self.reg(nt + r'\FontLink\SystemLink', name, value, 'REG_MULTI_SZ')
             for name, value in FONT_SUBSTITUTES.items():
                 self.reg(nt + r'\FontSubstitutes', name, value)
+            # Notepad's font as Japanese Windows 7's Notepad starts with (MS Gothic,
+            # 12 points, Western); Wine's own default (System) has no Japanese, and
+            # without a Linux font that has, Japanese showed as boxes. Kept when set.
+            notepad = r'HKCU\Software\Microsoft\Notepad'
+            if self.run('reg', 'query', notepad, '/v', 'lfFaceName', check=False).returncode:
+                self.reg(notepad, 'lfFaceName', '\uff2d\uff33 \u30b4\u30b7\u30c3\u30af')
+                self.reg(notepad, 'iPointSize', 120, 'REG_DWORD')
+                self.reg(notepad, 'lfCharSet', 0, 'REG_DWORD')
         elif self.lang == 'ja':
             for name in OLD_FONT_LINKS:
                 self.reg(nt + r'\FontLink\SystemLink', name, r'MEIRYO.TTC,Meiryo UI\0MEIRYO.TTC,Meiryo', 'REG_MULTI_SZ')
