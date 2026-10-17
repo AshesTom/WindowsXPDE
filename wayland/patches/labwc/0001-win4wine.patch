@@ -72,10 +72,10 @@ As bridge-wm does, also for Windows 7's shell:
  src/view-impl-common.c     |   14 +-
  src/view.c                 |   34 +-
  src/win4wine.c             | 2230 ++++++++++++++++++++++++++++++++++++++++++++
- src/xwayland-scale.c       |  554 +++++++++++
+ src/xwayland-scale.c       |  566 +++++++++++
  src/xwayland-unmanaged.c   |   48 +-
  src/xwayland.c             |  310 ++++--
- 26 files changed, 3443 insertions(+), 99 deletions(-)
+ 26 files changed, 3455 insertions(+), 99 deletions(-)
 
 diff --git a/include/ssd.h b/include/ssd.h
 index 5cbac60..2500f57 100644
@@ -3273,10 +3273,10 @@ index 0000000..c86f241
 +}
 diff --git a/src/xwayland-scale.c b/src/xwayland-scale.c
 new file mode 100644
-index 0000000..a9c9d42
+index 0000000..5616153
 --- /dev/null
 +++ b/src/xwayland-scale.c
-@@ -0,0 +1,554 @@
+@@ -0,0 +1,566 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/* win4wine: Xwayland clients at the outputs' own resolution (see xwayland-scale.h). */
 +#include <math.h>
@@ -3618,11 +3618,13 @@ index 0000000..a9c9d42
 +	}
 +}
 +
-+static void
++/* Apply WINDOW's shape again; false if no mapped window has that id */
++static bool
 +reapply_shape(uint32_t window)
 +{
++	bool mapped = false;
 +	if (!the_server) {
-+		return;
++		return false;
 +	}
 +	struct view *view;
 +	wl_list_for_each(view, &the_server->views, link) {
@@ -3630,6 +3632,7 @@ index 0000000..a9c9d42
 +			struct xwayland_view *xview = wl_container_of(view, xview, base);
 +			if (xview->xwayland_surface && xview->xwayland_surface->window_id == window) {
 +				apply_shape(&xview->slices, window);
++				mapped |= view->mapped;
 +			}
 +		}
 +	}
@@ -3637,8 +3640,10 @@ index 0000000..a9c9d42
 +	wl_list_for_each(unmanaged, &the_server->unmanaged_surfaces, link) {
 +		if (unmanaged->xwayland_surface->window_id == window) {
 +			apply_shape(&unmanaged->slices, window);
++			mapped = true;  /* listed while mapped */
 +		}
 +	}
++	return mapped;
 +}
 +
 +void
@@ -3661,7 +3666,14 @@ index 0000000..a9c9d42
 +		}
 +		pixman_region32_copy(&shape->region, region);
 +	}
-+	reapply_shape(window);
++	/*
++	 * Only mapped windows keep their shape (it is asked for again when a
++	 * window maps): a shape notified while a window is hidden or after it
++	 * was destroyed would stay in the list.
++	 */
++	if (!reapply_shape(window) && region) {
++		xwayland_shape_forget(window);
++	}
 +}
 +
 +void
