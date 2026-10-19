@@ -31,10 +31,10 @@ Scope: all processes (Windows behavior).
  1 file changed, 32 insertions(+), 4 deletions(-)
 
 diff --git a/dlls/win32u/message.c b/dlls/win32u/message.c
-index 00cceac..a95aa3f 100644
+index e0bdca0..995b629 100644
 --- a/dlls/win32u/message.c
 +++ b/dlls/win32u/message.c
-@@ -2351,7 +2351,10 @@ static LRESULT call_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpar
+@@ -2361,7 +2361,10 @@ static LRESULT call_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpar
  
      if (!is_current_thread_window( hwnd )) return 0;
  
@@ -46,7 +46,7 @@ index 00cceac..a95aa3f 100644
  
      /* first the WH_CALLWNDPROC hook */
      cwp.lParam  = lparam;
-@@ -4103,6 +4106,8 @@ static BOOL is_message_broadcastable( UINT msg )
+@@ -4113,6 +4116,8 @@ static BOOL is_message_broadcastable( UINT msg )
      return msg < WM_USER || msg >= 0xc000;
  }
  
@@ -55,7 +55,7 @@ index 00cceac..a95aa3f 100644
  /***********************************************************************
   *           broadcast_message
   */
-@@ -4133,9 +4138,13 @@ static BOOL broadcast_message( struct send_message_info *info, DWORD_PTR *res_pt
+@@ -4143,9 +4148,13 @@ static BOOL broadcast_message( struct send_message_info *info, DWORD_PTR *res_pt
                                        info->flags, info->timeout, TRUE );
                  break;
              case MSG_NOTIFY:
@@ -71,7 +71,7 @@ index 00cceac..a95aa3f 100644
              case MSG_CALLBACK:
                  {
                      struct send_message_callback_params params =
-@@ -4651,16 +4660,35 @@ LRESULT send_message( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam )
+@@ -4661,16 +4670,35 @@ LRESULT send_message( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam )
      return send_message_timeout( hwnd, msg, wparam, lparam, SMTO_NORMAL, 0, FALSE );
  }
  

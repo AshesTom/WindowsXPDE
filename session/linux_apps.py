@@ -435,6 +435,43 @@ class Menu:
         temp.write_text(json.dumps({'links': links, 'folders': sorted(folders)}, ensure_ascii=False, indent=1) + '\n')
         temp.replace(self.state_file)
 
+    def save_relaunch(self, links):
+        """relaunch.tsv: for the proxy, the application a Linux window belongs to,
+        found by its WM_CLASS class or Wayland app_id (lower case): KEY, name,
+        command (the shortcut's) and icon, each as Windows 7's taskbar takes them
+        from a window (AppUserModel Relaunch*: the jump list's title, pinning).
+        Keys in order of trust: StartupWMClass, the desktop file ID, the
+        ID's last dotted part, the program's name."""
+        locales = locale_names()
+        found = entries()
+        rows, keyed = [], {}
+        for file_id, item in sorted(links.items()):
+            path, entry = found.get(file_id, (None, None))
+            name = entry and (localized(entry, 'Name', locales) or '').replace('\t', ' ').strip()
+            args = entry and command(entry, path, locales)
+            if not name or not args:
+                continue
+            launch = quote([f'{WINDOWS_STATE}\\linux-launch.exe']) + ' ' + item['arguments']
+            icon = self.state_dir / 'icons' / f'{file_id}.ico'
+            stem = file_id.removesuffix('.desktop')
+            keys = (entry.get('StartupWMClass', ''), stem, stem.rsplit('.', 1)[-1], Path(args[0]).name)
+            rows.append((keys, (name, launch, windows_path(self.prefix, icon) + ',0' if icon.is_file() else '')))
+        for rank in range(4):
+            for keys, row in rows:
+                key = keys[rank].strip().lower()
+                if key and '\t' not in key and key not in keyed:
+                    keyed[key] = row
+        text = ''.join('\t'.join((key, *row)) + '\n' for key, row in sorted(keyed.items()))
+        target = self.state_dir / 'relaunch.tsv'
+        try:
+            if target.read_text(encoding='utf-8') == text:
+                return
+        except OSError:
+            pass
+        temp = target.with_suffix('.tmp')
+        temp.write_text(text, encoding='utf-8')
+        temp.replace(target)
+
     def install_launcher(self):
         source = ROOT / '.local/bridge/linux-launch.exe'
         target = self.state_dir / 'linux-launch.exe'
@@ -533,6 +570,7 @@ class Menu:
                 else:
                     del done[file_id]
         self.save(done, folders)
+        self.save_relaunch(done)
         return len(lines), len(old.keys() - new.keys())
 
 

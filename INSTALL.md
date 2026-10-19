@@ -150,7 +150,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | `input_method` | `fcitx5`（英語版の XP では無し） | 入力メソッド。省くと起動しません |
 | `linux_font` | `MS UI Gothic`（英語版の XP では `Tahoma`） | Linux のアプリの字体。`null` で変えません |
 | `linux_menu` | `true` | Linux のアプリをスタートメニューに入れます |
-| `welcome_screen` | `true` | ログイン後とログオフ中に XP の画面を出します |
+| `welcome_screen` | `true` | ログイン後とログオフ中に XP の画面（Windows 7 のシェルでは「ようこそ」「ログオフしています」など）を出します |
 | `cursor_theme` | `win4wine-xp` | カーソルのテーマ。`null` で使いません |
 | `shutdown_command`, `reboot_command` | `systemctl poweroff` / `reboot` | 終了オプションで実行するコマンド |
 | `outputs` | （無し） | Wayland のセッションの、出力ごとの設定。例: `{"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}`（`mode` も書けます。出力の名前は `wlr-randr` で見られます） |

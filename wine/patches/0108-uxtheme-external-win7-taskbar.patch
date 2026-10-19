@@ -10,9 +10,9 @@ two lines. Windows 7's TrayNotify background image is translucent, so the
 taskbar's background must be under it. The taskbar also uses buffered
 painting with BP_PAINTPARAMS (BeginBufferedPaint).
 Wine before: two XP shell changes applied to Windows 7's taskbar too.
-0068 made DrawThemeParentBackground under the taskbar draw only the
+0069 made DrawThemeParentBackground under the taskbar draw only the
 TrayNotify background (opaque on XP), so the notification area was black;
-0069 subclassed the clock and drew one line of time over it, so the time
+0070 subclassed the clock and drew one line of time over it, so the time
 appeared twice. BeginBufferedPaint ignored BP_PAINTPARAMS, and
 BufferedPaintClear and BufferedPaintSetAlpha were stubs.
 Change: with WIN4WINE_SHELL=win7 neither XP change applies. As documented

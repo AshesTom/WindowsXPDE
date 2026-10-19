@@ -133,7 +133,7 @@ class Prefix:
         for name in SHELL_DLLS + EXTRA_DLLS:
             self.place(native / f'{name}.dll', self.system / f'{name}.dll')
         # ReactOS's Common Controls 6 beside the shell, which takes it from
-        # there (Wine 0126); the assembly stays Wine's, for every other 32-bit
+        # there (Wine 0128); the assembly stays Wine's, for every other 32-bit
         # program (a replaced one gave them Wine's version 5, without buttons
         # or edit controls).
         self.place(native / 'sxs/comctl32.dll', self.path / 'drive_c/ros/comctl32.dll')

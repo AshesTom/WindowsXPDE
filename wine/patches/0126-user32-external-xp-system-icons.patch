@@ -2,7 +2,7 @@ From: Codex <codex@localhost>
 Subject: [PATCH] user32: XP's system icons in the XP shell session
 
 Purpose: show XP's application, error, warning, question and information
-icons in the XP shell session, as patch 0114 does for Windows 7.
+icons in the XP shell session, as patch 0116 does for Windows 7.
 Windows behavior: XP's user32.dll holds them as icon groups 100 to 105; a
 class's small icon made from IDI_APPLICATION is its 32x32 image scaled
 down by picking pixels (compared with xpcmp.exe's caption on the reference
@@ -10,7 +10,7 @@ XP machine).
 Wine before: Wine's own icons, scaled down by blending.
 Change: in the XP shell session, the system icons come from XP's
 user32.dll, which the prefix keeps as data in C:\xp\res\user32-xp.dll
-(prefix/stage.py), and icons are scaled down as 0114 does.
+(prefix/stage.py), and icons are scaled down as 0116 does.
 Evidence: xpcmp.exe's caption icon is pixel-identical to XP's; message
 boxes show XP's icons.
 Scope: the XP shell session (WIN4WINE_EXTERNAL_SHELL, no WIN4WINE_SHELL).

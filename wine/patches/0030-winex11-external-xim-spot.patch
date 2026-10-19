@@ -16,16 +16,22 @@ frontend's UseOnTheSpot option, which the win4wine session sets.)
 Change: remember the spot while the window has no XIC and give it to the
 XIC when it is created; send the spot with the on-the-spot style too, at
 the bottom of the line, since the input method places its window under
-it.
+it. Xlib takes XNSpotLocation of an on-the-spot XIC only when it is set,
+not when the XIC is created (its IC mode table; the value is dropped
+without an error), so the kept spot is set again right after creation;
+before, the first candidate window of a window (often the only one, as
+Notepad places its composition once) was at the window's bottom-left
+corner, fcitx5's place for an XIC without a spot.
 Evidence: with fcitx5 5.1.12 and Mozc in the test VM, the first
 composition in Wine notepad appears at the caret; Notepad and XP's Run
-dialog show the text inline and the candidates under the line.
+dialog show the text inline and the candidates under the line, from the
+first conversion on and on the next line too (Windows 7 shell session).
 Scope: only with WIN4WINE_EXTERNAL_SHELL; without it, over-the-spot
 behaves as before.
 ---
  dlls/winex11.drv/x11drv.h |  2 ++
- dlls/winex11.drv/xim.c    | 36 +++++++++++++++++++++++++++---------
- 2 files changed, 29 insertions(+), 9 deletions(-)
+ dlls/winex11.drv/xim.c    | 49 ++++++++++++++++++++++++++++++++++++++---------
+ 2 files changed, 42 insertions(+), 9 deletions(-)
 
 diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
 index d7cfed8..2440dfe 100644
@@ -41,7 +47,7 @@ index d7cfed8..2440dfe 100644
      UINT        embedded : 1;   /* is window an XEMBED client? */
      UINT        shaped : 1;     /* is window using a custom region shape? */
 diff --git a/dlls/winex11.drv/xim.c b/dlls/winex11.drv/xim.c
-index 05ef786..b3eaf37 100644
+index 05ef786..08dbc28 100644
 --- a/dlls/winex11.drv/xim.c
 +++ b/dlls/winex11.drv/xim.c
 @@ -36,6 +36,7 @@
@@ -70,7 +76,27 @@ index 05ef786..b3eaf37 100644
      XVaNestedList preedit, status;
      XIC xic;
      XFontSet fontSet = x11drv_thread_data()->font_set;
-@@ -512,7 +513,8 @@ XIC X11DRV_get_ic( HWND hwnd )
+@@ -500,6 +501,19 @@ static XIC xic_create( XIM xim, HWND hwnd, Window win )
+     XFree( preedit );
+     XFree( status );
+ 
++    /* win4wine: Xlib takes XNSpotLocation of an on-the-spot (callbacks) XIC only
++     * when it is set, not when the XIC is created: give the kept spot now, or
++     * the input method places the first candidate window at the window's corner */
++    if (xic && initial_spot && !(input_style & XIMPreeditPosition))
++    {
++        XVaNestedList attr = XVaCreateNestedList( 0, XNSpotLocation, &spot, NULL );
++        if (attr)
++        {
++            XSetICValues( xic, XNPreeditAttributes, attr, NULL );
++            XFree( attr );
++        }
++    }
++
+     return xic;
+ }
+ 
+@@ -512,7 +526,8 @@ XIC X11DRV_get_ic( HWND hwnd )
      if (!(data = get_win_data( hwnd ))) return 0;
      x11drv_thread_data()->last_xic_hwnd = hwnd;
      if (!(ret = data->xic) && (xim = x11drv_thread_data()->xim))
@@ -80,7 +106,7 @@ index 05ef786..b3eaf37 100644
      release_win_data( data );
  
      return ret;
-@@ -535,17 +537,33 @@ BOOL X11DRV_SetIMECompositionRect( HWND hwnd, RECT rect )
+@@ -535,17 +550,33 @@ BOOL X11DRV_SetIMECompositionRect( HWND hwnd, RECT rect )
      XVaNestedList attr;
      XPoint xpoint;
  

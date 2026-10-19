@@ -12,7 +12,7 @@ Change: when a key message is removed from the queue, a Windows key
 release after its press with no other key message in between, and with
 no other key still down, and a Ctrl+Esc press (without Shift or Alt; the
 press is not delivered) post HSHELL_TASKMAN to the windows with the
-Win4WineShellHook property (0020), after handing the foreground to the
+Win4WineShellHook property (0021), after handing the foreground to the
 first one's top-level window: this process has the input, and XP's own
 SetForegroundWindow for the Start menu is refused otherwise. A Windows key
 press counts as new unless one came within the last second, because a

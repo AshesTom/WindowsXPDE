@@ -70,6 +70,8 @@ def main():
         d.flush()
 
     show()
+    # The supervisor waits for this name before it goes on to end the session.
+    window.set_wm_name('win4wine-splash')
     window.map()
     d.flush()
 

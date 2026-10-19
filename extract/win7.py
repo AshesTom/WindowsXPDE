@@ -25,7 +25,7 @@ import media  # noqa: E402
 RT_GROUP_ICON = 14
 
 # Bump when the extracted files change; setup.sh then extracts again.
-EXTRACT_VERSION = 4
+EXTRACT_VERSION = 5
 # The image's language -> our language (the session's and the prefix's).
 LANGUAGES = {'ja-JP': 'ja', 'en-US': 'en'}
 # Windows 7's shell and the DLLs it uses from Windows 7 (prefix/win7.py says which
@@ -109,6 +109,9 @@ def select(paths, lang_dir, lang):
             raise SystemExit(f'Not in this Windows 7 image: {path}')
 
     want('Windows/explorer.exe', 'shell/explorer.exe')
+    # Only their strings: the Welcome, log-off and shut-down lines (greeter/w7-splash.py)
+    for name in ('winlogon.exe', 'wininit.exe'):
+        want(f'Windows/System32/{lang_dir}/{name}.mui', f'system32/{lang_dir}/{name}.mui', required=False)
     want(f'Windows/{lang_dir}/explorer.exe.mui', f'shell/{lang_dir}/explorer.exe.mui')
     for name in SYSTEM32:
         want(f'Windows/System32/{name}', f'system32/{name}')

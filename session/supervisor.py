@@ -29,14 +29,17 @@ DEFAULT_CONFIG = Path.home() / '.config/win4wine/session.json'
 # start. XP's Welcome screen uses images extracted from the XP media.
 SHELLS = {
     'xp': dict(marker='xp-shell.json', module='xp-explorer', command=r'C:\xp\xp-explorer.exe',
-               stage=('prefix/stage.py',), welcome=True, folders=False, name=None, switcher=None),
+               stage=('prefix/stage.py',), welcome='greeter/xp-splash.py', folders=False, name=None, switcher=None),
     'reactos': dict(marker='reactos-shell.json', module='ros-explorer', command=r'C:\ros\ros-explorer.exe',
-                    stage=('prefix/reactos.py', 'stage'), welcome=False, folders=True, name='reactos',
+                    stage=('prefix/reactos.py', 'stage'), welcome=None, folders=True, name='reactos',
                     switcher='reactos'),
     # Experimental: Windows 7's x64 explorer (prefix/win7.py).
     'win7': dict(marker='win7-shell.json', module='w7-explorer', command=r'C:\w7\w7-explorer.exe',
-                 stage=('prefix/win7.py', 'stage'), welcome=False, folders=True, name='win7', switcher='win7'),
+                 stage=('prefix/win7.py', 'stage'), welcome='greeter/w7-splash.py', folders=True, name='win7',
+                 switcher='win7'),
 }
+# Seconds the shut-down screen waits for the system to end the session (compositor)
+POWER_OFF_WAIT = 60
 IM_VARIABLES = ('XMODIFIERS', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'SDL_IM_MODULE', 'CLUTTER_IM_MODULE')
 
 
@@ -84,10 +87,10 @@ class Session:
         if self.shell['name']:
             # Wine leaves ReactOS's own controls to it (Start button, dialogs);
             # with Windows 7's shell the XP shell's taskbar replacements are
-            # left out and the Windows 7 changes apply (patches 0105 to 0120).
+            # left out and the Windows 7 changes apply (patches 0107 to 0122).
             self.env['WIN4WINE_SHELL'] = self.shell['name']
         # Under the compositor, layered windows' translucent pixels are blended
-        # by it; Wine leaves them as they are (Windows 7's Start button, patch 0107).
+        # by it; Wine leaves them as they are (Windows 7's Start button, patch 0109).
         if self.compositor:
             self.env['WIN4WINE_COMPOSITED'] = '1'
         # Opt-in: the proxy snaps windows to half of the screen (Win+arrows, dragging to an edge).
@@ -142,8 +145,9 @@ class Session:
                                'reboot': config.get('reboot_command', ['systemctl', 'reboot'])}
         self.processes = []
         # XP's Welcome screen covers the shell's start and the session's end (greeter/xp-splash.py).
-        self.welcome_screen = config.get('welcome_screen', self.shell['welcome'])
+        self.welcome_screen = config.get('welcome_screen', True) and self.shell['welcome']
         self.welcome = None
+        self.powering_off = False
         self.wine_envs = [self.env]
         self.logs = []
         self.stopping = False
@@ -318,10 +322,23 @@ class Session:
         self.hide_welcome()
         log = (self.state / 'welcome.log').open('ab', buffering=0)
         self.logs.append(log)
-        self.welcome = subprocess.Popen([sys.executable, str(ROOT / 'greeter/xp-splash.py'), mode,
+        self.welcome = subprocess.Popen([sys.executable, str(ROOT / self.welcome_screen), mode,
                                          '--dpi', str(self.dpi)],
                                         stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
                                         start_new_session=True)
+
+    def wait_welcome(self, timeout=5):
+        """Wait until the screen is up (it names its window), so that the session's
+        end, shut down at once by a fast machine, does not take it away unseen."""
+        end = time.monotonic() + timeout
+        while self.welcome and self.welcome.poll() is None and time.monotonic() < end:
+            try:
+                for w in self.d.screen().root.query_tree().children:
+                    if w.get_wm_name() == 'win4wine-splash' and w.get_attributes().map_state == X.IsViewable:
+                        return
+            except error.XError:
+                pass
+            time.sleep(0.05)
 
     def tell_welcome(self, word):
         """Change the line of the log-off screen ('saving', 'shutdown')."""
@@ -543,6 +560,7 @@ class Session:
         if request not in ('logoff', 'shutdown', 'reboot'):
             return False
         self.show_welcome('logoff')
+        self.wait_welcome()
         try:
             shell.wait(timeout=30)  # let wineboot end the applications first
         except subprocess.TimeoutExpired:
@@ -553,6 +571,8 @@ class Session:
         command = self.power_commands.get(request)
         if command:
             self.tell_welcome('shutdown')
+            time.sleep(0.5)  # for the screen to show the line
+            self.powering_off = True
             subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
         return True
@@ -584,6 +604,11 @@ class Session:
         self.halt(*reversed(self.processes))
         try:
             self.stop_wine()
+            if self.powering_off and self.compositor and self.welcome and self.welcome.poll() is None:
+                # The compositor ends with this process, and the shut-down screen with it
+                # (on X11 it stays as the root window's background): keep it until the
+                # system ends the session, as Windows shows it until the power goes off.
+                select.select([self.wakeup[0]], [], [], POWER_OFF_WAIT)
         finally:
             # The log-off screen leaves its last image as the root window's background.
             self.hide_welcome()

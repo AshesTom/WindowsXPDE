@@ -18,7 +18,7 @@ and shadow.
 Wine before: without a compositing manager, UpdateLayeredWindow copied
 the image over black and only left out the pixels with alpha 0, so the
 partly transparent pixels showed as a dark, jagged fringe. The button is
-the XP shell's Start button class (0055), which also painted its own
+the XP shell's Start button class (0056), which also painted its own
 image on WM_PAINT and on state changes, over explorer's. When the window
 grew, three things showed black under a shifted button for a frame or
 more: the window manager applied the new size after Wine had drawn the
