@@ -33,9 +33,6 @@ SHELLS = {
     'reactos': dict(marker='reactos-shell.json', module='ros-explorer', command=r'C:\ros\ros-explorer.exe',
                     stage=('prefix/reactos.py', 'stage'), welcome=False, folders=True, name='reactos',
                     switcher='reactos'),
-    # Experimental: Windows 7's x64 explorer (prefix/win7.py).
-    'win7': dict(marker='win7-shell.json', module='w7-explorer', command=r'C:\w7\w7-explorer.exe',
-                 stage=('prefix/win7.py', 'stage'), welcome=False, folders=True, name='win7', switcher='win7'),
 }
 IM_VARIABLES = ('XMODIFIERS', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'SDL_IM_MODULE', 'CLUTTER_IM_MODULE')
 
@@ -82,9 +79,8 @@ class Session:
             # The proxy draws ReactOS's Alt+Tab window instead of XP's.
             self.env['WIN4WINE_SWITCHER'] = self.shell['switcher']
         if self.shell['name']:
-            # Wine leaves ReactOS's own controls to it (Start button, dialogs);
-            # with Windows 7's shell the XP shell's taskbar replacements are
-            # left out and the Windows 7 changes apply (patches 0105 to 0120).
+            # Wine leaves ReactOS's own controls to it (Start button, dialogs).
+            # The Windows 7 shell (patches 0105 to 0120) is on the win7 branch.
             self.env['WIN4WINE_SHELL'] = self.shell['name']
         # Under the compositor, layered windows' translucent pixels are blended
         # by it; Wine leaves them as they are (Windows 7's Start button, patch 0107).

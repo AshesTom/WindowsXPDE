@@ -31,7 +31,8 @@ Microsoft のファイルは同梱していません。お手元の XP の ISO �
 XP の ISO が無い方は、XP のシェルの代わりに **[ReactOS](https://reactos.org/) のシェル**（Windows 2000 風のクラシックの見た目）でも
 試せます。ReactOS は自由なソフトウェアなので、導入スクリプトが公式のリリースから取得します（[docs/reactos.md](docs/reactos.md)）。
 
-Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベーシックの見た目）でも試せます。まだ実験的な試作です（[docs/windows7.md](docs/windows7.md)）。
+**Windows 7 のシェル**は [`win7` ブランチ](../../tree/win7)にあります。このブランチ（`main`）は XP（と ReactOS）のシェルと、
+Linux のデスクトップの窓の中で XP を動かす **XP Explorer**（[xp-explorer/](xp-explorer/README.md)）です。
 
 ## できること
 
@@ -49,14 +50,13 @@ Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベー�
 - **画面の拡大（DPI）**: XP と同じ「DPI 設定」で、文字や部品を大きくできます（96・120・144 など）。
 - **落ちても戻れる**: XP のシェルが繰り返し落ちると、Wine 標準の explorer と xterm に切り替わります。
 - **Wayland のセッション（任意・X11 のセッション以上に実験的）**: X11 のウィンドウマネージャーの代わりに、パッチを当てた labwc で
-  動かすセッションです（XP、ReactOS、Windows 7 のシェル）。モニターごとの倍率や 125%・150% などの倍率が使え、シェルはぼけずに描かれます。
+  動かすセッションです（XP と ReactOS のシェル）。モニターごとの倍率や 125%・150% などの倍率が使え、シェルはぼけずに描かれます。
   Wayland のアプリにもシェルの枠が付きます。作ったばかりで、確かめた範囲は X11 のセッションより狭く、既知の制限もあります（[docs/wayland.md](docs/wayland.md)）。
   ふだん試すなら X11 のセッションをおすすめします。
 - **ReactOS のシェル（任意）**: XP の ISO の代わりに ReactOS 0.4.16 の explorer で動かすセッションです。日本語と英語に対応します。
   XP のシェルと並べて入れられます。
-- **Windows 7 のシェル（任意・実験的）**: Windows 7 SP1 x64 の explorer で動かすセッションです（Windows 7 ベーシックの見た目。
-  Aero のガラスはまだありません）。スタートメニュー、タスクバー、通知領域、フォルダの窓が動き、Linux のアプリもアプリごとに
-  タスクバーにまとまります。確かめたのは日本語版だけです。
+- **XP Explorer（任意）**: セッションを置き換えず、KDE などの今のデスクトップの上で、Wine の仮想デスクトップの窓の中に
+  XP のシェルを開きます（[xp-explorer/](xp-explorer/README.md)）。
 
 <table>
   <tr>
@@ -91,14 +91,6 @@ scripts/setup.sh --shell reactos --lang ja   # 英語なら --lang en
 ```
 
 ログイン画面でセッション「ReactOS Shell (Wine, X11)」を選びます。
-
-Windows 7 のシェル（実験的）は、Windows 7 SP1 x64 の ISO から作ります。
-
-```sh
-scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
-```
-
-ログイン画面でセッション「Windows 7 Shell (Wine, X11)」を選びます。
 
 詳しい手順とオプションは 🔗 [導入手順（INSTALL.md）](INSTALL.md) にあります。Wine をソースからビルドするので、4 コアで 1 時間半ほどかかります。
 テーマ（XP のクラシックなど）と文字の大きさは、後から変えられます（[見た目と文字の大きさを変える](INSTALL.md#見た目と文字の大きさを変える)）。

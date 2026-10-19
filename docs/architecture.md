@@ -32,7 +32,7 @@ win4wine がどの部品でできていて、どうつながっているかの�
 - Wine のパッチの多くは、環境変数 `WIN4WINE_EXTERNAL_SHELL` があるときだけ効きます（opt-in。[patches.md](patches.md)）。
 - prefix は 64-bit（WoW64）で、XP の DLL は `syswow64` に置きます。XP のシェルのための COM の登録は 32-bit の側にだけ書きます。
 - ReactOS のシェル（`C:\ros\ros-explorer.exe`）と Windows 7 のシェル（`C:\w7\w7-explorer.exe`、64bit）も同じ形で、専用の prefix で
-  動かします（[reactos.md](reactos.md)、[windows7.md](windows7.md)）。session.json の `shell` で選び、supervisor はその prefix の
+  動かします（[reactos.md](reactos.md)、windows7.md（`win7` ブランチ））。session.json の `shell` で選び、supervisor はその prefix の
   `stage`（`prefix/reactos.py`、`prefix/win7.py`）を使います。Windows 7 のシェルでは `WIN4WINE_SHELL=win7` も設定し、proxy は
   Linux の窓に `WM_CLASS` ごとの AppUserModelID を付けます（Windows 7 のタスクバーはこれでボタンをまとめます）。
 

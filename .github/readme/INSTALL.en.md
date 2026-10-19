@@ -28,7 +28,7 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 
 | Option | Meaning |
 |---|---|
-| `--media PATH` | the XP ISO or Windows directory (required); with `--shell win7`, a Windows 7 SP1 x64 ISO |
+| `--media PATH` | the XP ISO or Windows directory (required) |
 | `--greeter` | make the login screen XP's Welcome screen (LightDM becomes the display manager) |
 | `--no-greeter` | keep the current login screen (default); only XP's cursors are installed |
 | `--theme luna\|classic` | `luna` (default: XP's "Windows XP" theme, the XP-style Start menu, the Bliss wallpaper) or `classic` (XP's "Windows Classic" theme, the classic Start menu, no wallpaper) |
@@ -38,7 +38,6 @@ scripts/setup.sh --media /path/to/WindowsXPSP3.iso --greeter
 | `--jobs N` | parallel jobs for the Wine build (default: the number of CPUs) |
 | `--no-shadowfb` | on a virtual machine, leave the way X draws as it is (step 8 of "2. What the script does") |
 | `--shell reactos` | set up ReactOS's shell instead of XP's (no `--media`; see "The ReactOS shell" below) |
-| `--shell win7` | set up Windows 7's shell (experimental); `--media` is a Windows 7 ISO (see "The Windows 7 shell" below) |
 | `--lang ja\|en` | the ReactOS shell's language (default: `ja` if the current locale is Japanese, else `en`) |
 
 If it fails, just run it again: finished steps are skipped. Everything it builds stays in `.local/` of this checkout.
@@ -107,21 +106,9 @@ scripts/setup.sh --shell reactos --lang en
 - With `--wayland`, the Wayland session "ReactOS Shell (Wine, Wayland)" is installed too (even more experimental than X11).
 - Details: [docs/reactos.md](../../docs/reactos.md) (Japanese).
 
-## The Windows 7 shell (experimental)
+## The Windows 7 shell
 
-With a Windows 7 SP1 x64 ISO, Windows 7's shell (the Windows 7 Basic look) can be set up:
-
-```sh
-scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
-```
-
-- Only the shell's files and the MUI files of the ISO's language are extracted from its `sources/install.wim` into
-  `.local/assets-win7` (the Professional edition's image, else the last one). The ISO decides the language.
-- The prefix is `.local/prefix-win7`, the settings `~/.config/win4wine/win7-session.json` and the session
-  "**Windows 7 Shell (Wine, X11)**". It can be set up beside the XP and ReactOS shells (they share Wine and the bridge).
-- Windows 7's Aero cursors are installed; with `--greeter` the login screen is Windows 7's logon screen too.
-- `--theme` and `--wayland` are not available for it yet; `--dpi` is.
-- Only Japanese Windows 7 Professional SP1 has been tested. Details: [docs/windows7.md](../../docs/windows7.md) (Japanese).
+Windows 7's shell is on the `win7` branch (`git switch win7`).
 
 ## 3. Log in
 
@@ -154,7 +141,7 @@ Restart the display manager (or reboot).
 | `cursor_theme` | `win4wine-xp` | cursor theme; `null` for none |
 | `shutdown_command`, `reboot_command` | `systemctl poweroff` / `reboot` | commands run by Turn Off Computer |
 | `outputs` | (none) | the Wayland session's settings per output, e.g. `{"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}` (`mode` too; `wlr-randr` lists the names) |
-| `shell` | `xp` | `reactos` for ReactOS's shell (setup.sh writes it into `reactos-session.json`), `win7` for Windows 7's (`win7-session.json`) |
+| `shell` | `xp` | `reactos` for ReactOS's shell (setup.sh writes it into `reactos-session.json`) |
 | `primary` | the leftmost output | the output the Wayland session makes Win32's primary monitor; XP's desktop and taskbar are on it |
 | `composite` | `true` | the X server keeps the contents of Wine's windows (Composite's automatic redirection): moving or closing a window no longer shows the Wine windows below black until they repaint. `false` turns it off |
 | `window_snap` | `false` | `true` lets windows snap to half of the screen (like Windows 7's Aero Snap; XP has no such thing): Win+Left/Right for the left or right half, Win+Up to maximize, Win+Down to restore or minimize; dragging a title bar to the left or right edge of the screen snaps it to that half, to the top edge maximizes it; dragging a maximized window's title bar restores it. Takes effect at the next login |
@@ -207,7 +194,6 @@ sudo rm /usr/share/xsessions/xp-shell.desktop /usr/local/bin/xp-shell-session   
 sudo rm /usr/share/wayland-sessions/xp-shell-wayland.desktop /usr/local/bin/xp-shell-wayland-session   # and the Wayland one
 sudo rm /usr/share/xsessions/reactos-shell.desktop /usr/local/bin/reactos-shell-session   # and the ReactOS shell's
 sudo rm /usr/share/wayland-sessions/reactos-shell-wayland.desktop /usr/local/bin/reactos-shell-wayland-session
-sudo rm /usr/share/xsessions/windows7-shell.desktop /usr/local/bin/windows7-shell-session   # and the Windows 7 shell's
 python3 session/linux_apps.py .local/prefix --wine .local/wine-install/bin/wine --remove   # remove the Start menu entries it made
 sudo rm -f /etc/X11/xorg.conf.d/20-win4wine-shadowfb.conf   # remove the virtual machine's X setting (from the next start of X)
 ```

@@ -4,7 +4,7 @@
 Windows 7 installs each component from a manifest in WinSxS\\Manifests that
 lists its files and its registry keys and values: COM classes, shell folders,
 file types, and the default values of its settings (the configuration
-schema). extract/win7.py writes the entries of the components whose files the
+schema). extract/win7.py (on the win7 branch) writes the entries of the components whose files the
 Windows 7 shell prefix uses, so the prefix gets what those components
 register, not the whole registry of an installed Windows.
 

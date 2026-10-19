@@ -42,14 +42,6 @@ scripts/setup.sh --shell reactos --lang en   # or --lang ja
 
 and choose the session "ReactOS Shell (Wine, X11)" at the login screen.
 
-With a Windows 7 SP1 x64 ISO, the Windows 7 shell (experimental) can be set up the same way:
-
-```sh
-scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
-```
-
-and choose the session "Windows 7 Shell (Wine, X11)".
-
 Details: 🔗 [installation guide (INSTALL.en.md)](INSTALL.en.md). Building Wine takes about 90 minutes on 4 cores.
 The theme (XP's classic one, for example) and the text size can be changed later ([Changing the look and the text size](INSTALL.en.md#changing-the-look-and-the-text-size)).
 
@@ -63,8 +55,8 @@ No Microsoft files are included. Only the files that are needed are extracted lo
 Without an XP ISO, the session can run **[ReactOS](https://reactos.org/)'s shell** instead (a Windows 2000-like classic look).
 ReactOS is free software, so the setup script downloads it from its official release ([docs/reactos.md](../../docs/reactos.md), Japanese).
 
-With a Windows 7 ISO, it can also run **Windows 7's shell** (the Windows 7 Basic look). It is an experimental prototype
-([docs/windows7.md](../../docs/windows7.md), Japanese).
+**Windows 7's shell** is on the [`win7` branch](../../../../tree/win7). This branch (`main`) has the XP (and ReactOS) shells,
+and **XP Explorer** ([xp-explorer/](../../xp-explorer/README.md)), which opens XP's shell in a window of your Linux desktop.
 
 ## What it does
 
@@ -81,14 +73,13 @@ With a Windows 7 ISO, it can also run **Windows 7's shell** (the Windows 7 Basic
 - **XP's keys**: the Windows key, Ctrl+Esc, Win+R and Win+E.
 - **Recovery**: if the XP shell keeps crashing, the session falls back to Wine's own explorer and an xterm.
 - **Wayland session (optional, even more experimental than the X11 session)**: a patched labwc instead of the X11 WM
-  (XP, ReactOS and Windows 7 shells), with a scale per monitor and scales such as 125% or 150%; the shell stays crisp,
+  (XP and ReactOS shells), with a scale per monitor and scales such as 125% or 150%; the shell stays crisp,
   and Wayland applications get the shell's frames too. It is new, tested less than the X11 session and has known limits ([docs/wayland.md](../../docs/wayland.md),
   Japanese). The X11 session is the one to try first.
 - **ReactOS shell (optional)**: the session with ReactOS 0.4.16's explorer instead of XP's, in Japanese or English; it can be set
   up beside the XP shell.
-- **Windows 7 shell (optional, experimental)**: the session with Windows 7 SP1 x64's explorer (the Windows 7 Basic look; no Aero
-  glass yet). The Start menu, taskbar, notification area and folder windows work, and Linux applications are grouped per
-  application on the taskbar. Only Japanese Windows 7 has been tested.
+- **XP Explorer (optional)**: without replacing your session, XP's shell in a Wine virtual desktop window next to KDE or
+  any other desktop ([xp-explorer/](../../xp-explorer/README.md)).
 
 <table>
   <tr>
