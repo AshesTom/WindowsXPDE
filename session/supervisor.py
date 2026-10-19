@@ -38,6 +38,8 @@ SHELLS = {
                  stage=('prefix/win7.py', 'stage'), welcome='greeter/w7-splash.py', folders=True, name='win7',
                  switcher='win7'),
 }
+# Seconds the shut-down screen waits for the system to end the session (compositor)
+POWER_OFF_WAIT = 60
 IM_VARIABLES = ('XMODIFIERS', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'SDL_IM_MODULE', 'CLUTTER_IM_MODULE')
 
 
@@ -145,6 +147,7 @@ class Session:
         # XP's Welcome screen covers the shell's start and the session's end (greeter/xp-splash.py).
         self.welcome_screen = config.get('welcome_screen', True) and self.shell['welcome']
         self.welcome = None
+        self.powering_off = False
         self.wine_envs = [self.env]
         self.logs = []
         self.stopping = False
@@ -323,6 +326,19 @@ class Session:
                                          '--dpi', str(self.dpi)],
                                         stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
                                         start_new_session=True)
+
+    def wait_welcome(self, timeout=5):
+        """Wait until the screen is up (it names its window), so that the session's
+        end, shut down at once by a fast machine, does not take it away unseen."""
+        end = time.monotonic() + timeout
+        while self.welcome and self.welcome.poll() is None and time.monotonic() < end:
+            try:
+                for w in self.d.screen().root.query_tree().children:
+                    if w.get_wm_name() == 'win4wine-splash' and w.get_attributes().map_state == X.IsViewable:
+                        return
+            except error.XError:
+                pass
+            time.sleep(0.05)
 
     def tell_welcome(self, word):
         """Change the line of the log-off screen ('saving', 'shutdown')."""
@@ -544,6 +560,7 @@ class Session:
         if request not in ('logoff', 'shutdown', 'reboot'):
             return False
         self.show_welcome('logoff')
+        self.wait_welcome()
         try:
             shell.wait(timeout=30)  # let wineboot end the applications first
         except subprocess.TimeoutExpired:
@@ -554,6 +571,8 @@ class Session:
         command = self.power_commands.get(request)
         if command:
             self.tell_welcome('shutdown')
+            time.sleep(0.5)  # for the screen to show the line
+            self.powering_off = True
             subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
         return True
@@ -585,6 +604,11 @@ class Session:
         self.halt(*reversed(self.processes))
         try:
             self.stop_wine()
+            if self.powering_off and self.compositor and self.welcome and self.welcome.poll() is None:
+                # The compositor ends with this process, and the shut-down screen with it
+                # (on X11 it stays as the root window's background): keep it until the
+                # system ends the session, as Windows shows it until the power goes off.
+                select.select([self.wakeup[0]], [], [], POWER_OFF_WAIT)
         finally:
             # The log-off screen leaves its last image as the root window's background.
             self.hide_welcome()
