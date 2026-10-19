@@ -36,7 +36,7 @@ Scope: win4wine's sessions (win4wine_external_shell).
  3 files changed, 19 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/win32u/input.c b/dlls/win32u/input.c
-index c86a357..77d0c76 100644
+index d14baa9..9667b77 100644
 --- a/dlls/win32u/input.c
 +++ b/dlls/win32u/input.c
 @@ -37,6 +37,7 @@
@@ -47,7 +47,7 @@ index c86a357..77d0c76 100644
  
  WINE_DEFAULT_DEBUG_CHANNEL(win);
  WINE_DECLARE_DEBUG_CHANNEL(keyboard);
-@@ -2234,11 +2235,16 @@ BOOL set_foreground_window( HWND hwnd, BOOL mouse, BOOL internal )
+@@ -2237,11 +2238,16 @@ BOOL set_foreground_window( HWND hwnd, BOOL mouse, BOOL internal )
          else if (send_msg_new)  /* old window belongs to us but new one to other thread */
              ret = set_active_window( 0, NULL, mouse, TRUE, new_thread_id );
  

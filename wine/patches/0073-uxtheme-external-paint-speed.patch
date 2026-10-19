@@ -3,8 +3,8 @@ Subject: [PATCH] uxtheme, user32: paint Luna frames and theme parts with fewer b
 
 Purpose: let the XP shell's windows (Luna) and the bridge's frames resize
 smoothly, also in virtual machines without a GPU.
-Wine before (with 0058-0059): each step of a resize painted the frame
-twice: on WM_NCPAINT, then all of it again when 0059 updated the caption
+Wine before (with 0059-0059): each step of a resize painted the frame
+twice: on WM_NCPAINT, then all of it again when 0060 updated the caption
 region on WM_WINDOWPOSCHANGED. DefWindowProc drew the classic caption, with
 themed buttons, under the Luna caption that covered it right after. Every
 blit of an 8- or 24-bpp theme image converted it to the screen's 32 bpp,
@@ -15,7 +15,7 @@ Change:
 - Theme images of fewer than 32 bpp are kept as 32-bpp copies holding the
   bytes that converting them for a 32-bpp target gives (fourth byte zero);
   their default transparent colour is found before.
-- For a window's DC on a 32-bpp screen without a mapping, 0062's resized
+- For a window's DC on a 32-bpp screen without a mapping, 0063's resized
   colour-keyed parts are drawn with AlphaBlend from a copy whose key pixels
   have alpha 0 and the others 255, which leaves the same pixels as
   TransparentBlt there.
@@ -33,7 +33,7 @@ pixel for pixel with and without the patch: the desktop, Notepad and
 Mousepad's frame active and inactive, the Start menu, My Computer moved, a
 menu, Notepad maximized, restored, made smaller and larger, Mousepad made
 smaller and larger. Dragging the bottom-right corner 100 steps of 16 ms on
-Xvfb (with 0033): Mousepad's frame took 71-99 sizes growing and all 100
+Xvfb (with 0034): Mousepad's frame took 71-99 sizes growing and all 100
 shrinking (38-51 and 55 before), Notepad 71-75 and 87-94 (28-29 and
 39-41). In the test VM (QEMU, standard VGA), of 80 steps: Mousepad 68-72
 and 72-77 (40-41 and 42-46), My Computer 29-33 (18-20).

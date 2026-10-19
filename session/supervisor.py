@@ -87,10 +87,10 @@ class Session:
         if self.shell['name']:
             # Wine leaves ReactOS's own controls to it (Start button, dialogs);
             # with Windows 7's shell the XP shell's taskbar replacements are
-            # left out and the Windows 7 changes apply (patches 0106 to 0121).
+            # left out and the Windows 7 changes apply (patches 0107 to 0122).
             self.env['WIN4WINE_SHELL'] = self.shell['name']
         # Under the compositor, layered windows' translucent pixels are blended
-        # by it; Wine leaves them as they are (Windows 7's Start button, patch 0108).
+        # by it; Wine leaves them as they are (Windows 7's Start button, patch 0109).
         if self.compositor:
             self.env['WIN4WINE_COMPOSITED'] = '1'
         # Opt-in: the proxy snaps windows to half of the screen (Win+arrows, dragging to an edge).
