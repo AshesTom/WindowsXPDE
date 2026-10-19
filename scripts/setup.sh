@@ -1,5 +1,6 @@
 #!/bin/bash
-# Set up the XP shell session on this Debian 13 machine, from a fresh install.
+# Set up the XP shell session on this Debian 13 machine, from a fresh install
+# (Arch Linux and its derivatives such as CachyOS: the packages come from pacman).
 #
 #   scripts/setup.sh --media PATH [--greeter | --no-greeter] [--theme luna|classic]
 #                    [--dpi N] [--font-smoothing standard|cleartype] [--wayland]
@@ -126,67 +127,131 @@ fi
 [[ -z $media ]] || media=$(realpath -e -- "$media")
 [[ $EUID -ne 0 ]] || { printf 'Run this as the user who will log in, not as root\n' >&2; exit 2; }
 [[ $root != *[[:space:]]* ]] || { printf 'The checkout path must not contain spaces: %s\n' "$root" >&2; exit 2; }
-if ! grep -q '^VERSION_CODENAME=trixie' /etc/os-release; then
-    printf 'Warning: written for Debian 13 (trixie); this is %s\n' "$(. /etc/os-release; echo "$PRETTY_NAME")" >&2
+# Debian 13 is the tested system; Arch Linux and its derivatives (CachyOS,
+# EndeavourOS, ...) get their packages from pacman instead of apt.
+if command -v pacman >/dev/null && ! command -v apt-get >/dev/null; then
+    distro=arch
+else
+    distro=debian
+    if ! grep -q '^VERSION_CODENAME=trixie' /etc/os-release; then
+        printf 'Warning: written for Debian 13 (trixie); this is %s\n' "$(. /etc/os-release; echo "$PRETTY_NAME")" >&2
+    fi
 fi
 step() { printf '\n=== %s\n' "$*"; }
 mkdir -p "$local"
 
-step 'Packages'
-packages=(
-    # Wine build (WoW64: 64-bit Unix libraries, i686 and x86_64 MinGW for the PE modules)
-    build-essential flex bison pkg-config git ca-certificates
-    # Wine's translations (msgfmt): Wine's own programs and dialogs in the session's language
-    gettext
-    libx11-dev libxext-dev libxrender-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev
-    libfreetype-dev libfontconfig-dev libgnutls28-dev libgl-dev libasound2-dev libdbus-1-dev libudev-dev
-    gcc-mingw-w64-i686 gcc-mingw-w64-x86-64
-    # extraction, prefix creation
-    cabextract p7zip-full xvfb xauth
-    # the session: X, the WM and tray bridge, recovery terminal, root cursor
-    xserver-xorg x11-xserver-utils xterm python3 python3-xlib
-    python3-gi gir1.2-glib-2.0 gir1.2-gdkpixbuf-2.0 librsvg2-common
-    # Japanese input (session.json "input_method": "fcitx5")
-    locales fcitx5 fcitx5-mozc fcitx5-frontend-gtk3 fcitx5-frontend-gtk4
-    fcitx5-frontend-qt5 fcitx5-frontend-qt6 fcitx5-config-qt
-)
-if [[ $wayland == yes ]]; then
-    packages+=(
-        # labwc and wlroots (wayland/build.sh), Xwayland, the outputs' settings
-        meson ninja-build wayland-protocols libwayland-dev libxkbcommon-dev libxml2-dev
-        libcairo2-dev libpango1.0-dev libglib2.0-dev libinput-dev libpixman-1-dev libpng-dev
-        librsvg2-dev libdrm-dev libgbm-dev libegl-dev libgles-dev libseat-dev libdisplay-info-dev
-        libliftoff-dev liblcms2-dev hwdata libxcb1-dev libxcb-composite0-dev libxcb-dri3-dev
-        libxcb-errors-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-present-dev libxcb-randr0-dev
-        libxcb-render0-dev libxcb-render-util0-dev libxcb-res0-dev libxcb-shm0-dev
-        libxcb-xfixes0-dev libxcb-xinput-dev xwayland wlr-randr
+# The same packages on Arch Linux (pacman). Arch's display manager is the
+# target of display-manager.service.
+arch_display_manager() {
+    basename "$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null)" .service
+}
+arch_packages() {
+    packages=(
+        # Wine build (WoW64: 64-bit Unix libraries, i686 and x86_64 MinGW for the PE modules)
+        base-devel flex bison pkgconf git ca-certificates gettext
+        libx11 libxext libxrender libxrandr libxi libxcursor libxinerama
+        freetype2 fontconfig gnutls libglvnd alsa-lib dbus systemd-libs
+        mingw-w64-gcc
+        # extraction, prefix creation (xvfb-run is in xorg-server-xvfb)
+        cabextract xorg-server-xvfb xorg-xauth
+        # the session: X, the WM and tray bridge, recovery terminal, root cursor
+        xorg-server xorg-xsetroot xterm python python-xlib
+        python-gobject glib2 gdk-pixbuf2 librsvg
+        # Japanese input (session.json "input_method": "fcitx5"); locale-gen is glibc's
+        fcitx5 fcitx5-mozc fcitx5-gtk fcitx5-qt fcitx5-configtool
     )
-fi
-if [[ $shell == reactos && $lang == ja ]]; then
-    # Japanese text where ReactOS's DroidSansFallback is not linked in (the folder
-    # window's address bar, Linux applications); the XP shell has XP's MS Gothic
-    packages+=(fonts-noto-cjk)
-fi
-if [[ $greeter == yes ]]; then
-    packages+=(lightdm lightdm-gtk-greeter gir1.2-lightdm-1 gir1.2-gtk-3.0 python3-gi-cairo)
-elif [[ ! -e /etc/X11/default-display-manager ]]; then
-    # No display manager yet: LightDM with its usual login screen.
-    packages+=(lightdm lightdm-gtk-greeter)
-fi
-missing=()
-for package in "${packages[@]}"; do
-    dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing+=("$package")
-done
-if ((${#missing[@]})); then
-    sudo apt-get update
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+    # 7z: 7zip, unless p7zip (which conflicts with it) already gives one
+    command -v 7z >/dev/null || packages+=(7zip)
+    if [[ $wayland == yes ]]; then
+        packages+=(
+            # labwc and wlroots (wayland/build.sh), Xwayland, the outputs' settings
+            meson ninja wayland-protocols wayland libxkbcommon libxml2
+            cairo pango glib2 libinput pixman libpng
+            librsvg libdrm mesa seatd libdisplay-info
+            libliftoff lcms2 hwdata libxcb xcb-util-errors xcb-util-wm xcb-util-renderutil
+            xorg-xwayland wlr-randr
+        )
+    fi
+    if [[ $shell == reactos && $lang == ja ]]; then
+        packages+=(noto-fonts-cjk)
+    fi
+    if [[ $greeter == yes ]]; then
+        packages+=(lightdm lightdm-gtk-greeter gtk3 python-cairo)
+    elif [[ -z $(arch_display_manager) ]]; then
+        # No display manager yet: LightDM with its usual login screen.
+        packages+=(lightdm lightdm-gtk-greeter)
+    fi
+    mapfile -t missing < <(pacman -T "${packages[@]}" || true)
+    if ((${#missing[@]})); then
+        sudo pacman -S --needed --noconfirm "${missing[@]}"
+    else
+        printf 'All installed\n'
+    fi
+    if [[ $(arch_display_manager) != lightdm ]] && [[ $greeter == yes || -z $(arch_display_manager) ]]; then
+        printf 'Making LightDM the display manager (it was %s)\n' "$(arch_display_manager || true)"
+        sudo systemctl enable --force lightdm.service
+    fi
+}
+
+step 'Packages'
+if [[ $distro == arch ]]; then
+    arch_packages
 else
-    printf 'All installed\n'
-fi
-if [[ $greeter == yes && $(cat /etc/X11/default-display-manager 2>/dev/null) != /usr/sbin/lightdm ]]; then
-    printf 'Making LightDM the display manager (it was %s)\n' "$(cat /etc/X11/default-display-manager 2>/dev/null || echo none)"
-    echo /usr/sbin/lightdm | sudo tee /etc/X11/default-display-manager >/dev/null
-    sudo systemctl enable --force lightdm.service
+    packages=(
+        # Wine build (WoW64: 64-bit Unix libraries, i686 and x86_64 MinGW for the PE modules)
+        build-essential flex bison pkg-config git ca-certificates
+        # Wine's translations (msgfmt): Wine's own programs and dialogs in the session's language
+        gettext
+        libx11-dev libxext-dev libxrender-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev
+        libfreetype-dev libfontconfig-dev libgnutls28-dev libgl-dev libasound2-dev libdbus-1-dev libudev-dev
+        gcc-mingw-w64-i686 gcc-mingw-w64-x86-64
+        # extraction, prefix creation
+        cabextract p7zip-full xvfb xauth
+        # the session: X, the WM and tray bridge, recovery terminal, root cursor
+        xserver-xorg x11-xserver-utils xterm python3 python3-xlib
+        python3-gi gir1.2-glib-2.0 gir1.2-gdkpixbuf-2.0 librsvg2-common
+        # Japanese input (session.json "input_method": "fcitx5")
+        locales fcitx5 fcitx5-mozc fcitx5-frontend-gtk3 fcitx5-frontend-gtk4
+        fcitx5-frontend-qt5 fcitx5-frontend-qt6 fcitx5-config-qt
+    )
+    if [[ $wayland == yes ]]; then
+        packages+=(
+            # labwc and wlroots (wayland/build.sh), Xwayland, the outputs' settings
+            meson ninja-build wayland-protocols libwayland-dev libxkbcommon-dev libxml2-dev
+            libcairo2-dev libpango1.0-dev libglib2.0-dev libinput-dev libpixman-1-dev libpng-dev
+            librsvg2-dev libdrm-dev libgbm-dev libegl-dev libgles-dev libseat-dev libdisplay-info-dev
+            libliftoff-dev liblcms2-dev hwdata libxcb1-dev libxcb-composite0-dev libxcb-dri3-dev
+            libxcb-errors-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-present-dev libxcb-randr0-dev
+            libxcb-render0-dev libxcb-render-util0-dev libxcb-res0-dev libxcb-shm0-dev
+            libxcb-xfixes0-dev libxcb-xinput-dev xwayland wlr-randr
+        )
+    fi
+    if [[ $shell == reactos && $lang == ja ]]; then
+        # Japanese text where ReactOS's DroidSansFallback is not linked in (the folder
+        # window's address bar, Linux applications); the XP shell has XP's MS Gothic
+        packages+=(fonts-noto-cjk)
+    fi
+    if [[ $greeter == yes ]]; then
+        packages+=(lightdm lightdm-gtk-greeter gir1.2-lightdm-1 gir1.2-gtk-3.0 python3-gi-cairo)
+    elif [[ ! -e /etc/X11/default-display-manager ]]; then
+        # No display manager yet: LightDM with its usual login screen.
+        packages+=(lightdm lightdm-gtk-greeter)
+    fi
+    missing=()
+    for package in "${packages[@]}"; do
+        dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing+=("$package")
+    done
+    if ((${#missing[@]})); then
+        sudo apt-get update
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+    else
+        printf 'All installed\n'
+    fi
+    if [[ $greeter == yes && $(cat /etc/X11/default-display-manager 2>/dev/null) != /usr/sbin/lightdm ]]; then
+        printf 'Making LightDM the display manager (it was %s)\n' "$(cat /etc/X11/default-display-manager 2>/dev/null || echo none)"
+        echo /usr/sbin/lightdm | sudo tee /etc/X11/default-display-manager >/dev/null
+        sudo systemctl enable --force lightdm.service
+    fi
 fi
 
 # The Unix locale of the session and its Wine prefix, in the shell's language:
