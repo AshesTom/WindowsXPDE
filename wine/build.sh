@@ -11,7 +11,9 @@ if [[ ! -d $src/.git ]]; then
 fi
 [[ $(git -C "$src" rev-parse HEAD) == "$WINE_COMMIT" ]] || { echo 'Unexpected upstream commit' >&2; exit 1; }
 echo '>>> Patching'
-patches=$(python3 "$root/wine/patch-state.py" --digest "$root/wine/patches")
+# WINE_PATCHES: another series (xp-explorer/xp.sh adds its own patches to this one)
+series=${WINE_PATCHES:-$root/wine/patches}
+patches=$(python3 "$root/wine/patch-state.py" --digest "$series")
 # This checkout's own source has the series it was last patched with; when
 # that differs (an update or another branch), it goes back to upstream first.
 # A source given with WINE_SOURCE keeps its edits.
@@ -19,7 +21,7 @@ if [[ -z ${WINE_SOURCE:-} && $(cat "$src/.git/win4wine-patches" 2>/dev/null) != 
     git -C "$src" reset -q --hard
     git -C "$src" clean -q -f -d
 fi
-python3 "$root/wine/patch-state.py" "$src" "$root/wine/patches" --apply
+python3 "$root/wine/patch-state.py" "$src" "$series" --apply
 [[ -n ${WINE_SOURCE:-} ]] || echo "$patches" > "$src/.git/win4wine-patches"
 mkdir -p "$build" "$install"
 cd "$build"

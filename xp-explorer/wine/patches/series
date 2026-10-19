@@ -1,0 +1,13 @@
+0001-apphelp-advapi32-xp-shell-run-checks.patch
+0002-uxtheme-classic-metrics-exports.patch
+0003-user32-themed-controls-beside-xp-comctl32.patch
+0004-ntdll-shell-comctl32-beside-exe.patch
+0005-uxtheme-display-properties-styles.patch
+0006-uxtheme-xp-export-ordinals.patch
+0007-user32-sys-colors-temp.patch
+0008-uxtheme-is-theme-active-by-policy.patch
+0009-winex11-keep-shell-window-down.patch
+0010-caption-small-icons.patch
+0011-user32-plain-comctl32-classes.patch
+0012-caption-min-max-animation.patch
+0013-winmm-expand-sound-paths.patch

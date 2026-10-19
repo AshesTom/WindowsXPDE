@@ -1,0 +1,65 @@
+From: XP Explorer
+Subject: [PATCH] ntdll: let a shell process's own comctl32 stand in for SxS redirection
+
+Purpose: run XP's Display Properties (rundll32 with desk.cpl and
+themeui.dll) on XP's common controls 6 alone, as XP Explorer runs, so that
+its property sheet, buttons and combo boxes are themed.
+Wine before (with patch 0016): XP's comctl32 beside the executable was
+loaded, but the modules' manifests also loaded Wine's common controls 6,
+which created the property sheet with classic buttons.
+Change: with the opt-in, when the executable's folder has a comctl32.dll,
+skip the SxS redirection for comctl32; the normal search finds that copy.
+Scope: only with WIN4WINE_EXTERNAL_SHELL and a comctl32.dll beside the
+executable (C:\xp\xp-explorer.exe and C:\windows\rundll32.exe here).
+---
+diff --git a/dlls/ntdll/loader.c b/dlls/ntdll/loader.c
+index 76276c7..8fd022e 100644
+--- a/dlls/ntdll/loader.c
++++ b/dlls/ntdll/loader.c
+@@ -3354,6 +3354,36 @@ static WCHAR *shell_comctl32(void)
+  *
+  * Find the file (or already loaded module) for a given dll name.
+  */
++/* With the external shell's opt-in, a comctl32.dll beside the executable
++ * (XP's common controls 6, as for XP Explorer and the rundll32 of XP's
++ * Display Properties) also stands in for the SxS redirection: otherwise a
++ * module's manifest loads Wine's common controls 6 beside XP's, and the
++ * shell's dialogs mix the two. */
++static BOOL shell_comctl32_beside_exe( const WCHAR *libname )
++{
++    static int beside = -1;
++    if (wcsicmp( libname, L"comctl32.dll" ) || !win4wine_external_shell()) return FALSE;
++    if (beside == -1)
++    {
++        const UNICODE_STRING *image = &NtCurrentTeb()->Peb->ProcessParameters->ImagePathName;
++        WCHAR path[MAX_PATH];
++        const WCHAR *slash;
++        size_t length = image->Length / sizeof(WCHAR);
++        beside = 0;
++        if (length && length < MAX_PATH - 13)
++        {
++            memcpy( path, image->Buffer, length * sizeof(WCHAR) );
++            path[length] = 0;
++            if ((slash = wcsrchr( path, '\\' )))
++            {
++                wcscpy( (WCHAR *)slash + 1, L"comctl32.dll" );
++                beside = RtlDoesFileExists_U( path ) ? 1 : 0;
++            }
++        }
++    }
++    return beside == 1;
++}
++
+ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname, UNICODE_STRING *nt_name,
+                                WINE_MODREF **pwm, HANDLE *mapping, SECTION_IMAGE_INFORMATION *image_info,
+                                struct file_id *id, BOOL *redirected, BOOL find_loaded )
+@@ -3371,7 +3401,8 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname, UNI
+         status = find_apiset_dll( libname, &fullname );
+         if (status == STATUS_DLL_NOT_FOUND) return status;
+ 
+-        if (status)
++        if (status && shell_comctl32_beside_exe( libname )) status = STATUS_SXS_KEY_NOT_FOUND;
++        else if (status)
+         {
+             status = find_actctx_dll( libname, &fullname );
+             if (status == STATUS_SUCCESS) *redirected = TRUE;
