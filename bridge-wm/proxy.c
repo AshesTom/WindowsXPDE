@@ -749,11 +749,15 @@ static HWND previous_tray;
 static DWORD previous_pid;
 static BOOL attempted;
 
-/* shell_layout runs on a 200 ms timer only while a visible taskbar awaits it. */
+/* shell_layout runs on a 200 ms timer only while a visible taskbar awaits it.
+ * Windows 7's taskbar lays itself out, and its Start button is not a child of
+ * the taskbar, so it never had the controls waited for: the timer ran for the
+ * whole session, waking the proxy and wineserver five times a second. */
 static BOOL shell_layout_pending(void)
 {
     HWND tray = FindWindowW(L"Shell_TrayWnd", NULL);
     DWORD pid = 0;
+    if (windows7_shell()) return FALSE;
     if (!tray || !IsWindowVisible(tray)) return FALSE;
     GetWindowThreadProcessId(tray, &pid);
     return !attempted || tray != previous_tray || pid != previous_pid;

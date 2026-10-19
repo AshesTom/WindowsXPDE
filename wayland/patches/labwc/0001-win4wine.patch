@@ -53,7 +53,12 @@ As bridge-wm does, also for Windows 7's shell:
   an application under one taskbar button of Windows 7's and gives them
   that application's jump list title and pinning (each window had a
   button of its own).
+- Frames are drawn no more often than the output refreshes. A display
+  that ends page flips at once (a virtual machine's VGA) drew a frame for
+  each change: 77 a second while a window was dragged on a 60 Hz output,
+  a CPU busy with software rendering into its framebuffer.
 ---
+ include/labwc.h            |    4 +
  include/ssd.h              |    2 +
  include/view.h             |    5 +
  include/win4wine.h         |  116 +++
@@ -66,7 +71,7 @@ As bridge-wm does, also for Windows 7's shell:
  src/input/cursor.c         |   20 +-
  src/input/keyboard.c       |   13 +
  src/meson.build            |    2 +
- src/output.c               |    7 +
+ src/output.c               |   63 ++
  src/overlay.c              |    7 +
  src/placement.c            |    6 +-
  src/resize-outlines.c      |    2 +-
@@ -80,8 +85,23 @@ As bridge-wm does, also for Windows 7's shell:
  src/xwayland-scale.c       |  566 +++++++++++
  src/xwayland-unmanaged.c   |   48 +-
  src/xwayland.c             |  310 ++++--
- 26 files changed, 3472 insertions(+), 99 deletions(-)
+ 27 files changed, 3532 insertions(+), 99 deletions(-)
 
+diff --git a/include/labwc.h b/include/labwc.h
+index d7f4321..e4334eb 100644
+--- a/include/labwc.h
++++ b/include/labwc.h
+@@ -423,6 +423,10 @@ struct output {
+ 
+ 	bool leased;
+ 	bool gamma_lut_changed;
++
++	/* win4wine: when the last frame was drawn, and the timer of a deferred one */
++	struct timespec last_frame;
++	struct wl_event_source *frame_timer;
+ };
+ 
+ #undef LAB_NR_LAYERS
 diff --git a/include/ssd.h b/include/ssd.h
 index 5cbac60..2500f57 100644
 --- a/include/ssd.h
@@ -603,7 +623,7 @@ index 40cf0f6..9864bf4 100644
  endif
  
 diff --git a/src/output.c b/src/output.c
-index 2d0368a..5b366f6 100644
+index 2d0368a..49be2cb 100644
 --- a/src/output.c
 +++ b/src/output.c
 @@ -23,6 +23,8 @@
@@ -615,7 +635,84 @@ index 2d0368a..5b366f6 100644
  #include "layers.h"
  #include "node.h"
  #include "output-state.h"
-@@ -575,7 +577,11 @@ output_init(struct server *server)
+@@ -104,6 +106,50 @@ output_apply_gamma(struct output *output)
+ 	wlr_output_state_finish(&pending);
+ }
+ 
++/* win4wine: the deferred frame is due */
++static int
++handle_frame_timer(void *data)
++{
++	struct output *output = data;
++	wlr_output_schedule_frame(output->wlr_output);
++	return 0;
++}
++
++/*
++ * win4wine: whether a frame now would come sooner than the output's refresh
++ * allows; if so, one is scheduled for when it does. A display that ends page
++ * flips at once (no vertical blank, as a virtual machine's VGA) otherwise
++ * draws a frame for each change, more often than it shows them: dragging a
++ * window drew 77 frames a second on a 60 Hz output, and with software
++ * rendering into its framebuffer that kept a CPU busy. Where page flips wait
++ * for the vertical blank, frames are never sooner and nothing changes.
++ */
++static bool
++output_frame_too_soon(struct output *output, const struct timespec *now)
++{
++	int refresh = output->wlr_output->refresh; /* mHz */
++	if (refresh <= 0 || (!output->last_frame.tv_sec && !output->last_frame.tv_nsec)) {
++		return false;
++	}
++	int64_t interval = 1000000000000LL / refresh;
++	int64_t elapsed = (now->tv_sec - output->last_frame.tv_sec) * 1000000000LL
++		+ (now->tv_nsec - output->last_frame.tv_nsec);
++	/* a little early is on time: the next vertical blank is the same */
++	int64_t wait = interval - elapsed - 1000000;
++	if (wait <= 0) {
++		return false;
++	}
++	if (!output->frame_timer) {
++		output->frame_timer = wl_event_loop_add_timer(
++			output->server->wl_event_loop, handle_frame_timer, output);
++	}
++	if (output->frame_timer) {
++		wl_event_source_timer_update(output->frame_timer, (int)((wait + 999999) / 1000000));
++		return true;
++	}
++	return false;
++}
++
+ static void
+ output_frame_notify(struct wl_listener *listener, void *data)
+ {
+@@ -134,6 +180,14 @@ output_frame_notify(struct wl_listener *listener, void *data)
+ 		return;
+ 	}
+ 
++	struct timespec frame_time = { 0 };
++	clock_gettime(CLOCK_MONOTONIC, &frame_time);
++	if (!output_get_tearing_allowance(output)
++			&& output_frame_too_soon(output, &frame_time)) {
++		return;
++	}
++	output->last_frame = frame_time;
++
+ 	if (output->gamma_lut_changed) {
+ 		/*
+ 		 * We are not mixing the gamma state with
+@@ -169,6 +223,10 @@ output_destroy_notify(struct wl_listener *listener, void *data)
+ 	}
+ 	wl_list_remove(&output->link);
+ 	wl_list_remove(&output->frame.link);
++	if (output->frame_timer) {
++		wl_event_source_remove(output->frame_timer);
++		output->frame_timer = NULL;
++	}
+ 	wl_list_remove(&output->destroy.link);
+ 	wl_list_remove(&output->request_state.link);
+ 	seat_output_layout_changed(seat);
+@@ -575,7 +633,11 @@ output_init(struct server *server)
  static void
  output_update_for_layout_change(struct server *server)
  {
@@ -627,7 +724,7 @@ index 2d0368a..5b366f6 100644
  	session_lock_update_for_layout_change(server);
  
  	/*
-@@ -1006,6 +1012,7 @@ update_usable_area(struct output *output)
+@@ -1006,6 +1068,7 @@ update_usable_area(struct output *output)
  				output->wlr_output, &output->usable_area);
  		}
  	}
