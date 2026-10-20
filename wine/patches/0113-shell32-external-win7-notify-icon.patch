@@ -9,12 +9,12 @@ NOTIFYICONDATAW with 32-bit handles and cbSize 956 (XP's 952 bytes and
 the balloon icon), then the caller's module file name (MAX_PATH
 characters). Measured with Windows 7 SP1 x64 shell32 and a decoy taskbar
 window, for callers' sizes 976 and 956 alike.
-Wine before: with the external shell, 0029 sends XP's 960 bytes, which
+Wine before: with the external shell, 0031 sends XP's 960 bytes, which
 Windows 7's taskbar refuses (the bridge's "Shell_NotifyIcon 0 for tray
 icon 1 failed").
 Change: with WIN4WINE_SHELL=win7, send Windows 7's layout, with the fields
 that the caller's size has and the process's module file name; the icon
-stays the caller's handle, as in 0029.
+stays the caller's handle, as in 0031.
 Evidence: a Linux tray icon (GTK StatusIcon) appears in Windows 7's
 notification area, and in its overflow window before "always show all
 icons" is set.

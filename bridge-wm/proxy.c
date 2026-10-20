@@ -92,7 +92,7 @@ static void geometry_command(HWND hwnd, unsigned long xid)
     write_command(data);
 }
 
-/* Whether Wine's move loop drags this window now (Wine 0033: "Win4WineSizeMove"
+/* Whether Wine's move loop drags this window now (Wine 0035: "Win4WineSizeMove"
  * without SIZE_MOVE_ENDED; see window snapping below). */
 static BOOL snap_moving(HWND hwnd)
 {
@@ -1464,7 +1464,7 @@ static void tray_start(void)
  * work area, Win+Up maximizes it and Win+Down restores or minimizes it.
  * Dragging a caption to the left or right edge of the screen snaps the
  * window there, to the top edge maximizes it; an outline shows where.
- * Wine's move loop reports drags (Wine 0033: EVENT_SYSTEM_MOVESIZESTART/END
+ * Wine's move loop reports drags (Wine 0035: EVENT_SYSTEM_MOVESIZESTART/END
  * and "Win4WineSizeMove") and gives a snapped window its size back when its
  * caption is dragged away ("Win4WineSnapRestore"), and restores a maximized
  * window dragged by its caption. Native clients' frames snap like Wine's

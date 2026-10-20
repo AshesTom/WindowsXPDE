@@ -11,8 +11,8 @@ prefix's: Japanese or English).
 Windows 7's x64 explorer runs as C:\\w7\\w7-explorer.exe, a 64-bit process.
 Its shell DLLs are kept in C:\\w7\\native and placed in system32, each with
 its MUI file in the language's folder (system32\\ja-JP\\shell32.dll.mui), as
-Windows 7 keeps them; Wine reads MUI files (patch 0089). Windows 7's Common
-Controls 6 is C:\\w7\\comctl32.dll, beside the shell (patch 0112); Wine's own
+Windows 7 keeps them; Wine reads MUI files (patch 0091). Windows 7's Common
+Controls 6 is C:\\w7\\comctl32.dll, beside the shell (patch 0115); Wine's own
 assembly stays every other program's. The files are placed as they are on
 the media, under the names the prefix uses. Every program of the prefix gets
 the DLLs that a file dialog needs (DllOverrides native,builtin: Windows
@@ -42,7 +42,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 16
+VERSION = 17
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -59,7 +59,7 @@ NAMES = (
 # session (the shell, and the file dialogs of Windows applications), but for
 # Wine's own programs (WINE_PROGRAMS) and those the user gives Wine's DLLs
 # back (win7.py builtin). Windows 7's DLLs get Windows 7's Common Controls 6
-# from C:\w7 (Wine 0112); the programs keep Wine's. These are what an
+# from C:\w7 (Wine 0115); the programs keep Wine's. These are what an
 # application's file dialog loads (explorerframe's browser, its views and
 # thumbnails).
 NATIVE = ('explorerframe', 'shell32', 'shlwapi', 'propsys', 'shdocvw', 'dui70', 'duser', 'profapi',
@@ -462,6 +462,20 @@ def start_menu(prefix, assets, user):
             prefix.run('attrib', '+s', path + '\\desktop.ini', check=False)
 
 
+def mark_folders(prefix, user):
+    """Mark the profile's and the Start menu's folders that have a desktop.ini as
+    system folders again: Windows 7 makes some of them read-only in the first
+    session (its known folders' attributes), which cleared the system attribute
+    before Wine kept the read-only one (Wine 0110), and their items lost their
+    localized names (Links' "Recent Places", the Start menu's "Startup")."""
+    profile_folders(prefix, user)
+    for root in ('ProgramData', f'users/{user}/AppData/Roaming'):
+        menu = prefix.path / 'drive_c' / root / 'Microsoft/Windows/Start Menu'
+        for ini in sorted(menu.rglob('desktop.ini')) if menu.is_dir() else ():
+            prefix.run('attrib', '+s', 'C:\\' + str(ini.parent.relative_to(prefix.path / 'drive_c')).replace('/', '\\'),
+                       check=False)
+
+
 def wow64_files(prefix, assets, ui):
     """The 32-bit shell DLLs (and Common Controls 6) in C:\\w7\\wow64, from extract/win7.py's SysWOW64 files."""
     wow64 = prefix.path / 'drive_c/w7/wow64'
@@ -590,7 +604,7 @@ def stage(dest, wine=None):
             # profile folders' attributes: their localized names were lost.
             prefix.place_files()
             try:
-                profile_folders(prefix, pwd.getpwuid(os.getuid()).pw_name)
+                mark_folders(prefix, pwd.getpwuid(os.getuid()).pw_name)
             finally:
                 prefix.stop()
     if wine_current and applied == [str(VERSION), current] and fonts_current(dest, prefix.lang):
@@ -624,6 +638,11 @@ def stage(dest, wine=None):
         try:
             user_profile(prefix, pwd.getpwuid(os.getuid()).pw_name)
             profile_folders(prefix, pwd.getpwuid(os.getuid()).pw_name)
+        finally:
+            prefix.stop()
+    if applied and applied[0].isdigit() and int(applied[0]) < 17:
+        try:
+            mark_folders(prefix, pwd.getpwuid(os.getuid()).pw_name)
         finally:
             prefix.stop()
     current = timestamp.read_text().strip() if timestamp.is_file() else ''

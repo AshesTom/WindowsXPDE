@@ -1207,7 +1207,7 @@ index cc5af20..906c3e6 100644
  		mappable_disconnect(&view->mappable);
 diff --git a/src/win4wine.c b/src/win4wine.c
 new file mode 100644
-index 0000000..d29fe65
+index 0000000..a1fdce3
 --- /dev/null
 +++ b/src/win4wine.c
 @@ -0,0 +1,2247 @@
@@ -1239,7 +1239,7 @@ index 0000000..d29fe65
 + *
 + * Native windows are xdg-shell toplevels (ids from 0x7f000000, which X never
 + * gives) and X11 windows that are not Wine's (their X window id). Wine's
-+ * windows carry _WIN4WINE_CLASS and _WIN4WINE_HWND (Wine patch 0019); this
++ * windows carry _WIN4WINE_CLASS and _WIN4WINE_HWND (Wine patch 0022); this
 + * reads them over an X connection of its own, without blocking on replies.
 + */
 +#include <assert.h>
