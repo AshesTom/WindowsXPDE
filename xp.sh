@@ -1,6 +1,7 @@
 #!/bin/bash
 # The XP shell's session in a window of the current desktop, for debugging
-# (Arch / CachyOS, no system files touched; scripts/setup.sh installs the real session).
+# (Arch / CachyOS, no system files touched; scripts/setup.sh installs the real session,
+# xp-explorer/xp.sh runs XP Explorer in a Wine virtual desktop instead).
 #
 #   ./xp.sh setup ISO       build Wine and the bridge, extract the XP files, create the prefix
 #   ./xp.sh run [WxH]       open the XP session in a Xephyr window (default: 1280x800)
@@ -64,6 +65,12 @@ setup)
         mkdir -p "$local/tmp"
         TMPDIR=$local/tmp python3 "$root/extract/extract.py" "$media" "$assets"
     fi
+    # Files that XP Explorer's additions brought, for an extraction made before them.
+    read -r -a added <<< "$(python3 "$root/extract/extract.py" --missing "$assets")"
+    if ((${#added[@]})); then
+        mkdir -p "$local/tmp"
+        TMPDIR=$local/tmp python3 "$root/extract/extract.py" "${added[@]/#/--only=}" "$media" "$assets"
+    fi
     if [[ ! -f $prefix/xp-shell.json ]]; then
         [[ ! -e $prefix ]] || { echo "$prefix exists but is incomplete; move it away and run again" >&2; exit 1; }
         theme=${XP_THEME:-luna}
@@ -73,6 +80,17 @@ setup)
         WINEPREFIX=$prefix WINE=$wine xvfb-run -a -s '-screen 0 1280x800x24' python3 "$root/prefix/display.py" \
             --theme "$theme" --menu "$([[ $theme == luna ]] && echo xp || echo classic)" >> "$local/prefix.log" 2>&1 ||
             { tail -20 "$local/prefix.log" >&2; echo 'Setting the theme failed; see .local/prefix.log' >&2; exit 1; }
+        stop_prefix
+    fi
+    # XP Explorer's additions (prefix/extras.py), as scripts/setup.sh adds them.
+    if ! python3 "$root/prefix/extras.py" "$prefix" --check "$wine"; then
+        stop_prefix
+        xvfb-run -a -s '-screen 0 1280x800x24' bash -c '
+            python3 "$1/prefix/extras.py" "$2" --wine "$3" &&
+            python3 "$1/session/linux_apps.py" "$2" --wine "$3" &&
+            python3 "$1/xp-explorer/scripts/pins.py" "$2" --wine "$3"' _ "$root" "$prefix" "$wine" \
+            >> "$local/prefix.log" 2>&1 ||
+            { tail -20 "$local/prefix.log" >&2; echo 'The XP Explorer additions failed; see .local/prefix.log' >&2; exit 1; }
         stop_prefix
     fi
     echo "Done. Start it with: $0 run"
