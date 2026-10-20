@@ -107,8 +107,8 @@ With a Windows 7 ISO, it can also run **Windows 7's shell** (the Windows 7 Basic
       The Windows 7 shell (<code>--shell win7</code>; experimental)
     </td>
     <td align="center" width="50%">
-      <img src="../../docs/images/screenshot-win7-small-en.png" alt="The Windows 7 shell with the taskbar's small icons" width="400" /><br />
-      The taskbar's "Use small icons" (applies at once)
+      <img src="../../docs/images/screenshot-win7-small-en.png" alt="The Windows 7 shell with the taskbar's small icons and labels" width="400" /><br />
+      The taskbar's "Use small icons" and "Never combine" (applies at once)
     </td>
   </tr>
   <tr>

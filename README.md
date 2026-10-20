@@ -75,8 +75,8 @@ Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベー�
       Windows 7 のシェル（<code>--shell win7</code>。実験的）
     </td>
     <td align="center" width="50%">
-      <img src="docs/images/screenshot-win7-small.png" alt="小さいアイコンのタスクバーの Windows 7 のシェル" width="400" /><br />
-      タスクバーの「小さいアイコンを使う」（すぐに切り替わります）
+      <img src="docs/images/screenshot-win7-small.png" alt="小さいアイコンでラベル付きのタスクバーの Windows 7 のシェル" width="400" /><br />
+      タスクバーの「小さいアイコンを使う」と「結合しない」（すぐに切り替わります）
     </td>
   </tr>
   <tr>
