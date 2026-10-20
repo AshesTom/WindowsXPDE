@@ -28,7 +28,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / '.local/bridge'
 # Bumped when apply() changes; setup.sh applies it again on existing prefixes.
-VERSION = '4'
+VERSION = '5'
 MARKER = '.xp-extras'
 HELPERS = ('xptray.exe', 'startmenu.exe', 'iexplore.exe', 'linux-links.exe')
 # XP's Regional and Language Options and what it loads (assets/intl), native
@@ -228,6 +228,17 @@ def apply(prefix, wine):
     subprocess.run([wine, r'C:\xp\bin\startmenu.exe', 'webview'], env=env, check=False)
     print("* XP's sounds, Explorer settings, image previews and Network Connections", flush=True)
     xpx.xp_defaults(assets, prefix, wine, folders=False)
+    stop(wine, prefix)
+    # Display Properties' themes: themeui's own registration (Theme.Manager,
+    # the visual style folders, .theme and .msstyles files), then the
+    # Windows Classic style's color schemes and the Windows XP and Windows
+    # Classic themes' visual style settings (prefix/themes.reg).
+    print("* XP's Windows XP and Windows Classic themes", flush=True)
+    # The Windows XP theme (luna.theme) names %WinDir%\web\wallpaper\Bliss.bmp.
+    xpx.wallpaper(assets, prefix)
+    subprocess.run([wine, r'C:\windows\syswow64\regsvr32.exe', '/s', r'C:\windows\system32\themeui.dll'],
+                   env=dict(env, WINEDLLOVERRIDES='themeui=n'), check=False)
+    regedit(wine, prefix, (ROOT / 'prefix/themes.reg').read_text(encoding='latin-1'))
     stop(wine, prefix)
     print('* Internet Explorer 6 and Windows Media Player 9', flush=True)
     xpx.install_ie(assets, prefix, wine)
