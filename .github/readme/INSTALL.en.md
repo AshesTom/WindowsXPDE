@@ -121,7 +121,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
   "**Windows 7 Shell (Wine, X11)**". It can be set up beside the XP and ReactOS shells (they share Wine and the bridge).
 - Windows 7's Aero cursors are installed; with `--greeter` the login screen is Windows 7's logon screen too.
 - `--theme` and `--wayland` are not available for it yet; `--dpi` is.
-- Only Japanese Windows 7 Professional SP1 has been tested. Details: [docs/windows7.md](../../docs/windows7.md) (Japanese).
+- Tested with Japanese Windows 7 Professional SP1. English was tried with that media's strings (MUI) replaced by those of the English language pack (KB2483139); English installation media itself has not been tried yet. The language follows the media, and English Windows 7 is set up with the English locale (`en_US.UTF-8`). Details: [docs/windows7.md](../../docs/windows7.md) (Japanese).
 
 ## 3. Log in
 

@@ -121,7 +121,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 - `--wayland` を付けると、Wayland のセッション「Windows 7 Shell (Wine, Wayland)」も入れます（X11 のセッション以上に実験的です。
   [docs/wayland.md](docs/wayland.md)）。
 - `--theme` はまだ使えません。`--dpi` は使えます。
-- 確かめたのは日本語版の Windows 7 Professional SP1 だけです。詳しくは [docs/windows7.md](docs/windows7.md) にあります。
+- 確かめたのは日本語版の Windows 7 Professional SP1 です。英語版は、日本語版のメディアの文字（MUI）を英語の言語パック（KB2483139）のものに入れ替えて確かめました（英語版のメディアそのものはまだ試していません）。言語はメディアから判断し、英語版では英語のロケール（`en_US.UTF-8`）で入れます。詳しくは [docs/windows7.md](docs/windows7.md) にあります。
 
 ## 3. ログインする
 

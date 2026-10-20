@@ -88,7 +88,7 @@ With a Windows 7 ISO, it can also run **Windows 7's shell** (the Windows 7 Basic
   up beside the XP shell.
 - **Windows 7 shell (optional, experimental)**: the session with Windows 7 SP1 x64's explorer (the Windows 7 Basic look; no Aero
   glass yet). The Start menu, taskbar, notification area and folder windows work, and Linux applications are grouped per
-  application on the taskbar. Only Japanese Windows 7 has been tested.
+  application on the taskbar. Tested with Japanese Windows 7, and in English with its strings replaced by the English language pack's.
 
 <table>
   <tr>
