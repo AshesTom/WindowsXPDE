@@ -354,7 +354,7 @@ class Session:
         log = (self.state / 'welcome.log').open('ab', buffering=0)
         self.logs.append(log)
         self.welcome = subprocess.Popen([sys.executable, str(ROOT / 'greeter/xp-splash.py'), mode,
-                                         '--dpi', str(self.dpi)],
+                                         '--dpi', str(self.dpi), '--assets', str(ROOT / '.local/assets')],
                                         stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
                                         start_new_session=True)
 

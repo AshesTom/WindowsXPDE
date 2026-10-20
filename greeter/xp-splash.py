@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Show XP's Welcome screen while the XP shell starts, or its log-off screen while the session ends.
 
-The session supervisor runs this. 'logon' shows the user's picture and
-"Applying your personal settings..." until it is terminated; 'logoff' shows
+The session supervisor runs this. 'logon' shows XP's big "welcome" until
+it is terminated; 'logoff' shows
 "Logging off..." and changes its line for each word read from stdin
 ('logoff', 'saving', 'shutdown'). It exits with status 2 when the Welcome
 screen's files are not set up (greeter/install.sh), so the session goes on
@@ -35,13 +35,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('logon', 'logoff'))
     parser.add_argument('--dpi', type=int, default=96, help="the XP shell's LogPixels")
+    parser.add_argument('--assets', help="extract/extract.py's output, without the greeter's configuration")
     args = parser.parse_args()
     try:
         import welcome
         import xdraw
         from Xlib import X, display
         cache = Path(os.environ.get('XDG_CACHE_HOME') or Path.home() / '.cache') / 'win4wine/welcome'
-        config, assets = welcome.setup(cache)
+        config, assets = welcome.setup(cache, args.assets)
     except Exception as e:  # Not set up: the session runs without it.
         print(f'xp-splash: {e}', file=sys.stderr)
         return 2
@@ -50,7 +51,7 @@ def main():
     picture = user_picture(entry.pw_name, entry.pw_dir) or welcome.default_picture(config, assets)
     screen = welcome.Screen(assets, [welcome.User(entry.pw_name, full_name or None, picture)], dpi=args.dpi)
     if args.mode == 'logon':
-        screen.mode, screen.selected = 'logon', 0
+        screen.mode = 'welcome'
     else:
         screen.mode = 'status'
     screen.status = assets.string('winlogon', STATUS[args.mode])

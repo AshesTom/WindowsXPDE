@@ -48,12 +48,17 @@ DIM = ((0.1435, 0.6198, 0.1571, -4.37), (0.0952, 0.6789, 0.1426, -3.11), (0.0722
 BLEND = {}
 
 
-def setup(cache):
+def setup(cache, assets=None):
     """The configuration and Assets, with fontconfig pointed at the XP fonts (before any text is drawn).
 
-    Raises an exception when anything the screen needs is missing."""
+    Without the greeter's configuration (greeter/install.sh), ASSETS, the
+    output of extract/extract.py, stands for it. Raises an exception when
+    anything the screen needs is missing."""
     import json
-    config = json.loads(CONFIG.read_text())
+    if CONFIG.is_file() or not assets:
+        config = json.loads(CONFIG.read_text())
+    else:
+        config = {'assets': str(assets)}
     root = Path(config['assets'])
     missing = [name for name in REQUIRED if not (root / name).is_file()]
     if missing:
@@ -555,8 +560,9 @@ class Screen:
     """The Welcome screen's state; draw() paints it for a WIDTH x HEIGHT screen.
 
     mode: 'list' (choose an account, maybe with the password box of the
-    selected one), 'logon' (Welcome, after a successful password) or 'status'
-    (centered logo and one line, for "Logging off..." and the like).
+    selected one), 'logon' (Welcome, after a successful password), 'welcome'
+    (the big "welcome" alone, as XP shows while the session starts) or
+    'status' (centered logo and one line, for "Logging off..." and the like).
     """
 
     def __init__(self, assets, users, dpi=96):
@@ -609,7 +615,10 @@ class Screen:
             left = width // 2 - 2 - panel - (panel - PANEL) // 2
         g['left'] = left
         g['divider'] = left + panel
-        shown = [self.selected] if self.mode == 'logon' else range(len(self.users))
+        if self.mode == 'welcome':
+            shown = []
+        else:
+            shown = [self.selected] if self.mode == 'logon' else range(len(self.users))
         g['shown'] = list(shown)
         top = center - px(ITEM) * len(g['shown']) // 2
         g['items'] = {i: top + px(ITEM) * k for k, i in enumerate(g['shown'])}
@@ -758,7 +767,18 @@ class Screen:
 
         # Left panel.
         right = g['left'] + panel
-        if self.mode == 'logon':
+        if self.mode == 'welcome':
+            # The word alone, a little right of the middle (measured on XP's screen:
+            # it starts about 44 pixels left of the middle at 96 DPI).
+            words = a.string('logonui', 7)
+            size = self.pt(int(a.string('logonui', 44) or 32))
+            layout = self.text.layout(words, size, bold=True, italic=True)
+            w, h = self.text.size(layout)
+            y = g['center'] - (h + px(3)) // 2
+            x = width // 2 - px(44)
+            self.text.draw(cr, layout, x + px(2), y + px(3), tint(SHADOW))
+            self.text.draw(cr, layout, x, y, tint(TEXT))
+        elif self.mode == 'logon':
             words = a.string('logonui', 7)
             size = self.pt(int(a.string('logonui', 44) or 32))
             layout = self.text.layout(words, size, bold=True, italic=True)
@@ -783,7 +803,7 @@ class Screen:
                            tint(TEXT))
 
         # Right panel.
-        if self.mode != 'status':
+        if self.mode not in ('status', 'welcome'):
             blit(a.bitmap('logonui', 124, dimmed=dimmed), g['divider'], top_band, px(1), height - bottom_band - top_band)
             for i, top in g['items'].items():
                 self.draw_user(cr, g, i, top, tint, blit, dimmed)
