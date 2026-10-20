@@ -91,6 +91,22 @@ wlroots は `SOURCE/subprojects/wlroots` に `wayland/patches/wlroots` を当て
 | `tests/xp_language.py [ja=ASSETS] [en=ASSETS]` | 日本語版と英語版の XP で変わるレジストリの設定と、取り出したファイルの言語の判断 |
 | `tests/*.c` | 公開 API のプローブ。同じものを Wine と実際の XP で動かして数値を比べます（DPI は `dpi-metrics.c`、`char-widths-dpi.c`、`caption-glyph-dpi.c`、`text-bits-dpi.c`） |
 
+## ウィンドウの中で試す（`xp.sh`）
+
+Arch / CachyOS などで、いま使っているデスクトップ（KDE など）を離れずに XP のセッションを試すための入口です。
+システムのファイルには触れません（必要なパッケージは足りないときに表示します）。
+
+```sh
+./xp.sh setup /path/to/WindowsXP-SP3.iso   # Wine、bridge、取り出し、prefix（setup.sh と同じ .local/ に作る）
+./xp.sh run 1280x800                       # Xephyr の窓の中で本物のセッション（supervisor.py）を動かす
+./xp.sh log proxy                          # 動いているセッションのログ（既定は xp-shell）
+./xp.sh kill                               # セッションと prefix のプロセスを止める
+```
+
+`run` のセッションは自分の D-Bus で動き（tray.py がデスクトップの StatusNotifierWatcher を取らない）、スタートメニューの
+「終了」はその窓のセッションを終えるだけです（`shutdown_command` を `true` にします）。`XP_PREFIX`、`XP_LOG`、`XP_DISPLAY`、
+`XP_WINEDEBUG` で、別の prefix、ログの場所、X のディスプレイ、Wine のデバッグ チャンネルを選べます。
+
 ## 手作業での導入
 
 `setup.sh` を使わずに入れるときは、Wine、bridge、取り出したファイル、prefix を上と同じに作り、`~/.config/win4wine/session.json` を
