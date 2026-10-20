@@ -43,6 +43,9 @@
   （`WIN4WINE_COMPOSITED`）では合成しないようにした。0079 の PaintMonitor をモニターごとの壁紙にし、0109 で Windows 7 の
   シェルのプロセスには DwmIsCompositionEnabled を FALSE にした。番号と本数は変えていない。labwc のパッチを広げ、wlroots に
   0003 を加えた。
+- 2026-10-19 に XP Explorer（`xp-explorer/`）の系列の 13 本を末尾に移した（0127〜0139、旧番号は XP Explorer の 0001〜0013）。
+  XP のセッションも XP Explorer の追加（`prefix/extras.py`）を使うため。wlroots に 0004（libinput 1.30 以降の新しいスイッチ）を加えた。
+- 同じ日に、XP の地域と言語のオプション（キーボードの入力言語）のために 0140〜0142 を末尾に加えた。
 
 それ以前の文書（`docs/history/investigations.md` の各節と、Git 管理外の開発の記録）に出てくるパッチ番号は、書いた時点の番号（段階 2 より前の旧番号、
 段階 2〜4 の 10.0 版の番号、段階 5 の 11.0 版の番号、または段階 6 の番号）。下の対応表で今の番号に読み替える。

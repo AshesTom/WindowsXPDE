@@ -1,0 +1,30 @@
+From: win4wine
+Subject: [PATCH] wineboot: do not run the StartUp folder's desktop.ini
+
+Purpose: no Notepad with desktop.ini when the session starts after a Wine
+update.
+Windows behavior: the StartUp folder's desktop.ini (its localized name,
+which the XP prefix writes as XP's setup does: prefix/stage.py) is the
+folder's own customization, not a startup item.
+Wine before: wineboot ran every file of the folder, hidden ones included, so
+"wineboot -u" (prefix/stage.py after a Wine update) opened desktop.ini in
+Notepad.
+Change: skip desktop.ini.
+Scope: every Wine prefix.
+---
+ programs/wineboot/wineboot.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/programs/wineboot/wineboot.c b/programs/wineboot/wineboot.c
+--- a/programs/wineboot/wineboot.c
++++ b/programs/wineboot/wineboot.c
+@@ -1750,6 +1750,9 @@
+ 	    hr = StrRetToBufW(&strret, pidlItem, wszCommand, MAX_PATH);
+ 	    if (FAILED(hr))
+ 		WINE_TRACE("Unable to parse display name.\n");
++	    /* The folder's own customization (its name and icon), as Windows skips it. */
++	    else if (!wcsicmp(PathFindFileNameW(wszCommand), L"desktop.ini"))
++		WINE_TRACE("Skipping %s.\n", wine_dbgstr_w(wszCommand));
+ 	    else
+             {
+                 HINSTANCE hinst;

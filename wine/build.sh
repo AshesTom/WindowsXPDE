@@ -11,7 +11,7 @@ if [[ ! -d $src/.git ]]; then
 fi
 [[ $(git -C "$src" rev-parse HEAD) == "$WINE_COMMIT" ]] || { echo 'Unexpected upstream commit' >&2; exit 1; }
 echo '>>> Patching'
-# WINE_PATCHES: another series (xp-explorer/xp.sh adds its own patches to this one)
+# WINE_PATCHES: another series
 series=${WINE_PATCHES:-$root/wine/patches}
 patches=$(python3 "$root/wine/patch-state.py" --digest "$series")
 # This checkout's own source has the series it was last patched with; when

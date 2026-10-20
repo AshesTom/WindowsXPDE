@@ -86,13 +86,13 @@ def check_offline(base):
     links = {k: v['link'] for k, v in wanted.items()}
     terminal = 'x-terminal-emulator' if linux_apps.shutil.which('x-terminal-emulator') else 'xterm'
     expected = {
-        'editor.desktop': 'アクセサリ\\エディター (Linux).lnk',
-        'browser.desktop': 'インターネット\\Browser (Linux).lnk',
-        'top.desktop': 'アクセサリ\\システム ツール\\Top (Linux).lnk',
-        'plain.desktop': 'Plain_ one (Linux).lnk',
-        'twin.desktop': 'Plain_ one (Linux 2).lnk',
-        'kde-sub.desktop': 'ゲーム\\Sub (Linux).lnk',
-        'launch.desktop': 'アクセサリ\\Launch (Linux).lnk',
+        'editor.desktop': 'アクセサリ\\エディター.lnk',
+        'browser.desktop': 'インターネット\\Browser.lnk',
+        'top.desktop': 'アクセサリ\\システム ツール\\Top.lnk',
+        'plain.desktop': 'Plain_ one.lnk',
+        'twin.desktop': 'Plain_ one (2).lnk',
+        'kde-sub.desktop': 'ゲーム\\Sub.lnk',
+        'launch.desktop': 'アクセサリ\\Launch.lnk',
     }
     assert links == expected, links
     assert wanted['editor.desktop']['arguments'] == 'true', wanted['editor.desktop']
@@ -152,12 +152,12 @@ def check_wine(base, wine, system, marker):
         before = set(programs.rglob('*'))
         assert menu.sync() == (7, 0)
         links = sorted(str(p.relative_to(programs)) for p in programs.rglob('*.lnk'))
-        assert len(links) == 7 and 'アクセサリ/エディター (Linux).lnk' in links, links
+        assert len(links) == 7 and 'アクセサリ/エディター.lnk' in links, links
         assert (prefix / linux_apps.STATE / 'icons/editor.desktop.ico').is_file()
         assert menu.sync() == (0, 0)
         # A shortcut opened through the Windows shell runs its Linux command.
         subprocess.run([str(wine), 'start', 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\'
-                        'アクセサリ\\Launch (Linux).lnk'], env=env, check=True, timeout=60)
+                        'アクセサリ\\Launch.lnk'], env=env, check=True, timeout=60)
         wait_for(marker.is_file, 'the launched Linux command')
         assert marker.read_text().strip() == 'unset', marker.read_text()
         print('linux-apps: shortcuts written once; a shortcut starts its Linux program')
@@ -166,12 +166,12 @@ def check_wine(base, wine, system, marker):
         watcher = subprocess.Popen([sys.executable, str(ROOT / 'session/linux_apps.py'), str(prefix),
                                     '--wine', str(wine), '--watch'], env=env)
         entry(system / 'applications', 'added.desktop', 'Name=Added\nExec=true\nCategories=Office;\n')
-        wait_for((programs / 'オフィス' / 'Added (Linux).lnk').is_file, 'the added entry')
+        wait_for((programs / 'オフィス' / 'Added.lnk').is_file, 'the added entry')
         for name in ('added.desktop', 'kde/sub.desktop', 'editor.desktop', 'launch.desktop'):
             (system / 'applications' / name).unlink()
         wait_for(lambda: not (programs / 'オフィス').exists() and not (programs / 'ゲーム').exists(),
                  'removed entries and their folders')
-        assert mine.is_file() and not (programs / 'アクセサリ' / 'エディター (Linux).lnk').exists()
+        assert mine.is_file() and not (programs / 'アクセサリ' / 'エディター.lnk').exists()
         assert sorted(json.loads((prefix / linux_apps.STATE / 'state.json').read_text())['links']) == \
             ['browser.desktop', 'plain.desktop', 'top.desktop', 'twin.desktop']
         print('linux-apps: --watch follows added and removed entries')

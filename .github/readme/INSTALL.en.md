@@ -124,7 +124,7 @@ Restart the display manager (or reboot).
 | To | Do |
 |---|---|
 | toggle Japanese input | Ctrl+Space or Zenkaku/Hankaku, or click the icon in the notification area |
-| start a Linux application | Start → All Programs (names end in "(Linux)") |
+| start a Linux application | Start → All Programs |
 | install a Windows application | `wine setup.exe` in a terminal; the session's `PATH` starts with this Wine |
 | open the Start menu | the Windows key, Ctrl+Esc |
 | Run / Explorer | Win+R / Win+E |

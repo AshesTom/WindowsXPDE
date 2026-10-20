@@ -1,7 +1,7 @@
 #!/bin/bash
 # XP Explorer: Windows XP's own shell (from your ISO) in a Wine virtual desktop.
 #
-#   ./xp.sh wine            build win4wine's patched Wine, with XP Explorer's patches, into .local (optional, 20-40 min)
+#   ./xp.sh wine            build win4wine's patched Wine into .local (optional, 20-40 min)
 #   ./xp.sh setup ISO       extract the XP files, build the helpers, create the prefix
 #   ./xp.sh run [WxH]       open the XP desktop in a window (default: 1600x900, a mode of your screen)
 #   ./xp.sh apps            refresh the Linux applications in All Programs
@@ -38,27 +38,14 @@ wine)
     # Wine's configure cannot take a path with spaces: build outside the project.
     out=${XDG_DATA_HOME:-$HOME/.local/share}/xp-explorer
     mkdir -p "$out" "$root/.local"
-    # win4wine's series (wine/patches), then XP Explorer's own (wine/patches here).
-    series=$out/patches
-    rm -rf "$series"
-    mkdir -p "$series"
-    while read -r name; do
-        [[ -n $name && $name != \#* ]] || continue
-        ln -s "$repo/wine/patches/$name" "$series/$name"
-        echo "$name"
-    done < "$repo/wine/patches/series" > "$series/series"
-    while read -r name; do
-        [[ -n $name && $name != \#* ]] || continue
-        ln -s "$root/wine/patches/$name" "$series/xp-explorer-$name"
-        echo "xp-explorer-$name"
-    done < "$root/wine/patches/series" >> "$series/series"
+    # win4wine's series (../wine/patches), which includes XP Explorer's patches.
     # The source keeps its patches; another series starts again from upstream.
-    digest=$(python3 "$repo/wine/patch-state.py" --digest "$series")
+    digest=$(python3 "$repo/wine/patch-state.py" --digest "$repo/wine/patches")
     if [[ -d $out/wine-upstream/.git && $(cat "$out/wine-upstream/.git/xp-explorer-patches" 2>/dev/null) != "$digest" ]]; then
         git -C "$out/wine-upstream" reset -q --hard
         git -C "$out/wine-upstream" clean -q -f -d
     fi
-    WINE_PATCHES=$series WINE_SOURCE=$out/wine-upstream WINE_BUILD=$out/wine-build WINE_INSTALL=$out/wine-install \
+    WINE_SOURCE=$out/wine-upstream WINE_BUILD=$out/wine-build WINE_INSTALL=$out/wine-install \
         JOBS=${JOBS:-$(nproc)} "$repo/wine/build.sh"
     echo "$digest" > "$out/wine-upstream/.git/xp-explorer-patches"
     ln -sfn "$out/wine-install" "$root/.local/wine-install"

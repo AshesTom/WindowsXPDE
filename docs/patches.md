@@ -240,6 +240,36 @@ XP と ReactOS のシェルのための変更のうち、Windows 7 のシェル�
 | 0125 | user32: XP のメッセージ ボックスの配置（画素で決めてダイアログ単位に丸める。実機の 30 通りと一致）と、DrawFocusRect の市松模様（DC の文字色と背景色との XOR） | あり（XP のセッション） |
 | 0126 | ntdll: ReactOS のシェル（ros-explorer.exe）が横の `C:\ros\comctl32.dll`（ReactOS の Common Controls 6）を使う（0110 と同じ仕組み）。ほかのプログラムは Wine のアセンブリのまま（以前は置き換えていて、32bit のアプリのボタンなどが作られなかった） | あり（`WIN4WINE_SHELL=reactos`） |
 
+### XP Explorer の追加（0127〜0139）
+
+XP Explorer（`xp-explorer/`）が自分の系列として当てていたパッチです。XP のセッションも同じ追加（`prefix/extras.py`）を使うので、
+この系列の末尾に移しました（旧番号は XP Explorer の 0001〜0013）。
+
+| 番号 | 内容 | opt-in |
+|---|---|---|
+| 0127 | apphelp, advapi32: XP の shell32 がプログラムを起動する前に呼ぶ確認（ApphelpCheckExe、SaferGetLevelInformation など） | なし |
+| 0128 | uxtheme: XP の画面のプロパティ（themeui.dll）が使う Classic の metrics の関数と 96 DPI のテーマの metrics | なし |
+| 0129 | user32: プログラムの横に XP の comctl32 があるとき、シェルのコントロールにテーマを付ける（画面のプロパティの Luna のボタン） | あり（XP のセッション） |
+| 0130 | ntdll: シェルのプロセスの横の comctl32 が SxS のリダイレクトの代わりになる（rundll32 の画面のプロパティ） | あり（XP のセッション） |
+| 0131 | uxtheme: 画面のプロパティのテーマの見本（OpenThemeDataFromFile、DrawNCPreview）と SetSystemVisualStyle | なし |
+| 0132 | uxtheme: 名前のある export に XP の ordinal を付ける | なし |
+| 0133 | user32: SetSysColorsTemp（呼んだプロセスの中だけ） | なし |
+| 0134 | uxtheme: IsThemeActiveByPolicy を ordinal 73 に | なし |
+| 0135 | winex11: シェルのデスクトップの窓がフォーカスを得ても上に出さない | あり（XP のセッション） |
+| 0136 | win32u, uxtheme: キャプションに 16x16 のアイコン（アイコンのリソースから） | なし |
+| 0137 | user32: 横に XP の comctl32 があるプロセスで、コモン コントロールのクラス名をそのまま使う（IE6 のツール バー） | あり（XP のセッション） |
+| 0138 | user32, win32u: 最小化・最大化・元に戻すときの XP のキャプションのアニメーション（SPI_GETANIMATION） | あり（XP のセッション） |
+| 0139 | winmm: サウンドのパスの環境変数を展開する（XP のサウンド スキーム） | なし |
+
+### XP の地域と言語のオプションと太字（0140〜0143）
+
+| 番号 | 内容 | opt-in |
+|---|---|---|
+| 0140 | kernelbase: GetGeoInfo の GEO_FRIENDLYNAME と GEO_OFFICIALNAME（その国のロケールの英語の国名）。XP の intl.cpl の「場所」の一覧が空になり、今の場所を探して止まらなかった | なし |
+| 0141 | win32u: 外部シェルの入力言語を `HKCU\Keyboard Layout\Preload`（と Substitutes）から。GetKeyboardLayoutList と既定のレイアウト、ほかの言語への ActivateKeyboardLayout。Preload の 1 番目は無いときだけ書く（XP の input.dll が書いた値を残す）。セッションの XKB も同じ値から（`session/keyboard.py`） | 一部あり（XP のセッション） |
+| 0142 | wineboot: スタートアップのフォルダの desktop.ini を実行しない（Wine の更新の後、メモ帳で開いていた） | なし |
+| 0143 | win32u: XP の太字の模倣。太字の無いフォント（Franklin Gothic Medium の「作業する分野を選びます」など）の字形を右に 1 ピクセル太らせる（XP の GDI と同じ。FreeType の ppem/24 の太らせでは大きな字が太すぎた） | あり（XP のセッション） |
+
 ## 並び順の考え方
 
 まとまりは「opt-in の要らない修正 → XP の部品が呼ぶ API → 外部シェルの基盤 → bridge との連携 → ウィンドウ → 文字と画素 →

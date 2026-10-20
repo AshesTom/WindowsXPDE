@@ -11,7 +11,8 @@
 > [!IMPORTANT]
 > **XP Explorer is a fork of [win4wine](https://github.com/mikuta0407/win4wine) by mikuta0407**, trimmed down
 > and extended with quality-of-life additions. It lives in `xp-explorer/` of this win4wine checkout and builds
-> on its Wine patches (`../wine/patches`), so it gets win4wine's XP fixes as they land. All the hard work (the Wine patches, the ISO extraction, the
+> on its Wine patches (`../wine/patches`), so it gets win4wine's XP fixes as they land. Its own Wine patches are
+> part of that series (0127 to 0139), and win4wine's XP Shell session gets its additions too (`../prefix/extras.py`). All the hard work (the Wine patches, the ISO extraction, the
 > prefix profile, the Linux applications in the Start menu) is theirs.
 > Like win4wine, this is a **personal, experimental project**. It has only been tried on CachyOS with KDE Plasma,
 > inside a Wine virtual desktop.
@@ -33,7 +34,7 @@ The desktop opens in a window. Its size must be a resolution your screen support
 
 | Command | Does |
 |---|---|
-| `./xp.sh wine` | builds Wine 11.0 with win4wine's patches (`../wine/patches`) and XP Explorer's 13 (`wine/patches`) |
+| `./xp.sh wine` | builds Wine 11.0 with win4wine's patches (`../wine/patches`, XP Explorer's among them) |
 | `./xp.sh setup ISO` | extracts the XP files, builds the helpers, creates the prefix |
 | `./xp.sh run [WxH]` | opens the XP desktop |
 | `./xp.sh apps` | refreshes the Linux applications in All Programs |
@@ -106,12 +107,12 @@ into `.local/`, which Git ignores.
 - **XP's Display Properties** (Themes, Desktop, Screen Saver, Appearance, Settings) from your ISO's `desk.cpl`
   and `themeui.dll`, so the wallpaper can be changed.
 - **The folder task pane** (System Tasks, Other Places, Details) with your ISO's DirectUser (`duser.dll`).
-- **Thirteen more Wine patches** on top of win4wine's series, each described at the top of its file in
-  `wine/patches` (applied after `../wine/patches`): `0001` (apphelp/advapi32 checks XP's shell32 makes before
-  running a program), `0002`, `0005`, `0006` and `0008` (uxtheme exports and ordinals XP's Display Properties
-  uses), `0003`, `0004` and `0011` (XP's common controls beside the program), `0007` (`SetSysColorsTemp`),
-  `0009` (the desktop window stays under the taskbar), `0010` (small caption icons), `0012` (the caption
-  animation) and `0013` (sound paths with environment variables). The message pump hook for DirectUser is now
+- **Thirteen more Wine patches**, at the end of win4wine's series (`../wine/patches`), each described at the
+  top of its file: `0127` (apphelp/advapi32 checks XP's shell32 makes before running a program), `0128`,
+  `0131`, `0132` and `0134` (uxtheme exports and ordinals XP's Display Properties uses), `0129`, `0130` and
+  `0137` (XP's common controls beside the program), `0133` (`SetSysColorsTemp`), `0135` (the desktop window
+  stays under the taskbar), `0136` (small caption icons), `0138` (the caption animation) and `0139` (sound
+  paths with environment variables). The message pump hook for DirectUser is now
   win4wine's own (its patch 0080).
 - **win4wine's later XP fixes**, through its series: XP's menu bar, control and message box metrics, system
   icons (from your ISO's `user32.dll`, kept as `C:\xp\res\user32-xp.dll`), bitmap font metrics, and more.
@@ -155,7 +156,6 @@ xp.sh run
 | Path | Contents |
 |---|---|
 | `xp.sh` | the entry point |
-| `wine/patches/` | XP Explorer's Wine patches, applied after win4wine's (`../wine/`) |
 | `scripts/extract.py`, `scripts/media.py` | extracts the needed files from the ISO (win4wine) |
 | `scripts/prefix.py` | creates the prefix and its registry profile (trimmed from win4wine's `prefix/`) |
 | `scripts/linux_apps.py` | Linux applications in All Programs (win4wine) |
