@@ -101,6 +101,16 @@ With a Windows 7 ISO, it can also run **Windows 7's shell** (the Windows 7 Basic
       The ReactOS shell (<code>--shell reactos</code>; no XP ISO needed)
     </td>
   </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="../../docs/images/screenshot-win7-en.png" alt="The Windows 7 shell's Start menu with Linux and Windows applications" width="400" /><br />
+      The Windows 7 shell (<code>--shell win7</code>; experimental)
+    </td>
+    <td align="center" width="50%">
+      <img src="../../docs/images/screenshot-win7-logon.png" alt="Choosing a user on the Windows 7 logon screen" width="400" /><br />
+      The Windows 7 logon screen (<code>--greeter</code>)
+    </td>
+  </tr>
 </table>
 
 ## Caution
@@ -142,5 +152,5 @@ The design documents are in Japanese; [docs/README.md](../../docs/README.md) lis
 
 [LGPL-2.1-or-later](../../LICENSE), the same as Wine. It covers only the code and patches in this repository,
 except `wayland/patches/labwc/` (GPL-2.0-only, as labwc) and `wayland/patches/wlroots/` (MIT, as wlroots).
-The Windows XP and Windows 7 files, and the XP screens in the screenshot, are copyrighted by Microsoft.
+The Windows XP and Windows 7 files, and the XP and Windows 7 screens in the screenshots, are copyrighted by Microsoft.
 The ReactOS files that the ReactOS shell uses are under ReactOS's licenses (GPL-2.0-or-later; most of its DLLs LGPL-2.1-or-later).

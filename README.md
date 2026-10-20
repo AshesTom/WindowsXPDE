@@ -69,6 +69,16 @@ Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベー�
       ReactOS のシェル（<code>--shell reactos</code>。XP の ISO は要りません）
     </td>
   </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/images/screenshot-win7.png" alt="Windows 7 のシェルのスタートメニューと、Linux と Windows のアプリ" width="400" /><br />
+      Windows 7 のシェル（<code>--shell win7</code>。実験的）
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/images/screenshot-win7-logon.png" alt="Windows 7 のログオン画面で利用者を選ぶところ" width="400" /><br />
+      Windows 7 のログオン画面（<code>--greeter</code>）
+    </td>
+  </tr>
 </table>
 
 ## 試してみる
@@ -142,5 +152,5 @@ LightDM ─ XP のようこそ画面 (greeter/)
 
 [LGPL-2.1-or-later](LICENSE)（Wine と同じ）です。対象はこのリポジトリのコードとパッチだけです。
 ただし `wayland/patches/labwc/` は labwc と同じ GPL-2.0-only、`wayland/patches/wlroots/` は wlroots と同じ MIT です。
-Windows XP と Windows 7 のファイルと、スクリーンショットに写っている XP の画面の著作権は Microsoft にあります。
+Windows XP と Windows 7 のファイルと、スクリーンショットに写っている XP と Windows 7 の画面の著作権は Microsoft にあります。
 ReactOS のシェルで使う ReactOS のファイルは、ReactOS のライセンス（GPL-2.0-or-later、DLL の多くは LGPL-2.1-or-later）に従います。
