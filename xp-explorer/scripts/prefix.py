@@ -336,7 +336,7 @@ def stage(prefix):
 
 
 # Bumped when xp_defaults() changes; xp.sh runs it again on existing prefixes.
-DEFAULTS_VERSION = '10'
+DEFAULTS_VERSION = '11'
 EXPLORER = r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer'
 # Wine's Unix root folder ("/"), a desktop item of Wine's shell namespace
 UNIX_ROOT = '{9D20AAE8-0625-44B0-9CA7-71889C2254D9}'
@@ -408,7 +408,10 @@ def xp_defaults(assets, prefix, wine, folders=True):
                                         (EXPLORER.replace('SOFTWARE', 'Software') + r'\User Shell Folders',)))
     if (inf / 'hivesft.inf').is_file():
         hivesft = (inf / 'hivesft.inf').read_text(encoding='latin-1')
-        texts.append(xpreg.hive_entries(hivesft, 'HKLM', (EXPLORER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Shell Extensions'),
+        # Controls Folder\Desk: with its page handler, XP's Display Properties
+        # applies visual styles and color schemes (themeui's ApplyPressed).
+        texts.append(xpreg.hive_entries(hivesft, 'HKLM', (EXPLORER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Shell Extensions',
+                                                          r'SOFTWARE\Microsoft\Windows\CurrentVersion\Controls Folder\Desk'),
                                         (EXPLORER + r'\Shell Folders', EXPLORER + r'\User Shell Folders')))
     # Prefixes made before these shell classes were included need them too.
     # In particular, XP's Start menu Run item is registered as a shell class;
