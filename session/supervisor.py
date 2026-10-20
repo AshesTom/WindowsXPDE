@@ -21,23 +21,10 @@ from xml.sax.saxutils import escape
 from Xlib import X, display, error
 
 import dpi
+from wineenv import SHELLS, environment
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = Path.home() / '.config/win4wine/session.json'
-# The shells a session can start. The prefix is made for one of them
-# (prefix/create.py or prefix/reactos.py); its staging step runs before each
-# start. XP's Welcome screen uses images extracted from the XP media.
-SHELLS = {
-    'xp': dict(marker='xp-shell.json', module='xp-explorer', command=r'C:\xp\xp-explorer.exe',
-               stage=('prefix/stage.py',), welcome='greeter/xp-splash.py', folders=False, name=None, switcher=None),
-    'reactos': dict(marker='reactos-shell.json', module='ros-explorer', command=r'C:\ros\ros-explorer.exe',
-                    stage=('prefix/reactos.py', 'stage'), welcome=None, folders=True, name='reactos',
-                    switcher='reactos'),
-    # Experimental: Windows 7's x64 explorer (prefix/win7.py).
-    'win7': dict(marker='win7-shell.json', module='w7-explorer', command=r'C:\w7\w7-explorer.exe',
-                 stage=('prefix/win7.py', 'stage'), welcome='greeter/w7-splash.py', folders=True, name='win7',
-                 switcher='win7'),
-}
 # Seconds the shut-down screen waits for the system to end the session (compositor)
 POWER_OFF_WAIT = 60
 IM_VARIABLES = ('XMODIFIERS', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'SDL_IM_MODULE', 'CLUTTER_IM_MODULE')
@@ -75,20 +62,8 @@ class Session:
         # session inherits this and writes to the shell's or the proxy's log.
         # (+seh logged each window message call of a 32-bit process, several
         # MB within minutes.) session.json's "debug" sets other channels.
-        self.env = dict(os.environ, WINEPREFIX=str(self.prefix),
-                        WIN4WINE_EXTERNAL_SHELL='1', WINEDEBUG=config.get('debug', '+timestamp,fixme-all'),
-                        WINEDLLOVERRIDES=f'explorer=b;{self.shell["module"]}=n;mscoree,mshtml=;uxtheme=b')
-        if self.shell['folders']:
-            # Wine's explorer.exe hands folder windows to the shell's own explorer.
-            self.env['WIN4WINE_FOLDER_SHELL'] = self.shell['command']
-        if self.shell['switcher']:
-            # The proxy draws ReactOS's Alt+Tab window instead of XP's.
-            self.env['WIN4WINE_SWITCHER'] = self.shell['switcher']
-        if self.shell['name']:
-            # Wine leaves ReactOS's own controls to it (Start button, dialogs);
-            # with Windows 7's shell the XP shell's taskbar replacements are
-            # left out and the Windows 7 changes apply (patches 0109 to 0125).
-            self.env['WIN4WINE_SHELL'] = self.shell['name']
+        self.env = environment(dict(os.environ, WINEDEBUG=config.get('debug', '+timestamp,fixme-all')),
+                               config, self.shell)
         # Under the compositor, layered windows' translucent pixels are blended
         # by it; Wine leaves them as they are (Windows 7's Start button, patch 0112).
         if self.compositor:
@@ -96,17 +71,6 @@ class Session:
         # Opt-in: the proxy snaps windows to half of the screen (Win+arrows, dragging to an edge).
         if config.get('window_snap'):
             self.env['WIN4WINE_WINDOW_SNAP'] = '1'
-        # The prefix decides its architecture; the recovery prefix takes Wine's default.
-        self.env.pop('WINEARCH', None)
-        # A terminal in the session runs Windows programs with "wine" in the
-        # session's prefix; that must be this Wine, not another one in PATH,
-        # which would update the prefix to its own version.
-        self.env['PATH'] = os.pathsep.join(filter(None, (str(Path(self.wine).parent), self.env.get('PATH'))))
-        # Wine derives its user locale and ANSI code page from the Unix locale.
-        # A Japanese XP shell expects Japanese formats and code page 932 even
-        # when the Linux session itself runs in another locale.
-        if config.get('locale'):
-            self.env.update(LANG=config['locale'], LC_ALL=config['locale'])
         self.input_method = config.get('input_method')
         if self.input_method not in (None, 'fcitx5'):
             raise SystemExit('Unsupported input_method')

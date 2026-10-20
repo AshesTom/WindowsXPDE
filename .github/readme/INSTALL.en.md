@@ -137,6 +137,7 @@ Restart the display manager (or reboot).
 | toggle Japanese input | Ctrl+Space or Zenkaku/Hankaku, or click the icon in the notification area |
 | start a Linux application | Start → All Programs (names end in "(Linux)") |
 | install a Windows application | `wine setup.exe` in a terminal; the session's `PATH` starts with this Wine |
+| start a Windows application from outside the session (ssh, another desktop) | `win4wine-wine setup.exe` (`~/.local/bin`): it runs with the session's prefix, Wine and settings, and looks as in the session. With more than one shell set up, choose with `--shell xp`, `reactos` or `win7`. Plain `wine` uses `~/.wine` and Wine's own look |
 | open the Start menu | the Windows key, Ctrl+Esc |
 | Run / Explorer | Win+R / Win+E |
 | log off or shut down | Start → Log Off / Turn Off Computer |

@@ -137,6 +137,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | 日本語入力の切り替え | Ctrl+Space または 全角/半角。通知領域のアイコンのクリックでも切り替えられます |
 | Linux のアプリを起動 | スタート → すべてのプログラム（名前に「(Linux)」が付いています） |
 | Windows のアプリを入れる | 端末で `wine setup.exe`。セッションの `PATH` の先頭にはこの Wine が入っています |
+| セッションの外（ssh、ほかのデスクトップ）から Windows のアプリを起動 | `win4wine-wine setup.exe`（`~/.local/bin`）。セッションと同じ prefix・Wine・設定で動き、見た目もセッションと同じになります。シェルを複数入れたときは `--shell xp`・`reactos`・`win7` で選びます。素の `wine` では `~/.wine` と Wine の標準の見た目になります |
 | スタートメニュー | Windows キー、Ctrl+Esc |
 | ファイル名を指定して実行 / エクスプローラ | Win+R / Win+E |
 | ログオフ・終了 | スタート → ログオフ / 終了オプション |

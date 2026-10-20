@@ -170,6 +170,10 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
   終了・再起動では `session.json` の `shutdown_command`・`reboot_command` を実行します。
 - 環境: Wine と Linux のアプリの `PATH` の先頭にセッションの Wine を置きます。日本語入力の変数（`XMODIFIERS` など）、
   字体の設定（`linux_font` の fontconfig）、DPI の設定（下の「DPI」）、カーソルのテーマも入れます。
+  Wine のプログラムの変数（prefix、`WIN4WINE_EXTERNAL_SHELL` などの opt-in、`WINEDLLOVERRIDES`、ロケール）は
+  `session/wineenv.py` が組み立てます。`win4wine-wine`（`session/wine.py`、`~/.local/bin` に入れます）も同じものを使い、
+  セッションの外から起動した Windows のプログラムもセッションと同じ見た目と動きにします（opt-in が無いと Wine の標準の
+  見た目になります）。セッションの中ではそのまま `wine` を起動します。
 - 周期的には起きません（起動中のタスクバーを待つ間だけ 1 秒ごとに確かめます）。ログは `~/.local/state/win4wine/` に書き、
   起動のたびに前回の分を `*.log.1` にします。Wine のログは既定ではエラーだけです（`WINEDEBUG=+timestamp,fixme-all`。
   セッションのすべての Windows のプログラムが受け継ぎます）。調べるときは `session.json` の `"debug"` で Wine のチャンネルを

@@ -9,7 +9,7 @@
 | `wine/` | 基にする Wine（`upstream.env`）、パッチ（`patches/` と `series`）、ビルド（`build.sh`）、パッチの適用（`patch-state.py`） |
 | `bridge-wm/` | X11 の WM（`wm.py`）、Win32 の代理（`proxy.c`）、トレイの仲介（`tray.py`）、調査用の道具（`inspect.c`） |
 | `wayland/` | Wayland のセッション: labwc と wlroots の版（`upstream.env`）、パッチ（`patches/`）、ビルド（`build.sh`）、labwc の設定（`labwc/`）、起動（`session.sh`） |
-| `session/` | セッションの起動と見張り（`supervisor.py`）、Linux のアプリのスタートメニュー（`linux_apps.py`）、セッションの登録 |
+| `session/` | セッションの起動と見張り（`supervisor.py`）、Linux のアプリのスタートメニュー（`linux_apps.py`）、セッションの外から使う `win4wine-wine`（`wine.py`。Wine の環境は `wineenv.py`）、セッションの登録 |
 | `prefix/` | prefix の作成（`create.py`）、更新（`stage.py`）、見た目と DPI（`display.py`）、レジストリの設定（registry profile） |
 | `extract/` | ISO から必要なファイルだけを取り出す（`extract.py`）、XP の言語の判断（`media.py`） |
 | `greeter/` | LightDM の XP のようこそ画面、ログオン・ログオフの画面、XP のカーソル |
