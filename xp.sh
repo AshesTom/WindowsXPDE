@@ -14,6 +14,7 @@
 #   XP_DISPLAY    the nested X display (default: the first free one from :5)
 #   XP_WINEDEBUG  Wine's debug channels (default: +timestamp,fixme-all)
 #   XP_THEME      luna or classic, for a new prefix (default: luna)
+#   XP_ISO        the XP media, for files a later version extracts (default: setup's)
 set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")" && pwd)
 local=$root/.local
@@ -46,6 +47,35 @@ stop_prefix() {
     WINEPREFIX=$prefix timeout 20 "${wine%/wine}/wineserver" -w 2>/dev/null || true
 }
 
+# Files that XP Explorer's additions brought, for an extraction made before them.
+add_media_files() {
+    local added
+    read -r -a added <<< "$(python3 "$root/extract/extract.py" --missing "$assets")"
+    ((${#added[@]})) || return 0
+    [[ -n ${1:-} && -e ${1:-} ]] ||
+        { echo "The extraction lacks ${added[*]}: run $0 setup /path/to/the.iso again" >&2; exit 1; }
+    echo "Adding ${added[*]} to the extraction"
+    mkdir -p "$local/tmp"
+    TMPDIR=$local/tmp python3 "$root/extract/extract.py" "${added[@]/#/--only=}" "$1" "$assets"
+}
+
+# XP Explorer's additions (prefix/extras.py), as scripts/setup.sh adds them:
+# the notification area's icons, Display Properties, IE6, XP's sounds and so
+# on; again when they change or after a Wine build.
+add_extras() {
+    python3 "$root/prefix/extras.py" "$prefix" --check "$wine" && return 0
+    need xvfb-run
+    echo "Adding the XP Explorer additions to the prefix (log: .local/prefix.log)"
+    stop_prefix
+    xvfb-run -a -s '-screen 0 1280x800x24' bash -c '
+        python3 "$1/prefix/extras.py" "$2" --wine "$3" &&
+        python3 "$1/session/linux_apps.py" "$2" --wine "$3" &&
+        python3 "$1/xp-explorer/scripts/pins.py" "$2" --wine "$3"' _ "$root" "$prefix" "$wine" \
+        >> "$local/prefix.log" 2>&1 ||
+        { tail -20 "$local/prefix.log" >&2; echo 'The XP Explorer additions failed; see .local/prefix.log' >&2; exit 1; }
+    stop_prefix
+}
+
 case ${1:-} in
 setup)
     media=$(realpath -e -- "${2:?usage: $0 setup /path/to/WindowsXP-SP3.iso}")
@@ -65,12 +95,9 @@ setup)
         mkdir -p "$local/tmp"
         TMPDIR=$local/tmp python3 "$root/extract/extract.py" "$media" "$assets"
     fi
-    # Files that XP Explorer's additions brought, for an extraction made before them.
-    read -r -a added <<< "$(python3 "$root/extract/extract.py" --missing "$assets")"
-    if ((${#added[@]})); then
-        mkdir -p "$local/tmp"
-        TMPDIR=$local/tmp python3 "$root/extract/extract.py" "${added[@]/#/--only=}" "$media" "$assets"
-    fi
+    # run takes it again for files that a later version extracts.
+    echo "$media" > "$local/media-path"
+    add_media_files "$media"
     if [[ ! -f $prefix/xp-shell.json ]]; then
         [[ ! -e $prefix ]] || { echo "$prefix exists but is incomplete; move it away and run again" >&2; exit 1; }
         theme=${XP_THEME:-luna}
@@ -82,17 +109,7 @@ setup)
             { tail -20 "$local/prefix.log" >&2; echo 'Setting the theme failed; see .local/prefix.log' >&2; exit 1; }
         stop_prefix
     fi
-    # XP Explorer's additions (prefix/extras.py), as scripts/setup.sh adds them.
-    if ! python3 "$root/prefix/extras.py" "$prefix" --check "$wine"; then
-        stop_prefix
-        xvfb-run -a -s '-screen 0 1280x800x24' bash -c '
-            python3 "$1/prefix/extras.py" "$2" --wine "$3" &&
-            python3 "$1/session/linux_apps.py" "$2" --wine "$3" &&
-            python3 "$1/xp-explorer/scripts/pins.py" "$2" --wine "$3"' _ "$root" "$prefix" "$wine" \
-            >> "$local/prefix.log" 2>&1 ||
-            { tail -20 "$local/prefix.log" >&2; echo 'The XP Explorer additions failed; see .local/prefix.log' >&2; exit 1; }
-        stop_prefix
-    fi
+    add_extras
     echo "Done. Start it with: $0 run"
     ;;
 run)
@@ -100,6 +117,8 @@ run)
     [[ -x $wine ]] || { echo "Run $0 setup ISO first" >&2; exit 1; }
     [[ -f $prefix/xp-shell.json ]] || { echo "No XP prefix in $prefix: run $0 setup ISO first" >&2; exit 1; }
     "$root/bridge-wm/build.sh"
+    add_media_files "${XP_ISO:-$(cat "$local/media-path" 2>/dev/null)}"
+    add_extras
     size=${2:-1280x800}
     [[ $size =~ ^[0-9]+x[0-9]+$ ]] || { echo "usage: $0 run [WIDTHxHEIGHT]" >&2; exit 2; }
     "$0" kill >/dev/null 2>&1 || true

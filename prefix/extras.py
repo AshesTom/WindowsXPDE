@@ -28,7 +28,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / '.local/bridge'
 # Bumped when apply() changes; setup.sh applies it again on existing prefixes.
-VERSION = '2'
+VERSION = '3'
 MARKER = '.xp-extras'
 HELPERS = ('xptray.exe', 'startmenu.exe', 'iexplore.exe', 'linux-links.exe')
 # XP's Regional and Language Options and what it loads (assets/intl), native
@@ -231,6 +231,12 @@ def apply(prefix, wine):
     stop(wine, prefix)
     print('* Internet Explorer 6 and Windows Media Player 9', flush=True)
     xpx.install_ie(assets, prefix, wine)
+    # Its wineboot registers XP's shell32 again, whose My Computer icon is
+    # %SystemRoot%\Explorer.exe,0: Wine's explorer.exe, a blank page. Ours is
+    # XP's explorer under its own name (prefix/registry.py).
+    regedit(wine, prefix, 'Windows Registry Editor Version 5.00\r\n\r\n'
+            '[HKEY_CLASSES_ROOT\\CLSID\\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\\DefaultIcon]\r\n'
+            '@="C:\\\\xp\\\\xp-explorer.exe,0"\r\n')
     stop(wine, prefix)
     stage(prefix, xpx)
     (prefix / MARKER).write_text(wanted(xpx, wine) + '\n')
