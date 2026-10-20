@@ -75,6 +75,12 @@ Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベー�
       Windows 7 のシェル（<code>--shell win7</code>。実験的）
     </td>
     <td align="center" width="50%">
+      <img src="docs/images/screenshot-win7-small.png" alt="小さいアイコンのタスクバーの Windows 7 のシェル" width="400" /><br />
+      タスクバーの「小さいアイコンを使う」（すぐに切り替わります）
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
       <img src="docs/images/screenshot-win7-logon.png" alt="Windows 7 のログオン画面で利用者を選ぶところ" width="400" /><br />
       Windows 7 のログオン画面（<code>--greeter</code>）
     </td>
