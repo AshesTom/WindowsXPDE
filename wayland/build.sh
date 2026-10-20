@@ -33,11 +33,16 @@ patch() {  # patch SOURCE PATCHES
 }
 patch "$src" "$root/wayland/patches/labwc"
 patch "$src/subprojects/wlroots" "$root/wayland/patches/wlroots"
+# wlroots's own -Werror would fail this pinned release on every newer
+# compiler or libc warning (glibc 2.43's const-preserving strchr, ...).
+options=(-Dxwayland=enabled -Dman-pages=disabled -Dwlroots:werror=false
+    -Dwlroots:xwayland=enabled -Dwlroots:backends=drm,libinput,x11 -Dwlroots:renderers=gles2)
 if [[ ! -f $build/build.ninja ]]; then
     echo '>>> Configuring'
     meson setup "$build" "$src" --prefix="$install" --buildtype=release \
-        --force-fallback-for=wlroots-0.18,libsfdo-basedir,libsfdo-desktop,libsfdo-icon \
-        -Dxwayland=enabled -Dman-pages=disabled -Dwlroots:xwayland=enabled -Dwlroots:backends=drm,libinput,x11 -Dwlroots:renderers=gles2
+        --force-fallback-for=wlroots-0.18,libsfdo-basedir,libsfdo-desktop,libsfdo-icon "${options[@]}"
+else
+    meson configure "$build" "${options[@]}" >/dev/null  # a build configured before an option changed
 fi
 echo '>>> Compiling'
 ninja -C "$build" -j"${JOBS:-6}"
