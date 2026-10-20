@@ -178,7 +178,10 @@ class Manager:
             return 'popup'
         if cls == 'win4wineproxy':
             return 'proxy'
-        if cls in ('progman', 'workerw') or self.atom('_NET_WM_WINDOW_TYPE_DESKTOP') in types:
+        # A top-level WorkerW is not the desktop: XP's Show Desktop moves the
+        # desktop's icons into one and raises it over the minimized windows,
+        # just below the taskbar (measured on the reference XP machine).
+        if cls == 'progman' or self.atom('_NET_WM_WINDOW_TYPE_DESKTOP') in types:
             return 'desktop'
         if cls == 'shell_traywnd' or self.atom('_NET_WM_WINDOW_TYPE_DOCK') in types:
             return 'dock'

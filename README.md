@@ -46,6 +46,9 @@ Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベー�
   インストーラーが作るショートカットは XP のスタートメニューに入ります。
 - **XP のようこそ画面**: LightDM の greeter として、XP のようこそ画面とログオフの画面を出せます（任意）。
 - **XP のキー操作**: Windows キー、Ctrl+Esc、Win+R、Win+E が使えます。
+- **クイック起動**: タスクバーの右クリック →「ツール バー」→「クイック起動」で出せます（XP と ReactOS。Windows 7 は実機と同じく
+  「新規ツール バー」でクイック起動のフォルダを選びます）。スタートメニューから Linux のアプリのショートカットも置けます。
+  「デスクトップの表示」も実機と同じく、もう一度押すと窓が元に戻ります。
 - **画面の拡大（DPI）**: XP と同じ「DPI 設定」で、文字や部品を大きくできます（96・120・144 など）。
 - **落ちても戻れる**: XP のシェルが繰り返し落ちると、Wine 標準の explorer と xterm に切り替わります。
 - **Wayland のセッション（任意・X11 のセッション以上に実験的）**: X11 のウィンドウマネージャーの代わりに、パッチを当てた labwc で
@@ -134,7 +137,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 ```text
 LightDM ─ XP のようこそ画面 (greeter/)
    └─ XP Shell セッション (session/supervisor.py)
-        ├─ Wine 11.0 + 131 本のパッチ (wine/patches/)
+        ├─ Wine 11.0 + 132 本のパッチ (wine/patches/)
         │    └─ XP の explorer.exe, shell32.dll, …（ISO から取り出したもの。ReactOS や Windows 7 のシェルではそれらのもの）
         ├─ bridge-wm: X11 のウィンドウマネージャー + Win32 の代理ウィンドウ (bridge-wm/)
         │    （Wayland のセッションでは、ウィンドウマネージャーの代わりにパッチを当てた labwc。wayland/）

@@ -70,6 +70,10 @@ session.json（`~/.config/win4wine/reactos-session.json`）の `"shell": "reacto
 bridge と XP 向けのパッチは、そのまま ReactOS のシェルにも効きます（タスクバーのボタン、Linux の窓の枠、Alt+Tab、
 Windows キーと Ctrl+Esc、通知領域、ログオフとシャットダウン）。
 
+クイック起動は、タスクバーの右クリック →「Toolbars」→「Quick Launch」で出ます。prefix がクイック起動のフォルダ
+（`%APPDATA%\Microsoft\Internet Explorer\Quick Launch`）を作ります（無いと「Cannot create toolbar.」）。ただし ReactOS 0.4.16 の
+explorer はツールバーの配置を保存しないので（ReactOS 自身の制限。ツールバーのフォルダも保存しません）、セッションごとに出し直します。
+
 ## テーマ（任意）
 
 既定はクラシックですが、ReactOS の 3 つのテーマも選べます。`scripts/setup.sh --shell reactos --theme lautus`（`lunar`、`mizu`）、

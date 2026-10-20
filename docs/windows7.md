@@ -150,6 +150,12 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
   「適用」か「OK」ですぐにタスクバーが変わり、最大化した窓（Wine の窓も Linux の窓も）も新しい作業領域に合わせ直します
   （Wine の 0027、0100、0101）。設定は prefix のレジストリ（`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` の
   `TaskbarSmallIcons` と `TaskbarGlomLevel`）に残り、次のセッションでもそのままです。Linux の窓のボタンも、ラベル付きのボタンになります。
+- クイック起動: 実機と同じく、タスクバーの右クリック →「ツール バー」→「新規ツール バー」で
+  `%APPDATA%\Microsoft\Internet Explorer\Quick Launch` を選ぶと、タスクバーに出ます（「ボタン名の表示」と「タイトルの表示」を外し、
+  固定を外して左へ動かすと Vista までの形）。フォルダには Windows 7 の既定のユーザーと同じく「デスクトップの表示」と
+  「ウィンドウを切り替える」が入ります（ISO から取り出したものを prefix が一度だけ置きます。EXTRACT_VERSION 6）。ツールバーは
+  ログオフで保存され、次のセッションでもそのままです。「デスクトップの表示」は 2 回目に窓を元に戻します（Wine の 0132）。
+  フォルダの選択のダイアログは、入力した `%APPDATA%` などを展開し、入力したフォルダを受け付けます（Wine の 0094）。
 - フォルダーは、Windows のアプリからも、Wine 自身のプログラム（`wine explorer C:\パス`、`wine start C:\パス`）からも Windows 7 の
   フォルダーウィンドウで開きます（Wine の 0117）。フォルダーウィンドウのアドレス バーと検索欄の高さは実機と同じです（Wine の 0108）。
 - フォルダーウィンドウのナビゲーション ウィンドウは実機と同じです: 「お気に入り」のダウンロード・デスクトップ・最近表示した場所

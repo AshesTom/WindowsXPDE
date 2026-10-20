@@ -79,6 +79,9 @@ With a Windows 7 ISO, it can also run **Windows 7's shell** (the Windows 7 Basic
   the installer's shortcuts land in XP's Start menu.
 - **XP Welcome screen**: an optional LightDM greeter that shows XP's Welcome and log-off screens.
 - **XP's keys**: the Windows key, Ctrl+Esc, Win+R and Win+E.
+- **Quick Launch**: right-click the taskbar, Toolbars, Quick Launch (XP and ReactOS; on Windows 7, as on the real one, New
+  Toolbar with the Quick Launch folder). Shortcuts to Linux applications from the Start menu can go there too, and Show
+  Desktop gives the windows back when used again, as on Windows.
 - **Recovery**: if the XP shell keeps crashing, the session falls back to Wine's own explorer and an xterm.
 - **Wayland session (optional, even more experimental than the X11 session)**: a patched labwc instead of the X11 WM
   (XP, ReactOS and Windows 7 shells), with a scale per monitor and scales such as 125% or 150%; the shell stays crisp,
@@ -134,7 +137,7 @@ With a Windows 7 ISO, it can also run **Windows 7's shell** (the Windows 7 Basic
 ```text
 LightDM ─ XP Welcome greeter (greeter/)
    └─ XP Shell session (session/supervisor.py)
-        ├─ Wine 11.0 + 131 patches (wine/patches/)
+        ├─ Wine 11.0 + 132 patches (wine/patches/)
         │    └─ XP's explorer.exe, shell32.dll, … (extracted from the ISO; ReactOS's or Windows 7's in their sessions)
         ├─ bridge-wm: an X11 WM + Win32 proxy windows (bridge-wm/)
         │    (Wayland session: a patched labwc instead of the WM, wayland/)

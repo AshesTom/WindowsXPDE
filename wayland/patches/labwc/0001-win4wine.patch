@@ -86,11 +86,11 @@ As bridge-wm does, also for Windows 7's shell:
  src/ssd/ssd.c              |   15 +-
  src/view-impl-common.c     |   14 +-
  src/view.c                 |   34 +-
- src/win4wine.c             | 2348 ++++++++++++++++++++++++++++++++++++++++++++
+ src/win4wine.c             | 2352 ++++++++++++++++++++++++++++++++++++++++++++
  src/xwayland-scale.c       |  566 +++++++++++
  src/xwayland-unmanaged.c   |   52 +-
  src/xwayland.c             |  318 ++++--
- 27 files changed, 3700 insertions(+), 119 deletions(-)
+ 27 files changed, 3704 insertions(+), 119 deletions(-)
 
 diff --git a/include/labwc.h b/include/labwc.h
 index d7f4321..b575bbe 100644
@@ -1221,10 +1221,10 @@ index cc5af20..906c3e6 100644
  		mappable_disconnect(&view->mappable);
 diff --git a/src/win4wine.c b/src/win4wine.c
 new file mode 100644
-index 0000000..400de7a
+index 0000000..e41ed21
 --- /dev/null
 +++ b/src/win4wine.c
-@@ -0,0 +1,2348 @@
+@@ -0,0 +1,2352 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#define _POSIX_C_SOURCE 200809L
 +/*
@@ -1575,7 +1575,11 @@ index 0000000..400de7a
 +	if (!strcasecmp(data->wclass, "win4wineproxy")) {
 +		return WIN4WINE_FRAME;
 +	}
-+	if (!strcasecmp(data->wclass, "progman") || !strcasecmp(data->wclass, "workerw")
++	/*
++	 * A top-level WorkerW is not the desktop: Show Desktop moves the
++	 * desktop's icons into one and raises it over the minimized windows.
++	 */
++	if (!strcasecmp(data->wclass, "progman")
 +			|| view_contains_window_type(view, NET_WM_WINDOW_TYPE_DESKTOP)) {
 +		return WIN4WINE_DESKTOP;
 +	}
