@@ -8,7 +8,8 @@ follows authui's own layout file (UIFILE 12400: sizes, paddings, which bitmap
 each state shows) and was measured on Windows 7 SP1 at 1024x768 and 1280x800.
 
   python3 greeter/w7logon.py ASSETS OUT.png [WIDTH HEIGHT] [USER]
-renders the screen to a file (for comparisons); W7LOGON_STATE=message or menu
+renders the screen to a file (for comparisons); W7LOGON_USERS=a,b lists users (with
+USER, that one's tile and Switch User); W7LOGON_STATE=message or menu
 renders a failed logon or the shutdown options' menu.
 """
 import io
@@ -68,6 +69,17 @@ BRANDING = 120       # basebrd.dll: the edition's name at 96 DPI
 TILE_X, TILE_Y = -96, -124
 NAME_Y = 70          # below the tile's frame
 EDIT_X, EDIT_Y = -113, 107   # the arrow's top; the field is 3px lower
+# Several users: LogonUI first lists them (UserTileTemplate unzoomed: an 80x80
+# frame, the picture 48x48 inside a 16 padding, the name below), in name order,
+# one row centred, the frames 180 apart (measured with 2 and 4 users, short
+# and long names); the frames' top 31 below the centre. A chosen user's tile
+# is zoomed as with one user, 15 higher, with "Switch User" (GenericButton:
+# at least 93x28, the text with 17 beside it) where a failed logon's OK is.
+LIST_FRAME = {'normal': 12222, 'hot': 12218, 'selected': 12219, 'selectedhot': 12220}
+LIST_SIZE, LIST_INSET, LIST_PICTURE = 80, 16, 48
+LIST_STEP, LIST_Y, LIST_ROW = 180, 31, 143
+SWITCH_SHIFT, IDS_SWITCH_USER = -15, 12123
+LIST_NAME_Y = 0      # the name's top below the frame
 
 
 def setup(cache):
@@ -199,12 +211,20 @@ def blur_alpha(surface, radius, passes=3):
 class Screen:
     """What the logon screen shows: one user's tile, its password field and the options."""
 
-    def __init__(self, assets, user='', picture=None):
+    def __init__(self, assets, user='', picture=None, users=None):
+        """USERS: [(name, picture)] of the users to list; with one, or with USER
+        given, that user's tile is shown directly."""
         self.assets = assets
+        self.users = users or [(user, picture)]
         self.user = user
         self.picture_path = picture
+        self.listing = not user and len(self.users) > 1
+        self.selected = 0            # the listed user with the selection
+        if not self.listing and not user:
+            self.user, self.picture_path = self.users[0]
         self.password = ''
-        self.focus = 'password'      # password, submit, accessibility, shutdown, more
+        # tiles (the list), password, submit, switch, accessibility, shutdown, more
+        self.focus = 'tiles' if self.listing else 'password'
         self.hover = None
         self.pressed = None
         self.caret = True
@@ -217,17 +237,66 @@ class Screen:
 
     # Geometry -------------------------------------------------------
 
+    def choose(self, index):
+        """Show the listed user INDEX's tile and password field."""
+        self.user, self.picture_path = self.users[index]
+        self.selected, self.listing = index, False
+        self.password, self.focus, self.message = '', 'password', None
+
+    def back_to_list(self):
+        """Switch User: the list again, the user just shown selected."""
+        names = [name for name, _ in self.users]
+        self.selected = names.index(self.user) if self.user in names else 0
+        self.listing, self.password, self.focus, self.message = True, '', 'tiles', None
+
+    def list_rects(self, width, height):
+        """The listed users' frames, in rows as wide as the screen allows."""
+        count = len(self.users)
+        per_row = max(1, min(count, (width + LIST_STEP - LIST_SIZE) // LIST_STEP))
+        rows = (count + per_row - 1) // per_row
+        top = height // 2 + LIST_Y - (rows - 1) * LIST_ROW // 2
+        rects = []
+        for index in range(count):
+            row, column = divmod(index, per_row)
+            in_row = min(per_row, count - row * per_row)
+            left = width // 2 - (in_row * LIST_SIZE + (in_row - 1) * (LIST_STEP - LIST_SIZE)) // 2
+            rects.append((left + column * LIST_STEP, top + row * LIST_ROW, LIST_SIZE, LIST_SIZE))
+        return rects
+
+    def switch_rect(self, width, height):
+        # The text's width, 10 padding and 4 border each side, and 3 more each side
+        # (measured: 196 wide around 162 of text in Japanese)
+        w = max(93, self.text_width(self.button_label(IDS_SWITCH_USER), FONTS['button']) + 34)
+        return ((width - w) // 2, height // 2 + OK_Y, w, OK_SIZE[1])
+
+    def button_label(self, number):
+        """A button's string without its access key's '&' (LogonUI hides the underline until Alt)."""
+        return self.assets.string(number).replace('&', '')
+
+    def text_width(self, text, font_number):
+        surface = cairo.ImageSurface(cairo.FORMAT_A8, 1, 1)
+        return self.layout(cairo.Context(surface), text, font_number).get_pixel_extents()[1].width
+
     def rects(self, width, height):
         cx, cy = width // 2, height // 2
-        tile = (cx + TILE_X, cy + TILE_Y, TILE_SIZE, TILE_SIZE)
-        edit = (cx + EDIT_X, cy + EDIT_Y + 3, EDIT_W, EDIT_H)
-        submit = (cx + EDIT_X + EDIT_W + 4, cy + EDIT_Y, SUBMIT_SIZE, SUBMIT_SIZE)
         oy = height - OPTIONS_HEIGHT + OPTIONS_PADDING
         accessibility = (OPTIONS_PADDING, oy) + ACCESSIBILITY_SIZE
         more = (width - OPTIONS_PADDING - MORE_SIZE[0], oy) + MORE_SIZE
         shutdown = (more[0] - SHUTDOWN_SIZE[0], oy) + SHUTDOWN_SIZE
-        return {'tile': tile, 'password': edit, 'submit': submit, 'accessibility': accessibility,
-                'shutdown': shutdown, 'more': more}
+        options = {'accessibility': accessibility, 'shutdown': shutdown, 'more': more}
+        if self.listing:
+            # A user's tile takes its frame and the name below (UserTile: 123 high)
+            tiles = {f'tile:{i}': (x - (LIST_STEP - LIST_SIZE) // 2, y, LIST_STEP, 123 - 20)
+                     for i, (x, y, _, _) in enumerate(self.list_rects(width, height))}
+            return dict(tiles, **options)
+        cy += SWITCH_SHIFT if len(self.users) > 1 else 0
+        tile = (cx + TILE_X, cy + TILE_Y, TILE_SIZE, TILE_SIZE)
+        edit = (cx + EDIT_X, cy + EDIT_Y + 3, EDIT_W, EDIT_H)
+        submit = (cx + EDIT_X + EDIT_W + 4, cy + EDIT_Y, SUBMIT_SIZE, SUBMIT_SIZE)
+        rects = {'tile': tile, 'password': edit, 'submit': submit}
+        if len(self.users) > 1:
+            rects['switch'] = self.switch_rect(width, height)
+        return dict(rects, **options)
 
     def hit(self, width, height, px, py):
         rects = self.rects(width, height)
@@ -311,6 +380,9 @@ class Screen:
         if self.message:
             self.draw_message(cr, width, height, r)
             return self.draw_options(cr, surface, width, height, r)
+        if self.listing:
+            self.draw_list(cr, width, height)
+            return self.draw_options(cr, surface, width, height, r)
         # The user's tile: the picture inside the frame, the name below
         tx, ty, _, _ = r['tile']
         picture = self.assets.picture(self.picture_path)
@@ -348,8 +420,31 @@ class Screen:
             image = self.assets.bitmap(SUBMIT.get(self.state('submit'), SUBMIT['normal']))
             cr.set_source_surface(image.surface, sx, sy)
             cr.paint()
+            if 'switch' in r:
+                self.generic_button(cr, r['switch'], self.button_label(IDS_SWITCH_USER), 'switch')
 
         return self.draw_options(cr, surface, width, height, r)
+
+    def generic_button(self, cr, rect, label, name):
+        bx, by, bw, bh = rect
+        nine_grid(cr, self.assets.bitmap(OPTION[self.state(name)]), bx, by, bw, bh, (4, 3, 4, 3))
+        self.text(cr, label, FONTS['button'], bx, by + 3, center_width=bw)
+
+    def draw_list(self, cr, width, height):
+        """The users to choose from: pictures in small frames, names below."""
+        for index, (x, y, w, h) in enumerate(self.list_rects(width, height)):
+            name, path = self.users[index]
+            picture = self.assets.picture(path)
+            if picture:
+                scaled = picture.scale_simple(LIST_PICTURE, LIST_PICTURE, GdkPixbuf.InterpType.HYPER)
+                Gdk.cairo_set_source_pixbuf(cr, scaled, x + LIST_INSET, y + LIST_INSET)
+                cr.paint()
+            selected = index == self.selected and self.focus == 'tiles'
+            hot = self.hover == f'tile:{index}'
+            frame = self.assets.bitmap(LIST_FRAME['selected' * selected + 'hot' * hot or 'normal'])
+            cr.set_source_surface(frame.surface, x, y)
+            cr.paint()
+            self.text(cr, name, FONTS['small'], x + w // 2 - 500, y + w + LIST_NAME_Y, center_width=1000)
 
     def draw_options(self, cr, surface, width, height, r):
         # The options along the bottom
@@ -450,7 +545,12 @@ if __name__ == '__main__':
     root = Path(sys.argv[1])
     os.environ['FONTCONFIG_FILE'] = str(fontconfig(root / 'fonts', Path('/tmp/w7logon-fc')))
     width, height = (int(sys.argv[3]), int(sys.argv[4])) if len(sys.argv) > 4 else (1024, 768)
-    screen = Screen(Assets(root), sys.argv[5] if len(sys.argv) > 5 else 'tester')
+    names = os.environ.get('W7LOGON_USERS', '').split(',') if os.environ.get('W7LOGON_USERS') else []
+    if names:
+        # W7LOGON_USERS=a,b,c lists them; with USER, that one's tile with Switch User
+        screen = Screen(Assets(root), sys.argv[5] if len(sys.argv) > 5 else '', users=[(n, None) for n in names])
+    else:
+        screen = Screen(Assets(root), sys.argv[5] if len(sys.argv) > 5 else 'tester')
     mode = os.environ.get('W7LOGON_STATE', '')
     if mode == 'message':
         screen.message = screen.assets.string(IDS_WRONG)
