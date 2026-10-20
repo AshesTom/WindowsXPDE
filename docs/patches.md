@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 126 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 144 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -269,6 +269,12 @@ XP Explorer（`xp-explorer/`）が自分の系列として当てていたパッ�
 | 0141 | win32u: 外部シェルの入力言語を `HKCU\Keyboard Layout\Preload`（と Substitutes）から。GetKeyboardLayoutList と既定のレイアウト、ほかの言語への ActivateKeyboardLayout。Preload の 1 番目は無いときだけ書く（XP の input.dll が書いた値を残す）。セッションの XKB も同じ値から（`session/keyboard.py`） | 一部あり（XP のセッション） |
 | 0142 | wineboot: スタートアップのフォルダの desktop.ini を実行しない（Wine の更新の後、メモ帳で開いていた） | なし |
 | 0143 | win32u: XP の太字の模倣。太字の無いフォント（Franklin Gothic Medium の「作業する分野を選びます」など）の字形を右に 1 ピクセル太らせる（XP の GDI と同じ。FreeType の ppem/24 の太らせでは大きな字が太すぎた） | あり（XP のセッション） |
+
+### 画面のプロパティでのスタイルの変更（0144）
+
+| 番号 | 内容 | opt-in |
+|---|---|---|
+| 0144 | uxtheme: 画面のプロパティでスタイルを変えたとき、ほかのプロセス（タスクバー、フォルダ、枠）も新しいスタイルで描き直す（ThemeManager のキーを見て読み直し、WM_THEMECHANGED で枠を描き直す）。以前の XP Explorer の 0092 | あり |
 
 ## 並び順の考え方
 

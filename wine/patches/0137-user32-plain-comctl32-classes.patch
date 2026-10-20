@@ -13,7 +13,8 @@ RegisterClassNameW, so the rebar and status bar could not be created and IE's
 window was empty.
 Change: with WIN4WINE_EXTERNAL_SHELL=1 and a comctl32.dll beside the
 program, common control class names are not redirected.
-Scope: processes of the external shell with comctl32 beside their exe.
+Scope: processes of the XP shell's session with comctl32 beside their exe
+(ReactOS's beside ros-explorer.exe is left to 0126).
 ---
 diff --git a/dlls/user32/class.c b/dlls/user32/class.c
 index 910fb33..1224117 100644
@@ -33,7 +34,7 @@ index 910fb33..1224117 100644
 +        WCHAR path[MAX_PATH], *slash;
 +        DWORD length = GetModuleFileNameW( NULL, path, ARRAY_SIZE(path) - 13 );
 +        beside = 0;
-+        if (win4wine_external_shell() && length && length < ARRAY_SIZE(path) - 13 &&
++        if (win4wine_shell() == WIN4WINE_SHELL_XP && length && length < ARRAY_SIZE(path) - 13 &&
 +            (slash = wcsrchr( path, '\\' )))
 +        {
 +            lstrcpyW( slash + 1, L"comctl32.dll" );

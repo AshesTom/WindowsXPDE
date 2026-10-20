@@ -141,3 +141,4 @@
 0141-win32u-external-preload-input-languages.patch
 0142-wineboot-startup-desktop-ini.patch
 0143-win32u-external-xp-simulated-bold.patch
+0144-uxtheme-external-theme-refresh.patch

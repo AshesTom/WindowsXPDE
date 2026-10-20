@@ -9,8 +9,9 @@ loaded, but the modules' manifests also loaded Wine's common controls 6,
 which created the property sheet with classic buttons.
 Change: with the opt-in, when the executable's folder has a comctl32.dll,
 skip the SxS redirection for comctl32; the normal search finds that copy.
-Scope: only with WIN4WINE_EXTERNAL_SHELL and a comctl32.dll beside the
-executable (C:\xp\xp-explorer.exe and C:\windows\rundll32.exe here).
+Scope: only in the XP shell's session (WIN4WINE_EXTERNAL_SHELL without
+WIN4WINE_SHELL; 0126 serves ReactOS's shell) and with a comctl32.dll beside
+the executable (C:\xp\xp-explorer.exe and C:\windows\rundll32.exe here).
 ---
 diff --git a/dlls/ntdll/loader.c b/dlls/ntdll/loader.c
 index 76276c7..8fd022e 100644
@@ -28,7 +29,7 @@ index 76276c7..8fd022e 100644
 +static BOOL shell_comctl32_beside_exe( const WCHAR *libname )
 +{
 +    static int beside = -1;
-+    if (wcsicmp( libname, L"comctl32.dll" ) || !win4wine_external_shell()) return FALSE;
++    if (wcsicmp( libname, L"comctl32.dll" ) || win4wine_shell() != WIN4WINE_SHELL_XP) return FALSE;
 +    if (beside == -1)
 +    {
 +        const UNICODE_STRING *image = &NtCurrentTeb()->Peb->ProcessParameters->ImagePathName;
