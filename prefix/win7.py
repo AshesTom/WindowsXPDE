@@ -308,6 +308,7 @@ def create(assets, dest, home, wine):
             prefix.copy(assets / f'system32/{name}.dll', assets / f'system32/{ui}/{name}.dll.mui',
                         prefix.system / f'{name}.dll')
         wow64_files(prefix, assets, ui)
+        shell_only_files(prefix, assets)
         prefix.copy(assets / 'sxs/comctl32.dll', assets / f'sxs/{ui}/comctl32.dll.mui', c / 'w7/comctl32.dll')
         system_icons(dest, assets)
         notepad_strings(dest, assets)
@@ -474,6 +475,21 @@ def wow64_files(prefix, assets, ui):
                     wow64 / 'comctl32.dll')
 
 
+def shell_only_files(prefix, assets):
+    """The shell's own DLLs (SHELL_ONLY), 64-bit and 32-bit, where they are missing:
+    prefixes made by win4wine 0.9.0 to 0.12.0 lack them (the shell did not start).
+    Whether any was missing."""
+    ui = json.loads((assets / 'media.json').read_text())['ui_language']
+    missing = False
+    for folder, system in (('native', 'system32'), ('wow64', 'syswow64')):
+        for name in SHELL_ONLY:
+            target = prefix.path / f'drive_c/w7/{folder}/{name}.dll'
+            if not target.exists() and (assets / f'{system}/{name}.dll').is_file():
+                prefix.copy(assets / f'{system}/{name}.dll', assets / f'{system}/{ui}/{name}.dll.mui', target)
+                missing = True
+    return missing
+
+
 def effects(prefix):
     """Windows 7's visual effects, UserPreferencesMask read on the reference machine: among
     others, access keys underlined only while the keyboard is used, hot tracking and shadows."""
@@ -569,6 +585,14 @@ def stage(dest, wine=None):
         system_icons(dest, Path(config['assets']))
         notepad_strings(dest, Path(config['assets']))
         copy_fonts(dest, Path(config['assets']))
+        if shell_only_files(prefix, Path(config['assets'])):
+            # Wine's shell, which the session fell back to, cleared the
+            # profile folders' attributes: their localized names were lost.
+            prefix.place_files()
+            try:
+                profile_folders(prefix, pwd.getpwuid(os.getuid()).pw_name)
+            finally:
+                prefix.stop()
     if wine_current and applied == [str(VERSION), current] and fonts_current(dest, prefix.lang):
         # Nothing changed, but a first wineboot or an update may have replaced files.
         prefix.place_files()
