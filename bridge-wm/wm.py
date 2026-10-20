@@ -495,6 +495,7 @@ class Manager:
         self.clients.pop(window_id, None)
         self.previous_icons.pop(window_id, None)
         (self.ipc / f'icon-{window_id:x}.argb').unlink(missing_ok=True)
+        (self.ipc / f'icon-{window_id:x}-small.argb').unlink(missing_ok=True)
         # Hide the orphan frame before the proxy destroys its HWND, and reject
         # any activation the proxy has already queued for it.
         for frame_id, native_id in list(self.frames.items()):
@@ -863,15 +864,19 @@ class Manager:
             if c['kind'] != 'normal' or c['hwnd'] or c['owner']:
                 continue
             if c['icon_dirty']:
-                data = icon_payload(self.d, w, self.atom('_NET_WM_ICON'))
-                target = self.ipc / f'icon-{i:x}.argb'
+                # The caption's 16x16 icon beside the big one; the proxy
+                # reads both when the big file changes, so it goes last.
+                data = (icon_payload(self.d, w, self.atom('_NET_WM_ICON'), 16),
+                        icon_payload(self.d, w, self.atom('_NET_WM_ICON')))
                 if i not in self.previous_icons or data != self.previous_icons[i]:
-                    if data:
-                        temporary = target.with_suffix('.tmp')
-                        temporary.write_bytes(data)
-                        temporary.replace(target)
-                    else:
-                        target.unlink(missing_ok=True)
+                    for name, payload in zip((f'icon-{i:x}-small.argb', f'icon-{i:x}.argb'), data):
+                        target = self.ipc / name
+                        if payload and data[1]:
+                            temporary = target.with_suffix('.tmp')
+                            temporary.write_bytes(payload)
+                            temporary.replace(target)
+                        else:
+                            target.unlink(missing_ok=True)
                     self.previous_icons[i] = data
                 c['icon_dirty'] = False
             lines.append(f'{i:x}\t{int(c["hidden"])}\t{int(i == self.active and i == focused_id)}\t{c["title"]}\n')
