@@ -57,11 +57,16 @@ As bridge-wm does, also for Windows 7's shell:
   refreshes. A display that ends page flips at once (a virtual machine's
   VGA) drew a frame for each change, as often as the CPU allowed (77 a
   second while a window was dragged on the test VM's 75 Hz output).
+- An X window is shown once its client drew (its surface's next commit
+  after the one that mapped it, or after 100 ms), not with the blank black
+  buffer Xwayland commits at map; the scene's hidden surface still gets
+  frame events, so that Xwayland goes on committing. Windows 7's folder
+  windows and Start menu showed one or two black frames as they opened.
 ---
  include/labwc.h            |    5 +
  include/ssd.h              |    2 +
  include/view.h             |    5 +
- include/win4wine.h         |  116 +++
+ include/win4wine.h         |  125 +++
  include/xwayland-scale.h   |   79 ++
  include/xwayland.h         |   15 +
  meson.build                |    4 +
@@ -81,11 +86,11 @@ As bridge-wm does, also for Windows 7's shell:
  src/ssd/ssd.c              |   15 +-
  src/view-impl-common.c     |   14 +-
  src/view.c                 |   34 +-
- src/win4wine.c             | 2247 ++++++++++++++++++++++++++++++++++++++++++++
+ src/win4wine.c             | 2348 ++++++++++++++++++++++++++++++++++++++++++++
  src/xwayland-scale.c       |  566 +++++++++++
- src/xwayland-unmanaged.c   |   48 +-
- src/xwayland.c             |  310 ++++--
- 27 files changed, 3579 insertions(+), 118 deletions(-)
+ src/xwayland-unmanaged.c   |   52 +-
+ src/xwayland.c             |  318 ++++--
+ 27 files changed, 3700 insertions(+), 119 deletions(-)
 
 diff --git a/include/labwc.h b/include/labwc.h
 index d7f4321..b575bbe 100644
@@ -141,10 +146,10 @@ index fa84911..0e79996 100644
  void view_invalidate_last_layout_geometry(struct view *view);
 diff --git a/include/win4wine.h b/include/win4wine.h
 new file mode 100644
-index 0000000..8f10b97
+index 0000000..bb1f8a3
 --- /dev/null
 +++ b/include/win4wine.h
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,125 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * win4wine: the Windows XP shell on Wine (Xwayland) as the desktop.
@@ -214,6 +219,15 @@ index 0000000..8f10b97
 +bool win4wine_focus_on_map(struct view *view);
 +/* Whether a Wine window keeps the keyboard when Wine maps an unmanaged window */
 +bool win4wine_unmanaged_keeps_keyboard(struct wlr_xwayland_surface *xsurface);
++/*
++ * Show NODE (disabled) once SURFACE commits again after the commit that
++ * mapped it, or after a short while: an X window's first buffer is its blank
++ * (black) background, drawn before the client draws. VIEW, if given, is
++ * not shown if it unmapped or was minimized meanwhile.
++ */
++struct wlr_scene_node;
++void win4wine_show_when_drawn(struct server *server, struct wlr_scene_node *node,
++	struct wlr_surface *surface, struct view *view);
 +/* Follow a mapped X window's bounding shape (xwayland_shape_set) */
 +void win4wine_watch_shape(uint32_t window);
 +/* The XP frame around a native view, in layout coordinates */
@@ -1207,10 +1221,10 @@ index cc5af20..906c3e6 100644
  		mappable_disconnect(&view->mappable);
 diff --git a/src/win4wine.c b/src/win4wine.c
 new file mode 100644
-index 0000000..d29fe65
+index 0000000..400de7a
 --- /dev/null
 +++ b/src/win4wine.c
-@@ -0,0 +1,2247 @@
+@@ -0,0 +1,2348 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#define _POSIX_C_SOURCE 200809L
 +/*
@@ -1239,7 +1253,7 @@ index 0000000..d29fe65
 + *
 + * Native windows are xdg-shell toplevels (ids from 0x7f000000, which X never
 + * gives) and X11 windows that are not Wine's (their X window id). Wine's
-+ * windows carry _WIN4WINE_CLASS and _WIN4WINE_HWND (Wine patch 0019); this
++ * windows carry _WIN4WINE_CLASS and _WIN4WINE_HWND (Wine patch 0022); this
 + * reads them over an X connection of its own, without blocking on replies.
 + */
 +#include <assert.h>
@@ -1364,6 +1378,107 @@ index 0000000..d29fe65
 +win4wine_enabled(void)
 +{
 +	return w.ipc;
++}
++
++/* How long a new X window may take to draw before it is shown anyway */
++#define DRAW_WAIT_MS 100
++
++struct show_when_drawn {
++	struct wlr_scene_node *node;
++	struct wlr_surface *surface;
++	struct view *view;
++	uint32_t seq;
++	struct wl_listener commit, unmap, surface_destroy, node_destroy;
++	struct wl_event_source *timer;
++};
++
++static void
++show_when_drawn_finish(struct show_when_drawn *s, bool show)
++{
++	if (show && (!s->view || (s->view->mapped && !s->view->minimized))) {
++		wlr_scene_node_set_enabled(s->node, true);
++	}
++	wl_list_remove(&s->commit.link);
++	wl_list_remove(&s->unmap.link);
++	wl_list_remove(&s->surface_destroy.link);
++	wl_list_remove(&s->node_destroy.link);
++	wl_event_source_remove(s->timer);
++	free(s);
++}
++
++/*
++ * A hidden surface gets no frame events from the scene, and Xwayland waits
++ * for one before it commits the client's drawing: let it go on.
++ */
++static void
++show_when_drawn_frame_done(struct show_when_drawn *s)
++{
++	struct timespec now;
++	clock_gettime(CLOCK_MONOTONIC, &now);
++	wlr_surface_send_frame_done(s->surface, &now);
++}
++
++static void
++show_when_drawn_commit(struct wl_listener *listener, void *data)
++{
++	struct show_when_drawn *s = wl_container_of(listener, s, commit);
++	/* The commit that mapped the surface comes here too */
++	if (s->surface->current.seq != s->seq) {
++		show_when_drawn_finish(s, true);
++	} else {
++		show_when_drawn_frame_done(s);
++	}
++}
++
++static int
++show_when_drawn_timeout(void *data)
++{
++	show_when_drawn_finish(data, true);
++	return 0;
++}
++
++static void
++show_when_drawn_unmap(struct wl_listener *listener, void *data)
++{
++	struct show_when_drawn *s = wl_container_of(listener, s, unmap);
++	show_when_drawn_finish(s, false);
++}
++
++static void
++show_when_drawn_surface_destroy(struct wl_listener *listener, void *data)
++{
++	struct show_when_drawn *s = wl_container_of(listener, s, surface_destroy);
++	show_when_drawn_finish(s, false);
++}
++
++static void
++show_when_drawn_node_destroy(struct wl_listener *listener, void *data)
++{
++	struct show_when_drawn *s = wl_container_of(listener, s, node_destroy);
++	show_when_drawn_finish(s, false);
++}
++
++void
++win4wine_show_when_drawn(struct server *server, struct wlr_scene_node *node,
++		struct wlr_surface *surface, struct view *view)
++{
++	struct show_when_drawn *s = znew(*s);
++	s->node = node;
++	s->surface = surface;
++	s->view = view;
++	s->seq = surface->current.seq;
++	wlr_scene_node_set_enabled(node, false);
++	s->commit.notify = show_when_drawn_commit;
++	wl_signal_add(&surface->events.commit, &s->commit);
++	s->unmap.notify = show_when_drawn_unmap;
++	wl_signal_add(&surface->events.unmap, &s->unmap);
++	s->surface_destroy.notify = show_when_drawn_surface_destroy;
++	wl_signal_add(&surface->events.destroy, &s->surface_destroy);
++	s->node_destroy.notify = show_when_drawn_node_destroy;
++	wl_signal_add(&node->events.destroy, &s->node_destroy);
++	s->timer = wl_event_loop_add_timer(server->wl_event_loop, show_when_drawn_timeout, s);
++	wl_event_source_timer_update(s->timer, DRAW_WAIT_MS);
++	show_when_drawn_frame_done(s);
 +}
 +
 +static struct win4wine_view *
@@ -4031,7 +4146,7 @@ index 0000000..5616153
 +	}
 +}
 diff --git a/src/xwayland-unmanaged.c b/src/xwayland-unmanaged.c
-index 38d3c31..58e6585 100644
+index 38d3c31..80a9273 100644
 --- a/src/xwayland-unmanaged.c
 +++ b/src/xwayland-unmanaged.c
 @@ -5,7 +5,33 @@
@@ -4086,7 +4201,7 @@ index 38d3c31..58e6585 100644
  		cursor_update_focus(unmanaged->server);
  	}
  }
-@@ -46,15 +72,17 @@ handle_map(struct wl_listener *listener, void *data)
+@@ -46,15 +72,21 @@ handle_map(struct wl_listener *listener, void *data)
  
  	CONNECT_SIGNAL(xsurface, unmanaged, set_geometry);
  
@@ -4107,10 +4222,14 @@ index 38d3c31..58e6585 100644
 +	/* win4wine: show only the window's shape (Wine's window regions) */
 +	win4wine_watch_shape(xsurface->window_id);
 +	place(unmanaged, xsurface->x, xsurface->y, xsurface->width, xsurface->height);
++	if (win4wine_enabled()) {
++		/* win4wine: not the blank first buffer, but once the client drew */
++		win4wine_show_when_drawn(unmanaged->server, unmanaged->node, xsurface->surface, NULL);
++	}
  	cursor_update_focus(unmanaged->server);
  }
  
-@@ -91,7 +119,9 @@ handle_unmap(struct wl_listener *listener, void *data)
+@@ -91,7 +123,9 @@ handle_unmap(struct wl_listener *listener, void *data)
  
  	wl_list_remove(&unmanaged->link);
  	wl_list_remove(&unmanaged->set_geometry.link);
@@ -4122,7 +4241,7 @@ index 38d3c31..58e6585 100644
  	/*
  	 * Mark the node as gone so a racing configure event
 diff --git a/src/xwayland.c b/src/xwayland.c
-index 1eb9c1a..66e72a3 100644
+index 1eb9c1a..7eda298 100644
 --- a/src/xwayland.c
 +++ b/src/xwayland.c
 @@ -2,6 +2,7 @@
@@ -4289,7 +4408,7 @@ index 1eb9c1a..66e72a3 100644
  	/*
  	 * For unknown reasons, XWayland surfaces that are completely
  	 * offscreen seem not to generate commit events. In rare cases,
-@@ -354,13 +399,43 @@ xwayland_view_configure(struct view *view, struct wlr_box geo)
+@@ -354,15 +399,45 @@ xwayland_view_configure(struct view *view, struct wlr_box geo)
  		!wlr_output_layout_intersects(view->server->output_layout, NULL,
  			&view->current);
  
@@ -4312,9 +4431,9 @@ index 1eb9c1a..66e72a3 100644
  		view->current.y = geo.y;
  		view_moved(view);
 +		update_slices(view);
-+	}
-+}
-+
+ 	}
+ }
+ 
 +/* win4wine: place a view at an exact X geometry (an XP frame around its window) */
 +void
 +xwayland_view_configure_x(struct view *view, const struct wlr_box *xbox)
@@ -4324,15 +4443,17 @@ index 1eb9c1a..66e72a3 100644
 +	if (xsurface->x == xbox->x && xsurface->y == xbox->y
 +			&& xsurface->width == xbox->width && xsurface->height == xbox->height) {
 +		return;
- 	}
++	}
 +	struct wlr_box box;
 +	xwayland_scale_from_x(view->server, xbox, &box);
 +	xview->requested_xbox = *xbox;
 +	xview->requested_box = box;
 +	xwayland_view_configure(view, box);
- }
- 
++}
++
  static void
+ handle_request_configure(struct wl_listener *listener, void *data)
+ {
 @@ -375,8 +450,12 @@ handle_request_configure(struct wl_listener *listener, void *data)
  
  	if (view_is_floating(view) && !ignore_configure_requests) {
@@ -4437,7 +4558,22 @@ index 1eb9c1a..66e72a3 100644
  	if (!xwayland_surface->surface) {
  		/*
  		 * We may get here if a user minimizes an xwayland dialog at the
-@@ -727,15 +844,25 @@ xwayland_view_map(struct view *view)
+@@ -715,7 +832,13 @@ xwayland_view_map(struct view *view)
+ 	handle_map_request(&xwayland_view->map_request, NULL);
+ 
+ 	view->mapped = true;
+-	wlr_scene_node_set_enabled(&view->scene_tree->node, true);
++	if (win4wine_enabled()) {
++		/* win4wine: not the blank first buffer, but once the client drew */
++		win4wine_show_when_drawn(view->server, &view->scene_tree->node,
++			xwayland_surface->surface, view);
++	} else {
++		wlr_scene_node_set_enabled(&view->scene_tree->node, true);
++	}
+ 
+ 	if (view->surface != xwayland_surface->surface) {
+ 		if (view->surface) {
+@@ -727,15 +850,25 @@ xwayland_view_map(struct view *view)
  		view->surface_destroy.notify = handle_surface_destroy;
  		wl_signal_add(&view->surface->events.destroy, &view->surface_destroy);
  
@@ -4466,7 +4602,7 @@ index 1eb9c1a..66e72a3 100644
  	}
  
  	/*
-@@ -786,6 +913,9 @@ xwayland_view_unmap(struct view *view, bool client_request)
+@@ -786,6 +919,9 @@ xwayland_view_unmap(struct view *view, bool client_request)
  	view->mapped = false;
  	wl_list_remove(&view->commit.link);
  	wlr_scene_node_set_enabled(&view->scene_tree->node, false);
@@ -4476,7 +4612,7 @@ index 1eb9c1a..66e72a3 100644
  	view_impl_unmap(view);
  
  	/* Update usable area to account for XWayland "struts" (panels) */
-@@ -1005,6 +1135,7 @@ xwayland_view_create(struct server *server,
+@@ -1005,6 +1141,7 @@ xwayland_view_create(struct server *server,
  	CONNECT_SIGNAL(xsurface, xwayland_view, associate);
  	CONNECT_SIGNAL(xsurface, xwayland_view, dissociate);
  	CONNECT_SIGNAL(xsurface, xwayland_view, request_activate);
@@ -4484,7 +4620,7 @@ index 1eb9c1a..66e72a3 100644
  	CONNECT_SIGNAL(xsurface, xwayland_view, request_configure);
  	CONNECT_SIGNAL(xsurface, xwayland_view, set_class);
  	CONNECT_SIGNAL(xsurface, xwayland_view, set_decorations);
-@@ -1096,6 +1227,9 @@ handle_server_ready(struct wl_listener *listener, void *data)
+@@ -1096,6 +1233,9 @@ handle_server_ready(struct wl_listener *listener, void *data)
  	sync_atoms(xcb_conn);
  	wlr_log(WLR_DEBUG, "Disconnecting from xwayland");
  	xcb_disconnect(xcb_conn);
@@ -4494,7 +4630,7 @@ index 1eb9c1a..66e72a3 100644
  }
  
  static void
-@@ -1166,6 +1300,26 @@ xwayland_server_init(struct server *server, struct wlr_compositor *compositor)
+@@ -1166,6 +1306,26 @@ xwayland_server_init(struct server *server, struct wlr_compositor *compositor)
   * - start scrolling
   * - all scroll events should end up on the maximized window on the other workspace
   */
@@ -4521,7 +4657,7 @@ index 1eb9c1a..66e72a3 100644
  void
  xwayland_adjust_stacking_order(struct server *server)
  {
-@@ -1349,65 +1503,87 @@ xwayland_update_workarea(struct server *server)
+@@ -1349,65 +1509,87 @@ xwayland_update_workarea(struct server *server)
  		return;
  	}
  
@@ -4652,7 +4788,7 @@ index 1eb9c1a..66e72a3 100644
  	struct wlr_box workarea = {
  		.x = workarea_left,
  		.y = workarea_top,
-@@ -1415,4 +1591,6 @@ xwayland_update_workarea(struct server *server)
+@@ -1415,4 +1597,6 @@ xwayland_update_workarea(struct server *server)
  		.height = workarea_bottom - workarea_top,
  	};
  	wlr_xwayland_set_workareas(server->xwayland, &workarea, 1);

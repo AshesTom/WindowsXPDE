@@ -132,7 +132,7 @@ def stage_media(prefix, wine=None):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
     # XP's system icons (IDI_APPLICATION and the message box icons) are read
-    # from XP's user32.dll as data (Wine 0126), under a name that is not taken
+    # from XP's user32.dll as data (Wine 0129), under a name that is not taken
     # for the loaded user32.
     source, target = assets / 'resources/user32.dll', prefix / 'drive_c/xp/res/user32-xp.dll'
     if source.is_file() and not (target.is_file() and filecmp.cmp(source, target, shallow=False)):

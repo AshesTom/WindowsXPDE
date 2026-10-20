@@ -3,8 +3,9 @@
 
 LightDM and PAM log the user in; this program only draws LogonUI's screen
 (greeter/w7logon.py) from the Windows 7 files that greeter/install.sh --win7
-copies: the user's tile and password field, the Ease of Access button, the
-edition's name and the shutdown button with its menu. When those files, GTK or
+copies: the users to choose from when there are several, the chosen user's
+tile and password field (with Switch User back to the list), the Ease of
+Access button, the edition's name and the shutdown button with its menu. When those files, GTK or
 LightDM's GObject bindings are missing, it starts the usual greeter instead
 (/etc/win4wine/win7-greeter.json "fallback", lightdm-gtk-greeter by default).
 """
@@ -18,7 +19,7 @@ import traceback
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 CARET_BLINK = 530      # ms, the default caret blink time
-FOCUS_ORDER = ('password', 'submit', 'accessibility', 'shutdown', 'more')
+OPTIONS = ('accessibility', 'shutdown', 'more')
 
 
 def log(message):
@@ -56,11 +57,13 @@ class Greeter:
         self.lightdm.connect('show-message', self.on_message)
         self.lightdm.connect('authentication-complete', self.on_complete)
         self.lightdm.connect_to_daemon_sync()
-        users = LightDM.UserList.get_instance().get_users()
-        name = self.lightdm.get_select_user_hint() or (users[0].get_name() if users else '')
-        user = LightDM.UserList.get_instance().get_user_by_name(name) if name else None
-        picture = user.get_image() if user else None
-        self.screen = w7logon.Screen(assets, name, picture)
+        # LogonUI lists the users in name order; LightDM's hint (a user to switch
+        # to) goes to that user's tile directly.
+        users = sorted(LightDM.UserList.get_instance().get_users(), key=lambda u: u.get_name().casefold())
+        listed = [(u.get_name(), u.get_image()) for u in users]
+        hint = self.lightdm.get_select_user_hint()
+        name = hint if hint in dict(listed) else ''
+        self.screen = w7logon.Screen(assets, name, dict(listed).get(name), users=listed or None)
         self.waiting = False        # a password was given and LightDM checks it
 
         root = Gdk.get_default_root_window()
@@ -180,9 +183,26 @@ class Greeter:
         except GLib.Error as e:
             log(f'{action}: {e.message}')
 
+    def focus_order(self):
+        s = self.screen
+        if s.listing:
+            return ('tiles',) + OPTIONS
+        return ('password', 'submit') + (('switch',) if len(s.users) > 1 else ()) + OPTIONS
+
+    def cancel(self):
+        if self.lightdm.get_in_authentication():
+            self.lightdm.cancel_authentication()
+
     def activate(self, target):
         s = self.screen
-        if target == 'submit':
+        if target.startswith('tile:'):
+            s.choose(int(target[5:]))
+        elif target == 'tiles':
+            s.choose(s.selected)
+        elif target == 'switch':
+            self.cancel()
+            s.back_to_list()
+        elif target == 'submit':
             self.log_on()
         elif target == 'ok':
             s.message = None
@@ -225,7 +245,9 @@ class Greeter:
             if index is not None or s.menu is None:
                 return True
         target = s.hit(self.width, self.height, event.x, event.y)
-        if target is not None:
+        if target is not None and target.startswith('tile:'):
+            s.focus, s.selected, s.pressed = 'tiles', int(target[5:]), target
+        elif target is not None:
             s.focus = target if target != 'tile' else 'password'
             if target != 'password':
                 s.pressed = target
@@ -266,10 +288,23 @@ class Greeter:
             if key in ('Return', 'KP_Enter', 'space', 'Escape'):
                 self.activate('ok')
             return True
+        order = self.focus_order()
         if key in ('Tab', 'ISO_Left_Tab'):
             step = -1 if key == 'ISO_Left_Tab' or state & Gdk.ModifierType.SHIFT_MASK else 1
-            current = FOCUS_ORDER.index(s.focus) if s.focus in FOCUS_ORDER else 0
-            s.focus = FOCUS_ORDER[(current + step) % len(FOCUS_ORDER)]
+            current = order.index(s.focus) if s.focus in order else 0
+            s.focus = order[(current + step) % len(order)]
+        elif s.listing and s.focus == 'tiles' and key in ('Left', 'Right', 'Up', 'Down', 'Home', 'End'):
+            last = len(s.users) - 1
+            s.selected = {'Left': max(0, s.selected - 1), 'Up': max(0, s.selected - 1), 'Home': 0,
+                          'Right': min(last, s.selected + 1), 'Down': min(last, s.selected + 1),
+                          'End': last}[key]
+        elif s.listing and s.focus == 'tiles' and key in ('Return', 'KP_Enter', 'space'):
+            self.activate('tiles')
+            return True
+        elif 'switch' in order and (key == 'Escape' or (state & Gdk.ModifierType.MOD1_MASK and key.lower() == 'w')):
+            # Esc and Switch User's access key: back to the list, the password dropped
+            self.activate('switch')
+            return True
         elif key in ('Return', 'KP_Enter'):
             self.activate('submit' if s.focus in ('password', 'submit') else s.focus)
             return True

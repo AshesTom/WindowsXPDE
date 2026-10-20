@@ -121,7 +121,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 - `--wayland` を付けると、Wayland のセッション「Windows 7 Shell (Wine, Wayland)」も入れます（X11 のセッション以上に実験的です。
   [docs/wayland.md](docs/wayland.md)）。
 - `--theme` はまだ使えません。`--dpi` は使えます。
-- 確かめたのは日本語版の Windows 7 Professional SP1 だけです。詳しくは [docs/windows7.md](docs/windows7.md) にあります。
+- 確かめたのは日本語版の Windows 7 Professional SP1 です。英語版は、日本語版のメディアの文字（MUI）を英語の言語パック（KB2483139）のものに入れ替えて確かめました（英語版のメディアそのものはまだ試していません）。言語はメディアから判断し、英語版では英語のロケール（`en_US.UTF-8`）で入れます。詳しくは [docs/windows7.md](docs/windows7.md) にあります。
 
 ## 3. ログインする
 
@@ -137,6 +137,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | 日本語入力の切り替え | Ctrl+Space または 全角/半角。通知領域のアイコンのクリックでも切り替えられます |
 | Linux のアプリを起動 | スタート → すべてのプログラム（名前に「(Linux)」が付いています） |
 | Windows のアプリを入れる | 端末で `wine setup.exe`。セッションの `PATH` の先頭にはこの Wine が入っています |
+| セッションの外（ssh、ほかのデスクトップ）から Windows のアプリを起動 | `win4wine-wine setup.exe`（`~/.local/bin`）。セッションと同じ prefix・Wine・設定で動き、見た目もセッションと同じになります。シェルを複数入れたときは `--shell xp`・`reactos`・`win7` で選びます。素の `wine` では `~/.wine` と Wine の標準の見た目になります |
 | スタートメニュー | Windows キー、Ctrl+Esc |
 | ファイル名を指定して実行 / エクスプローラ | Win+R / Win+E |
 | ログオフ・終了 | スタート → ログオフ / 終了オプション |

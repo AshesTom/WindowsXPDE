@@ -178,7 +178,7 @@ def install(run, exists, language='ja'):
     # glyphs of MS Gothic at 16 pixels (pixel-equal; the half-width ones come
     # from its raster font vga932.fon). Wine's conhost would pick the first
     # fixed-pitch font, which has no Japanese glyphs; with these values and
-    # Wine patch 0050 it lays the 16-pixel font out in 8x18 cells as XP does.
+    # Wine patch 0052 it lays the 16-pixel font out in 8x18 cells as XP does.
     # The English family name keeps reg.exe's command line ASCII. Seed once.
     # English XP's console draws 8x12 cells with its raster Terminal font
     # (vgaoem.fon, extracted for English media), as on the English reference

@@ -56,7 +56,7 @@ Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベー�
   XP のシェルと並べて入れられます。
 - **Windows 7 のシェル（任意・実験的）**: Windows 7 SP1 x64 の explorer で動かすセッションです（Windows 7 ベーシックの見た目。
   Aero のガラスはまだありません）。スタートメニュー、タスクバー、通知領域、フォルダの窓が動き、Linux のアプリもアプリごとに
-  タスクバーにまとまります。確かめたのは日本語版だけです。
+  タスクバーにまとまります。確かめたのは日本語版と、その文字を英語の言語パックのものに入れ替えた英語版です。
 
 <table>
   <tr>
@@ -67,6 +67,22 @@ Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベー�
     <td align="center" width="50%">
       <img src="docs/images/screenshot-reactos.png" alt="ReactOS のシェルと Linux のアプリ" width="400" /><br />
       ReactOS のシェル（<code>--shell reactos</code>。XP の ISO は要りません）
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/images/screenshot-win7.png" alt="Windows 7 のシェルのスタートメニューと、Linux と Windows のアプリ" width="400" /><br />
+      Windows 7 のシェル（<code>--shell win7</code>。実験的）
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/images/screenshot-win7-small.png" alt="小さいアイコンでラベル付きのタスクバーの Windows 7 のシェル" width="400" /><br />
+      タスクバーの「小さいアイコンを使う」と「結合しない」（すぐに切り替わります）
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/images/screenshot-win7-logon.png" alt="Windows 7 のログオン画面で利用者を選ぶところ" width="400" /><br />
+      Windows 7 のログオン画面（<code>--greeter</code>）
     </td>
   </tr>
 </table>
@@ -118,7 +134,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 ```text
 LightDM ─ XP のようこそ画面 (greeter/)
    └─ XP Shell セッション (session/supervisor.py)
-        ├─ Wine 11.0 + 128 本のパッチ (wine/patches/)
+        ├─ Wine 11.0 + 131 本のパッチ (wine/patches/)
         │    └─ XP の explorer.exe, shell32.dll, …（ISO から取り出したもの。ReactOS や Windows 7 のシェルではそれらのもの）
         ├─ bridge-wm: X11 のウィンドウマネージャー + Win32 の代理ウィンドウ (bridge-wm/)
         │    （Wayland のセッションでは、ウィンドウマネージャーの代わりにパッチを当てた labwc。wayland/）
@@ -142,5 +158,5 @@ LightDM ─ XP のようこそ画面 (greeter/)
 
 [LGPL-2.1-or-later](LICENSE)（Wine と同じ）です。対象はこのリポジトリのコードとパッチだけです。
 ただし `wayland/patches/labwc/` は labwc と同じ GPL-2.0-only、`wayland/patches/wlroots/` は wlroots と同じ MIT です。
-Windows XP と Windows 7 のファイルと、スクリーンショットに写っている XP の画面の著作権は Microsoft にあります。
+Windows XP と Windows 7 のファイルと、スクリーンショットに写っている XP と Windows 7 の画面の著作権は Microsoft にあります。
 ReactOS のシェルで使う ReactOS のファイルは、ReactOS のライセンス（GPL-2.0-or-later、DLL の多くは LGPL-2.1-or-later）に従います。

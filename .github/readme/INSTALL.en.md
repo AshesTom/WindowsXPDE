@@ -121,7 +121,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
   "**Windows 7 Shell (Wine, X11)**". It can be set up beside the XP and ReactOS shells (they share Wine and the bridge).
 - Windows 7's Aero cursors are installed; with `--greeter` the login screen is Windows 7's logon screen too.
 - `--theme` and `--wayland` are not available for it yet; `--dpi` is.
-- Only Japanese Windows 7 Professional SP1 has been tested. Details: [docs/windows7.md](../../docs/windows7.md) (Japanese).
+- Tested with Japanese Windows 7 Professional SP1. English was tried with that media's strings (MUI) replaced by those of the English language pack (KB2483139); English installation media itself has not been tried yet. The language follows the media, and English Windows 7 is set up with the English locale (`en_US.UTF-8`). Details: [docs/windows7.md](../../docs/windows7.md) (Japanese).
 
 ## 3. Log in
 
@@ -137,6 +137,7 @@ Restart the display manager (or reboot).
 | toggle Japanese input | Ctrl+Space or Zenkaku/Hankaku, or click the icon in the notification area |
 | start a Linux application | Start → All Programs (names end in "(Linux)") |
 | install a Windows application | `wine setup.exe` in a terminal; the session's `PATH` starts with this Wine |
+| start a Windows application from outside the session (ssh, another desktop) | `win4wine-wine setup.exe` (`~/.local/bin`): it runs with the session's prefix, Wine and settings, and looks as in the session. With more than one shell set up, choose with `--shell xp`, `reactos` or `win7`. Plain `wine` uses `~/.wine` and Wine's own look |
 | open the Start menu | the Windows key, Ctrl+Esc |
 | Run / Explorer | Win+R / Win+E |
 | log off or shut down | Start → Log Off / Turn Off Computer |

@@ -4,11 +4,11 @@ Subject: [PATCH] win32u: Windows 7's ClearType levels and blending
 Purpose: draw ClearType text in the Windows 7 shell session with
 Windows 7's colors.
 Windows behavior: Windows 7 SP1 samples the outline as XP does (seven
-levels per subpixel, shapes and positions as with 0053), but blends
+levels per subpixel, shapes and positions as with 0055), but blends
 linearly at the same default settings (FontSmoothingGamma 0,
 FontSmoothingType 2): black text on white gives only 0, 43, 85, 128,
 170, 212 and 255, where XP gives 0, 114, 155, 186, 212, 234 and 255.
-Wine before (0053): XP's gamma of 2.2 and levels rounded the other way
+Wine before (0055): XP's gamma of 2.2 and levels rounded the other way
 in two places.
 Change: for WIN4WINE_SHELL=win7, a linear gamma and Windows 7's level
 table.

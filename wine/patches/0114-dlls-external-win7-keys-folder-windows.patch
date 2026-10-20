@@ -4,7 +4,7 @@ Subject: [PATCH] dwmapi, combase, ole32: what Windows 7's shell needs for the Wi
 Purpose: open Windows 7's Start menu with the Windows key, and get
 Windows 7's folder windows (Win+E) further.
 Windows 7 behavior: when its task switcher gets HSHELL_TASKMAN (the
-Windows key, 0024), the taskbar calls dwmapi's DwmpActivateLivePreview
+Windows key, 0026), the taskbar calls dwmapi's DwmpActivateLivePreview
 (ordinal 113) before it opens the Start menu; clicking or pointing at a
 taskbar button calls DwmpRegisterThumbnail (ordinal 124) for a window
 thumbnail. Opening a folder window,
@@ -38,7 +38,7 @@ data, and unmarshaling gives that pointer back without asking again
 was taken from the global interface table). On 64-bit, ole32 exports
 HACCEL, HBITMAP, HGLOBAL, HICON, HMENU and HWND _UserSize64,
 _UserMarshal64, _UserUnmarshal64 and _UserFree64 as the classic
-functions, as 0081 does for oleaut32.
+functions, as 0083 does for oleaut32.
 Evidence: Windows 7 SP1 x64 explorer.exe opens its Start menu for the
 Windows key and Ctrl+Esc, and stays when taskbar buttons are clicked; Win+E creates the folder window (CabinetWClass)
 with Windows 7's actxprxy.dll loaded for its interfaces. The folder

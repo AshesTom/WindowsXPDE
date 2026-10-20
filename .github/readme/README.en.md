@@ -88,7 +88,7 @@ With a Windows 7 ISO, it can also run **Windows 7's shell** (the Windows 7 Basic
   up beside the XP shell.
 - **Windows 7 shell (optional, experimental)**: the session with Windows 7 SP1 x64's explorer (the Windows 7 Basic look; no Aero
   glass yet). The Start menu, taskbar, notification area and folder windows work, and Linux applications are grouped per
-  application on the taskbar. Only Japanese Windows 7 has been tested.
+  application on the taskbar. Tested with Japanese Windows 7, and in English with its strings replaced by the English language pack's.
 
 <table>
   <tr>
@@ -99,6 +99,22 @@ With a Windows 7 ISO, it can also run **Windows 7's shell** (the Windows 7 Basic
     <td align="center" width="50%">
       <img src="../../docs/images/screenshot-reactos-en.png" alt="The ReactOS shell and Linux applications" width="400" /><br />
       The ReactOS shell (<code>--shell reactos</code>; no XP ISO needed)
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="../../docs/images/screenshot-win7-en.png" alt="The Windows 7 shell's Start menu with Linux and Windows applications" width="400" /><br />
+      The Windows 7 shell (<code>--shell win7</code>; experimental)
+    </td>
+    <td align="center" width="50%">
+      <img src="../../docs/images/screenshot-win7-small-en.png" alt="The Windows 7 shell with the taskbar's small icons and labels" width="400" /><br />
+      The taskbar's "Use small icons" and "Never combine" (applies at once)
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="../../docs/images/screenshot-win7-logon.png" alt="Choosing a user on the Windows 7 logon screen" width="400" /><br />
+      The Windows 7 logon screen (<code>--greeter</code>)
     </td>
   </tr>
 </table>
@@ -118,7 +134,7 @@ With a Windows 7 ISO, it can also run **Windows 7's shell** (the Windows 7 Basic
 ```text
 LightDM ─ XP Welcome greeter (greeter/)
    └─ XP Shell session (session/supervisor.py)
-        ├─ Wine 11.0 + 128 patches (wine/patches/)
+        ├─ Wine 11.0 + 131 patches (wine/patches/)
         │    └─ XP's explorer.exe, shell32.dll, … (extracted from the ISO; ReactOS's or Windows 7's in their sessions)
         ├─ bridge-wm: an X11 WM + Win32 proxy windows (bridge-wm/)
         │    (Wayland session: a patched labwc instead of the WM, wayland/)
@@ -142,5 +158,5 @@ The design documents are in Japanese; [docs/README.md](../../docs/README.md) lis
 
 [LGPL-2.1-or-later](../../LICENSE), the same as Wine. It covers only the code and patches in this repository,
 except `wayland/patches/labwc/` (GPL-2.0-only, as labwc) and `wayland/patches/wlroots/` (MIT, as wlroots).
-The Windows XP and Windows 7 files, and the XP screens in the screenshot, are copyrighted by Microsoft.
+The Windows XP and Windows 7 files, and the XP and Windows 7 screens in the screenshots, are copyrighted by Microsoft.
 The ReactOS files that the ReactOS shell uses are under ReactOS's licenses (GPL-2.0-or-later; most of its DLLs LGPL-2.1-or-later).
