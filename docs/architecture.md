@@ -195,7 +195,8 @@ Wine の上で動く Win32 のプロセスです。Linux の窓 1 つごとに�
 - `greeter/xp-greeter.py` は LightDM の greeter です。利用者の XP の logonui.exe・msgina.dll・winlogon.exe などから、
   画像と文字列を PE の資源として読みます（コードは動かしません）。画面は `greeter/welcome.py` が cairo と Pango で描きます。
 - 必要なファイルが無ければ、LightDM に接続する前に通常の greeter（lightdm-gtk-greeter）に切り替えます。
-- ログオン中とログオフ中の XP の画面は、セッションの中で `greeter/xp-splash.py` が出します。
+- ログオン中とログオフ中の XP の画面は、セッションの中で `greeter/xp-splash.py` が出します。シェルが起動するまでは、
+  XP が起動中に出す大きな「welcome」だけの画面です。greeter を入れていなければ、このチェックアウトの `.local/assets` から描きます。
 - XP のカーソルは `greeter/cursors.py` が利用者の user32.dll から X のカーソルテーマ（`win4wine-xp`）として作ります。
 
 ## DPI

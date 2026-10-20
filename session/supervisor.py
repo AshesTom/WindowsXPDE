@@ -325,8 +325,9 @@ class Session:
         self.hide_welcome()
         log = (self.state / 'welcome.log').open('ab', buffering=0)
         self.logs.append(log)
+        extra = ['--assets', str(ROOT / '.local/assets')] if self.welcome_screen == 'greeter/xp-splash.py' else []
         self.welcome = subprocess.Popen([sys.executable, str(ROOT / self.welcome_screen), mode,
-                                         '--dpi', str(self.dpi)],
+                                         '--dpi', str(self.dpi), *extra],
                                         stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
                                         start_new_session=True)
 
