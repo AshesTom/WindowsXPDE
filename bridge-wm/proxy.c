@@ -18,7 +18,7 @@
 #define MAX_CLIENTS 2048
 struct client { unsigned long xid; HWND hwnd; int seen; int hidden; int active; int moving; int x, y, width, height;
     RECT workarea;
-    HICON icon; int icon_checked, icon_present; FILETIME icon_time; DWORD icon_size;
+    HICON icon, small_icon; int icon_checked, icon_present; FILETIME icon_time; DWORD icon_size;
     ATOM app_id;
 };
 static struct client clients[MAX_CLIENTS];
@@ -451,7 +451,7 @@ static void client_icon(struct client *c)
 {
     WCHAR path[MAX_PATH + 40];
     WIN32_FILE_ATTRIBUTE_DATA attrs;
-    HICON icon = NULL, previous;
+    HICON icon = NULL, small_icon = NULL, previous, previous_small;
     int present;
     swprintf(path, MAX_PATH + 40, L"%ls\\icon-%lx.argb", directory, c->xid);
     present = GetFileAttributesExW(path, GetFileExInfoStandard, &attrs) &&
@@ -465,12 +465,22 @@ static void client_icon(struct client *c)
         c->icon_time = attrs.ftLastWriteTime; c->icon_size = attrs.nFileSizeLow;
         if (!attrs.nFileSizeHigh && attrs.nFileSizeLow <= 12 + 256 * 256 * 4)
             icon = read_icon(path, attrs.nFileSizeLow);
+        /* The caption's 16x16 image, written before the big one. */
+        swprintf(path, MAX_PATH + 40, L"%ls\\icon-%lx-small.argb", directory, c->xid);
+        if (icon && GetFileAttributesExW(path, GetFileExInfoStandard, &attrs) &&
+            !(attrs.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) &&
+            !attrs.nFileSizeHigh && attrs.nFileSizeLow <= 12 + 256 * 256 * 4)
+            small_icon = read_icon(path, attrs.nFileSizeLow);
     }
     previous = c->icon;
+    previous_small = c->small_icon;
     c->icon = icon;
-    SendMessageW(c->hwnd, WM_SETICON, ICON_SMALL, (LPARAM)(icon ? icon : default_icon));
+    c->small_icon = small_icon;
+    SendMessageW(c->hwnd, WM_SETICON, ICON_SMALL, (LPARAM)(small_icon ? small_icon : icon ? icon : default_icon));
     SendMessageW(c->hwnd, WM_SETICON, ICON_BIG, (LPARAM)(icon ? icon : default_icon));
-    if (previous) DestroyIcon(previous); /* IDI_APPLICATION is shared and never owned. */
+    /* IDI_APPLICATION is shared and never owned. */
+    if (previous) DestroyIcon(previous);
+    if (previous_small) DestroyIcon(previous_small);
     RedrawWindow(c->hwnd, NULL, NULL, RDW_INVALIDATE | RDW_FRAME);
     notify(HSHELL_REDRAW, c->hwnd);
 }
@@ -677,6 +687,7 @@ static void snapshot(void)
         {
             DestroyWindow(clients[i].hwnd);
             if (clients[i].icon) DestroyIcon(clients[i].icon);
+            if (clients[i].small_icon) DestroyIcon(clients[i].small_icon);
             if (clients[i].app_id) GlobalDeleteAtom(clients[i].app_id);
             memset(&clients[i], 0, sizeof(clients[i]));
         }
@@ -1979,6 +1990,7 @@ int wmain(int argc, WCHAR **argv)
                 {
                     DestroyWindow(clients[i].hwnd);
                     if (clients[i].icon) DestroyIcon(clients[i].icon);
+                    if (clients[i].small_icon) DestroyIcon(clients[i].small_icon);
                 }
                 for (i = 0; i < MAX_TRAY; ++i) if (tray_icons[i].id) tray_remove(&tray_icons[i]);
                 return 0;
