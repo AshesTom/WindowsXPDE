@@ -16,32 +16,48 @@ program, common control class names are not redirected.
 Scope: processes of the XP shell's session with comctl32 beside their exe
 (ReactOS's beside ros-explorer.exe is left to 0143).
 ---
- dlls/user32/class.c | 23 +++++++++++++++++++++++
- 1 file changed, 23 insertions(+)
+ dlls/user32/class.c | 39 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
 
 diff --git a/dlls/user32/class.c b/dlls/user32/class.c
-index 910fb33..6fe64a7 100644
+index 910fb33..710f628 100644
 --- a/dlls/user32/class.c
 +++ b/dlls/user32/class.c
-@@ -189,6 +189,26 @@ static ULONG_PTR set_menu_nameA( HWND hwnd, INT offset, ULONG_PTR newval )
+@@ -189,6 +189,42 @@ static ULONG_PTR set_menu_nameA( HWND hwnd, INT offset, ULONG_PTR newval )
      return 0;
  }
  
-+/* XP's comctl32 loaded from beside the program (Wine patch 0016, XP Explorer 0004)
-+ * registers its classes without a version and has no RegisterClassNameW. */
++/* XP's comctl32 loaded from beside the program (Wine patch 0149) registers its
++ * classes without a version and has no RegisterClassNameW. As there, programs
++ * in the system directories are not beside it, nor is Wine's own file. */
 +static BOOL shell_comctl32_beside_exe(void)
 +{
 +    static int beside = -1;
 +    if (beside == -1)
 +    {
-+        WCHAR path[MAX_PATH], *slash;
++        static const char signature[] = "Wine builtin DLL";
++        WCHAR path[MAX_PATH], system[MAX_PATH], *slash;
 +        DWORD length = GetModuleFileNameW( NULL, path, ARRAY_SIZE(path) - 13 );
 +        beside = 0;
 +        if (win4wine_shell() == WIN4WINE_SHELL_XP && length && length < ARRAY_SIZE(path) - 13 &&
 +            (slash = wcsrchr( path, '\\' )))
 +        {
-+            lstrcpyW( slash + 1, L"comctl32.dll" );
-+            beside = GetFileAttributesW( path ) != INVALID_FILE_ATTRIBUTES;
++            char header[0x40 + sizeof(signature)];
++            DWORD read;
++            HANDLE file;
++            *slash = 0;
++            if ((GetSystemDirectoryW( system, ARRAY_SIZE(system) ) && !wcsicmp( path, system )) ||
++                (GetSystemWow64DirectoryW( system, ARRAY_SIZE(system) ) && !wcsicmp( path, system )))
++                return FALSE;
++            lstrcpyW( slash, L"\\comctl32.dll" );
++            file = CreateFileW( path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, 0 );
++            if (file != INVALID_HANDLE_VALUE)
++            {
++                if (ReadFile( file, header, sizeof(header), &read, NULL ) && read == sizeof(header) &&
++                    header[0] == 'M' && header[1] == 'Z')
++                    beside = memcmp( header + 0x40, signature, sizeof(signature) - 1 ) != 0;
++                CloseHandle( file );
++            }
 +        }
 +    }
 +    return beside;
@@ -50,7 +66,7 @@ index 910fb33..6fe64a7 100644
  void get_class_version( UNICODE_STRING *name, UNICODE_STRING *version, BOOL load )
  {
      ACTCTX_SECTION_KEYED_DATA data = {.cbSize = sizeof(data)};
-@@ -198,6 +218,9 @@ void get_class_version( UNICODE_STRING *name, UNICODE_STRING *version, BOOL load
+@@ -198,6 +234,9 @@ void get_class_version( UNICODE_STRING *name, UNICODE_STRING *version, BOOL load
      memset( version, 0, sizeof(*version) );
  
      if (IS_INTRESOURCE( name->Buffer ) || is_builtin_class( name->Buffer )) return;

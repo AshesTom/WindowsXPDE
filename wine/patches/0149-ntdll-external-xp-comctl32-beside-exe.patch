@@ -13,22 +13,23 @@ Scope: only in the XP shell's session (WIN4WINE_EXTERNAL_SHELL without
 WIN4WINE_SHELL; 0143 serves ReactOS's shell) and with a comctl32.dll beside
 the executable (C:\xp\xp-explorer.exe and C:\windows\rundll32.exe here).
 ---
- dlls/ntdll/loader.c | 33 ++++++++++++++++++++++++++++++++-
- 1 file changed, 32 insertions(+), 1 deletion(-)
+ dlls/ntdll/loader.c | 36 +++++++++++++++++++++++++++++++++++-
+ 1 file changed, 35 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/ntdll/loader.c b/dlls/ntdll/loader.c
-index 76276c7..1376838 100644
+index 76276c7..d3c9b2d 100644
 --- a/dlls/ntdll/loader.c
 +++ b/dlls/ntdll/loader.c
-@@ -3349,6 +3349,36 @@ static WCHAR *shell_comctl32(void)
+@@ -3349,6 +3349,39 @@ static WCHAR *shell_comctl32(void)
      return NULL;
  }
  
-+/* In the XP shell's session, a comctl32.dll beside the executable
++/* In the XP shell's session, XP's comctl32.dll beside the executable
 + * (XP's common controls 6, as for XP Explorer and the rundll32 of XP's
 + * Display Properties) also stands in for the SxS redirection: otherwise a
 + * module's manifest loads Wine's common controls 6 beside XP's, and the
-+ * shell's dialogs mix the two. */
++ * shell's dialogs mix the two. Programs in the system directories are not
++ * beside it: their comctl32.dll is Wine's, or XP's version 5. */
 +static BOOL shell_comctl32_beside_exe( const WCHAR *libname )
 +{
 +    static int beside = -1;
@@ -44,10 +45,12 @@ index 76276c7..1376838 100644
 +        {
 +            memcpy( path, image->Buffer, length * sizeof(WCHAR) );
 +            path[length] = 0;
-+            if ((slash = wcsrchr( path, '\\' )))
++            if ((slash = wcsrchr( path, '\\' )) &&
++                (slash - path != 19 || (wcsnicmp( path, L"C:\\windows\\system32", 19 ) &&
++                                        wcsnicmp( path, L"C:\\windows\\syswow64", 19 ))))
 +            {
 +                wcscpy( (WCHAR *)slash + 1, L"comctl32.dll" );
-+                beside = RtlDoesFileExists_U( path ) ? 1 : 0;
++                beside = native_pe_file( path ) ? 1 : 0;
 +            }
 +        }
 +    }
@@ -57,7 +60,7 @@ index 76276c7..1376838 100644
  /***********************************************************************
   *	find_dll_file
   *
-@@ -3371,7 +3401,8 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname, UNI
+@@ -3371,7 +3404,8 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname, UNI
          status = find_apiset_dll( libname, &fullname );
          if (status == STATUS_DLL_NOT_FOUND) return status;
  
