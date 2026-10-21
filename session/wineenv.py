@@ -46,7 +46,7 @@ def environment(base, config, shell):
     if shell['name']:
         # Wine leaves ReactOS's own controls to it (Start button, dialogs);
         # with Windows 7's shell the XP shell's taskbar replacements are
-        # left out and the Windows 7 changes apply (patches 0109 to 0125).
+        # left out and the Windows 7 changes apply (patches 0110 to 0127).
         env['WIN4WINE_SHELL'] = shell['name']
     # The prefix decides its architecture; the recovery prefix takes Wine's default.
     env.pop('WINEARCH', None)

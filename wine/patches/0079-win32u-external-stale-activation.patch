@@ -66,10 +66,10 @@ index d14baa9..9667b77 100644
      return ret;
  }
 diff --git a/dlls/win32u/message.c b/dlls/win32u/message.c
-index 00cceac..e0bdca0 100644
+index d34c965..16779fc 100644
 --- a/dlls/win32u/message.c
 +++ b/dlls/win32u/message.c
-@@ -2204,7 +2204,17 @@ static LRESULT handle_internal_message( HWND hwnd, UINT msg, WPARAM wparam, LPAR
+@@ -2211,7 +2211,17 @@ static LRESULT handle_internal_message( HWND hwnd, UINT msg, WPARAM wparam, LPAR
          HWND prev;
  
          if (!wparam && NtUserGetForegroundWindow() == hwnd) return 0;
