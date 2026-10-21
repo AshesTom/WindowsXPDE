@@ -22,4 +22,5 @@ compile linux-links.exe "$repo/session/linux-links.c" -lole32 -lshell32 -luuid
 i686-w64-mingw32-windres -I "$src" "$src/xptray.rc" -O coff -o "$out/xptray.res"
 compile xptray.exe "$src/xptray.c" "$out/xptray.res" -mwindows -lcomctl32 -lgdi32 -luser32 -lkernel32
 rm -f "$out/xptray.res"
+"$cc" -std=gnu11 -Wall -Wextra -O2 -municode -shared "$src/xpmix.c" "$src/xpmix.def" -o "$out/xpmix.dll" -lwinmm
 echo "Helpers built in $out"

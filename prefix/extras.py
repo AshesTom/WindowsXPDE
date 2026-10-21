@@ -30,9 +30,9 @@ import xp_schemes
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / '.local/bridge'
 # Bumped when apply() changes; setup.sh applies it again on existing prefixes.
-VERSION = '5'
+VERSION = '6'
 MARKER = '.xp-extras'
-HELPERS = ('xptray.exe', 'startmenu.exe', 'iexplore.exe', 'linux-links.exe')
+HELPERS = ('xptray.exe', 'xpmix.dll', 'startmenu.exe', 'iexplore.exe', 'linux-links.exe')
 # XP's Regional and Language Options and what it loads (assets/intl), native
 # in rundll32 and in XP Explorer, whose Control Panel lists it.
 INTL = ('intl.cpl', 'input.dll', 'syssetup.dll', 'sfcfiles.dll')

@@ -31,6 +31,13 @@ IE_NATIVE = ('mshtml', 'mshtmled', 'jscript', 'vbscript', 'urlmon', 'wininet', '
              'imgutil', 'pngfilt', 'msrating', 'dxtrans', 'dxtmsft', 'iedkcs32')
 IE_REGISTER = ('urlmon.dll', 'mshtml.dll', 'jscript.dll', 'vbscript.dll', 'mlang.dll', 'iepeers.dll',
                'imgutil.dll', 'pngfilt.dll', 'mshtmled.dll', 'dxtrans.dll', 'dxtmsft.dll')
+# The Search Companion (copy_search) runs in the shell's process, with IE6's
+# engine and XP's msxml3 and oleacc: Wine's msxml3 calls urlmon's CreateUri,
+# which IE6's urlmon lacks, and Wine's oleacc lacks CreateStdAccessibleProxyW.
+SEARCH_NATIVE = ('msxml3', 'oleacc')
+SEARCH_STAGED = ('msxml3.dll', 'msxml3r.dll', 'oleacc.dll', 'oleaccrc.dll')
+AGENT_REGISTER = ('agentctl.dll', 'agentdp2.dll', 'agentdpv.dll', 'agentmpx.dll', 'mslwvtts.dll', 'agtintl.dll',
+                  'agentsr.dll', 'agentpsh.dll')
 CPL = ('desk.cpl', 'themeui.dll', 'deskadp.dll', 'deskmon.dll', 'logon.scr',
        # Image thumbnails and previews (shell group of the assets).
        'shimgvw.dll')
@@ -150,6 +157,18 @@ def ie_registry(r):
     # IE opens its windows in its own process, where its engine is native
     # (XP's default hands them to the shell's process).
     r.add(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\BrowseNewProcess', 'BrowseNewProcess', 'yes')
+    # The Search Companion: IE6's engine in XP Explorer too, from syswow64
+    # (stage()), where every other program keeps Wine's (mshtml stays disabled).
+    for dll in IE_NATIVE + SEARCH_NATIVE:
+        if dll != 'mshtml':
+            r.add(r'HKCU\Software\Wine\DllOverrides', dll, 'builtin')
+        r.add(r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides', dll, 'native')
+    for dll in SEARCH_NATIVE:
+        r.add(r'HKCU\Software\Wine\AppDefaults\iexplore.exe\DllOverrides', dll, 'native')
+    r.add(r'HKCU\Software\Wine\AppDefaults\regsvr32.exe\DllOverrides', 'msxml3', 'native,builtin')
+    # agentsvr.exe names only the current version of Agent.Server (CurVer),
+    # which Wine's CLSIDFromProgID does not follow; agentctl.dll looks it up.
+    r.add(r'HKCR\Agent.Server\CLSID', None, '{D45FD2FC-5C6E-11D1-9EC1-00C04FD7081F}')
     return r
 
 
@@ -279,6 +298,36 @@ def xp_registrations(assets):
     return '\r\n'.join(lines) + '\r\n'
 
 
+# The DACL that XP's shell32 gives Wine's user's Recycle Bin folder on each drive
+# (RECYCLER\S-1-5-21-0-0-0-1000), and checks byte for byte the first time it
+# opens it: user, SYSTEM and Administrators get full access, each in one ACE
+# for the folder and one inherited by its contents. Wine patch 0151 keeps it
+# in this extended attribute (the DACL's control flags, then the ACL).
+RECYCLER_SID = 'S-1-5-21-0-0-0-1000'
+RECYCLER_DACL_XATTR = 'user.wine.dacl'
+RECYCLER_DACL = bytes.fromhex(
+    '00000000' '0200a80006000000'
+    '00002400ff011f00' '010500000000000515000000000000000000000000000000e8030000'
+    '000b240000000010' '010500000000000515000000000000000000000000000000e8030000'
+    '00001400ff011f00' '0101000000000005' '12000000'
+    '000b140000000010' '0101000000000005' '12000000'
+    '00001800ff011f00' '0102000000000005' '2000000020020000'
+    '000b180000000010' '0102000000000005' '2000000020020000')
+
+
+def recycler_dacls(prefix):
+    """Give Recycle Bin folders made before Wine kept DACLs (patch 0151) the one
+    XP's shell32 expects; otherwise it calls them corrupted and offers to empty
+    them."""
+    for drive in (prefix / 'dosdevices').glob('?:'):
+        folder = drive / 'RECYCLER' / RECYCLER_SID
+        try:
+            if folder.is_dir() and RECYCLER_DACL_XATTR not in os.listxattr(folder):
+                os.setxattr(folder, RECYCLER_DACL_XATTR, RECYCLER_DACL)
+        except OSError:
+            pass
+
+
 def stage(prefix):
     """Put XP's shell DLLs back in syswow64. Wine may restore its own files
     there when it updates the prefix; run this with the wineserver stopped,
@@ -304,6 +353,18 @@ def stage(prefix):
         for source in sources:
             if not (target / source.name).is_file() or (target / source.name).read_bytes() != source.read_bytes():
                 shutil.copyfile(source, target / source.name)
+    # IE6's engine in syswow64 too, for the Search Companion in XP Explorer's
+    # process (ie_registry keeps Wine's for other programs), with XP's msxml3
+    # and oleacc (copy_search).
+    staged = [ie / f'{dll}.dll' for dll in IE_NATIVE] + [ie / 'mshtmler.dll'] if (ie / 'iexplore.exe').is_file() else []
+    if (prefix / 'drive_c/xp/native/msxml3.dll').is_file():
+        staged += [prefix / 'drive_c/xp/native' / name for name in SEARCH_STAGED]
+    for source in staged:
+        target = system / source.name
+        if source.is_file() and (not target.is_file() or target.read_bytes() != source.read_bytes()):
+            temp = target.with_name(f'.{source.name}.xp')
+            shutil.copyfile(source, temp)
+            temp.replace(target)
     # XP's shell32 runs Control Panel items with C:\windows\rundll32.exe.
     windows = prefix / 'drive_c/windows'
     if (system / 'rundll32.exe').is_file() and not (windows / 'rundll32.exe').is_file():
@@ -323,6 +384,7 @@ def stage(prefix):
             temp = target.with_name(f'.{name}.xp')
             shutil.copyfile(source, temp)
             temp.replace(target)
+    recycler_dacls(prefix)
     if (prefix / '.patched-wine').is_file():
         return
     # Wine's x86 common controls 6 assembly can be loaded only as native in
@@ -336,7 +398,10 @@ def stage(prefix):
 
 
 # Bumped when xp_defaults() changes; xp.sh runs it again on existing prefixes.
-DEFAULTS_VERSION = '11'
+DEFAULTS_VERSION = '12'
+# Search Results and Computer Search Results (shell32's DocFind folders).
+SEARCH_FOLDERS = ('{E17D4FC0-5564-11D1-83F2-00A0C90DC849}', '{1F4DE370-D627-11D1-BA4F-00A0C91EEDBA}')
+FILE_SEARCH_BAND = '{2D91EEA1-9932-11D2-BE86-00A0C9A83DA1}'
 EXPLORER = r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer'
 # Wine's Unix root folder ("/"), a desktop item of Wine's shell namespace
 UNIX_ROOT = '{9D20AAE8-0625-44B0-9CA7-71889C2254D9}'
@@ -399,6 +464,21 @@ def xp_defaults(assets, prefix, wine, folders=True):
                                 renames=((r'C:\windows\explorer.exe', r'C:\xp\xp-explorer.exe'),
                                          ('%MSIEXPLORE%', r'"%ProgramFiles%\Internet Explorer\iexplore.exe"'))),
              xp_registrations(assets)]
+    # Search: shell32's search command checks that the window shows a Search
+    # Results folder by parsing "::{CLSID}", which XP's desktop accepts only
+    # for the classes of Desktop\NameSpace; its REGINST lists them there.
+    texts.append(xpreg.hive_entries(xpreg.reginst(shell32), 'HKLM',
+                                    tuple(EXPLORER + r'\Desktop\NameSpace' + '\\' + c for c in SEARCH_FOLDERS)))
+    # Start > Search makes its window in another thread (CLSID_ShellBrowserWindow)
+    # and asks it for IFileSearchBand to open Search Results: the interface of
+    # XP's shell32 type library that Wine's registration of shell32 lacks.
+    r = Reg()
+    band = r'HKCR\Interface' + '\\' + FILE_SEARCH_BAND
+    r.add(band, None, 'IFileSearchBand')
+    r.add(band + r'\ProxyStubClsid32', None, '{00020424-0000-0000-C000-000000000046}')
+    r.add(band + r'\TypeLib', None, '{50A7E9B0-70EF-11D1-B75A-00A0C90564FE}')
+    r.add(band + r'\TypeLib', 'Version', '1.0')
+    texts.append(r.text())
     inf = assets / 'inf'
     if (inf / 'hivedef.inf').is_file():
         hivedef = xpreg.read_inf(inf / 'hivedef.inf')
@@ -514,6 +594,7 @@ def install_ie(assets, prefix, wine):
     controls = prefix / 'drive_c/xp/comctl32.dll'
     if controls.is_file():
         shutil.copyfile(controls, ie / 'comctl32.dll')
+    search = copy_search(assets, prefix)
     env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all', WINEDLLOVERRIDES='mscoree=')
     # Bring the prefix up to date with this Wine first.
     subprocess.run([wine, 'wineboot', '-u'], env=env)
@@ -531,10 +612,49 @@ def install_ie(assets, prefix, wine):
                            env=env, check=True)
     for dll in IE_REGISTER:
         subprocess.run([wine, r'C:\windows\syswow64\regsvr32.exe', '/s', f'{folder}\\{dll}'], env=env)
+    if search:
+        register_search(wine, env)
     install_wmp(assets, prefix, wine, env)
     # Wine's updates (wineboot) register Wine's own mshtml and wmp again: xp.sh
     # runs this again when the Wine build differs from the one recorded here.
     (prefix / '.ie-installed').write_text(wine_build(wine) + '\n')
+
+
+def copy_search(assets, prefix):
+    """The Search Companion's files where XP's setup puts them (srchasst.inf,
+    and Microsoft Agent's in %windir%\\msagent), and XP's msxml3 and oleacc
+    for stage(). False without them in the assets."""
+    source = assets / 'srchasst'
+    if not (source / 'srchui.dll').is_file():
+        return False
+    windows = prefix / 'drive_c/windows'
+    lcid = '0411' if media.language(assets) == 'ja' else '0409'
+    for folder, target in (('.', windows / 'srchasst'), ('chars', windows / 'srchasst/chars'),
+                           ('mui', windows / 'srchasst/mui' / lcid), ('msagent', windows / 'msagent'),
+                           ('msagent/intl', windows / 'msagent/intl'), ('system', prefix / 'drive_c/xp/native')):
+        target.mkdir(parents=True, exist_ok=True)
+        for path in (source / folder).glob('*'):
+            if path.is_file():
+                shutil.copyfile(path, target / path.name)
+    return True
+
+
+def register_search(wine, env):
+    """What XP's setup registers for the Search Companion (syssetup.inf):
+    Microsoft Agent, which animates Rover, and srchui.dll, whose DllInstall
+    puts the Search Companion in place of the Windows 2000 search pane
+    (FileFindBandHook) and of IE's Search Assistant; and XP's msxml3, for
+    the types IE6 shows with it."""
+    regsvr32 = r'C:\windows\syswow64\regsvr32.exe'
+    agent = r'C:\windows\msagent'
+    subprocess.run([wine, agent + r'\agentsvr.exe', '/regserver'], env=env)
+    # agentctl.dll runs "AgentSvr /REGSERVER" from the search path.
+    for dll in AGENT_REGISTER:
+        subprocess.run([wine, regsvr32, '/s', f'{agent}\\{dll}'], env=dict(env, WINEPATH=agent))
+    srchui = r'C:\windows\srchasst\srchui.dll'
+    subprocess.run([wine, regsvr32, '/s', srchui], env=env)
+    subprocess.run([wine, regsvr32, '/s', '/n', '/i', srchui], env=env)
+    subprocess.run([wine, regsvr32, '/s', r'C:\windows\system32\msxml3.dll'], env=env)
 
 
 WMP_REGISTER = ('wmp.dll', 'wmpdxm.dll', 'wmpshell.dll', 'wmpasf.dll', 'mpvis.dll', 'wmpcore.dll',
@@ -612,10 +732,11 @@ def install_wmp(assets, prefix, wine, env):
 def wine_build(wine):
     """An identifier of the Wine build: win4wine's patch digest, or the version."""
     install = Path(shutil.which(wine) or wine).resolve().parents[1]
-    # "+media3": IE6, Windows Media Player 9 and its Start menu integration.
+    # "+media4": IE6, Windows Media Player 9 and its Start menu integration,
+    # and the Search Companion.
     if (install / 'win4wine-patches').is_file():
-        return (install / 'win4wine-patches').read_text().strip() + '+media3'
-    return subprocess.run([wine, '--version'], capture_output=True, text=True).stdout.strip() + '+media3'
+        return (install / 'win4wine-patches').read_text().strip() + '+media4'
+    return subprocess.run([wine, '--version'], capture_output=True, text=True).stdout.strip() + '+media4'
 
 
 def wallpaper(assets, prefix, size=None):

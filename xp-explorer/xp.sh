@@ -84,7 +84,7 @@ run)
         wineserver -k; wineserver -w
         python3 -I "$root/scripts/prefix.py" --stage "$WINEPREFIX" "$size"
     fi
-    # Internet Explorer 6, for prefixes made before it was extracted
+    # Internet Explorer 6 and the Search Companion, for prefixes made before they were extracted
     # (XP_ISO=/path/to/the.iso extracts it when the assets predate it.)
     # After a Wine update too: wineboot registers Wine's own mshtml again.
     if [[ $(cat "$WINEPREFIX/.ie-installed" 2>/dev/null) != "$(python3 -I "$root/scripts/prefix.py" --wine-build "$wine")" ]]; then
@@ -93,6 +93,9 @@ run)
         fi
         if [[ -n ${XP_ISO:-} && ! -f $assets/wmp/wmplayer.exe ]]; then
             python3 -I "$root/scripts/extract.py" --only wmp "$XP_ISO" "$assets"
+        fi
+        if [[ -n ${XP_ISO:-} && ! -f $assets/srchasst/srchui.dll ]]; then
+            python3 -I "$root/scripts/extract.py" --only srchasst "$XP_ISO" "$assets"
         fi
         if [[ -f $assets/ie/iexplore.exe ]]; then
             python3 -I "$root/scripts/prefix.py" --ie "$WINEPREFIX" --wine "$wine"

@@ -39,6 +39,22 @@ FILES = {
                      'wmv8dmod.dll', 'wmspdmod.dll', 'mp43dmod.dll', 'msscp.dll', 'drmclien.dll',
                      'drmstor.dll', 'blackbox.dll', 'drmv2clt.dll', 'setup_wm.exe', 'unregmp2.exe',
                      'custsat.dll', 'wmp.inf'), 'wmp'),
+    # The Search Companion and its animated characters (Rover): what XP's
+    # srchasst.inf and Microsoft Agent install, and the msxml3 and oleacc
+    # they need beside IE6's engine (xp-explorer/scripts/prefix.py copy_search).
+    **dict.fromkeys(('srchui.dll', 'srchctls.dll', 'msgr3en.dll', 'nls302en.lex'), 'srchasst'),
+    **dict.fromkeys(('rover.acs', 'courtney.acs', 'earl.acs'), 'srchasst/chars'),
+    **dict.fromkeys(('balloon.xsl', 'bar.xsl', 'charchsr.xml', 'charctxt.xml', 'error.xml', 'finish.xml',
+                     'indxsvc.xml', 'inetfind.xml', 'inetopts.xml', 'inetpref.xml', 'inetsrch.xml',
+                     'intents.xml', 'intro.xml', 'lcladv.xml', 'lcladvd.xml', 'lcladvdf.xml', 'lcladvmm.xml',
+                     'lclcomp.xml', 'lcldate.xml', 'lcldocs.xml', 'lclkwrds.xml', 'lcllook.xml', 'lclmm.xml',
+                     'lclmode.xml', 'lclother.xml', 'lclprog.xml', 'lclrfine.xml', 'lclsize.xml',
+                     'lclsrch.xml', 'lcltechy.xml'), 'srchasst/mui'),
+    **dict.fromkeys(('agentsvr.exe', 'agentctl.dll', 'agentdp2.dll', 'agentdpv.dll', 'agentmpx.dll',
+                     'agentanm.dll', 'agentsr.dll', 'agentpsh.dll', 'agtintl.dll', 'mslwvtts.dll',
+                     'agtctl15.tlb'), 'srchasst/msagent'),
+    **dict.fromkeys(('agt0409.dll', 'agt0411.dll'), 'srchasst/msagent/intl'),
+    **dict.fromkeys(('msxml3.dll', 'msxml3r.dll', 'oleacc.dll', 'oleaccrc.dll'), 'srchasst/system'),
     # XP's registry defaults (sounds, Explorer settings), read by scripts/prefix.py.
     **dict.fromkeys(('hivedef.inf', 'hivesft.inf'), 'inf'),
     # Image thumbnails and previews in folder windows (and Windows Picture and Fax Viewer).
@@ -149,7 +165,7 @@ def extract(source, output, only=None):
         if only:
             # Add one group of files to assets extracted before it existed.
             group_files = dict.fromkeys(sounds, 'media') if only == 'media' else \
-                {name: group for name, group in FILES.items() if group == only}
+                {name: group for name, group in FILES.items() if group.split('/')[0] == only}
             copy(group_files)
             listed = output / 'manifest.json'
             old = json.loads(listed.read_text()) if listed.is_file() else []

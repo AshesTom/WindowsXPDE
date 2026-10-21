@@ -827,6 +827,60 @@ static void show_popup(void)
     if (sndvol) popup = CreateDialogParamW(sndvol, MAKEINTRESOURCEW(106), NULL, volume_proc, 0);
 }
 
+/* XP's Volume Control, the mixer window "Open Volume Control" and a double
+ * click opened: sndvol32.exe itself, from a copy in C:\xp\bin whose import
+ * of WINMM.dll names xpmix.dll (helpers/xpmix.c), which sets the volume of
+ * the Linux sound server where Wine's winmm sets the process's own. */
+static BOOL open_volume_control(void)
+{
+    static const WCHAR source[] = L"C:\\xp\\tray\\sndvol32.exe", target[] = L"C:\\xp\\bin\\sndvol32.exe";
+    static const char name[] = "WINMM.dll";
+    STARTUPINFOW startup = {.cb = sizeof(startup)};
+    PROCESS_INFORMATION process;
+    HANDLE file;
+    DWORD size, done = 0, current_size = 0;
+    char *image, *current;
+    BOOL same, ok;
+    if (!exists(L"C:\\xp\\bin\\xpmix.dll")) return FALSE;
+    file = CreateFileW(source, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    if (file == INVALID_HANDLE_VALUE) return FALSE;
+    size = GetFileSize(file, NULL);
+    image = size != INVALID_FILE_SIZE ? malloc(size) : NULL;
+    ok = image && ReadFile(file, image, size, &done, NULL) && done == size;
+    CloseHandle(file);
+    if (!ok)
+    {
+        free(image);
+        return FALSE;
+    }
+    /* Its import table and its bound imports both name the DLL. */
+    for (DWORD i = 0; i + sizeof(name) <= size; i++)
+        if (!_strnicmp(image + i, name, sizeof(name))) memcpy(image + i, "xpmix.dll", sizeof(name));
+    /* Written again only when the user's sndvol32 changed. */
+    file = CreateFileW(target, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    current = malloc(size);
+    same = FALSE;
+    if (file != INVALID_HANDLE_VALUE)
+    {
+        same = current && GetFileSize(file, NULL) == size && ReadFile(file, current, size, &current_size, NULL) &&
+               current_size == size && !memcmp(current, image, size);
+        CloseHandle(file);
+    }
+    free(current);
+    ok = same;
+    if (!same && (file = CreateFileW(target, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL)) != INVALID_HANDLE_VALUE)
+    {
+        ok = WriteFile(file, image, size, &done, NULL) && done == size;
+        CloseHandle(file);
+    }
+    free(image);
+    if (!ok) return FALSE;
+    if (!CreateProcessW(target, NULL, NULL, NULL, FALSE, 0, NULL, L"C:\\xp\\bin", &startup, &process)) return FALSE;
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return TRUE;
+}
+
 /* Power Meter: batmeter's page inside stobject's frame. */
 static HWND power_meter, power_page;
 
@@ -1921,6 +1975,8 @@ static void run_settings(UINT command)
     switch (command)
     {
     case CMD_MIXER:
+        if (open_volume_control()) break;
+        /* Without XP's sndvol32: the Linux mixer. */
         spawn(L"command -v pavucontrol >/dev/null && exec pavucontrol; "
               L"kcmshell6 kcm_pulseaudio 2>/dev/null || systemsettings kcm_pulseaudio", NULL);
         break;
@@ -2070,12 +2126,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, WCHAR *command_line,
     }
     InitCommonControlsEx(&controls);
     RegisterClassW(&main_class);
-    /* stobject's Power Meter template names systray's own dialog class. */
+    /* stobject's Power Meter template names systray's own dialog class, and
+     * sndvol32's Volume template ("sndvol32 /t") its own. */
     {
         WNDCLASSW dialog_class = {.style = CS_GLOBALCLASS | CS_DBLCLKS, .lpfnWndProc = DefDlgProcW,
                                   .cbWndExtra = DLGWINDOWEXTRA, .hInstance = instance,
                                   .hCursor = LoadCursorW(NULL, IDC_ARROW),
                                   .hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1), .lpszClassName = L"SystemTray_Main"};
+        RegisterClassW(&dialog_class);
+        dialog_class.lpszClassName = L"Tray Volume";
         RegisterClassW(&dialog_class);
     }
     taskbar_created = RegisterWindowMessageW(L"TaskbarCreated");

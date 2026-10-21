@@ -38,5 +38,7 @@ i686-w64-mingw32-windres -I "$helpers" "$helpers/xptray.rc" -O coff -o "$root/.l
 compile "$root/.local/bridge/xptray.exe" -std=gnu11 "$helpers/xptray.c" "$root/.local/bridge/xptray.res" \
     -mwindows -lcomctl32 -lgdi32 -luser32 -lkernel32
 rm -f "$root/.local/bridge/xptray.res"
+# XP's Volume Control (sndvol32) on the Linux sound server, for xptray.exe.
+compile "$root/.local/bridge/xpmix.dll" -std=gnu11 -shared "$helpers/xpmix.c" "$helpers/xpmix.def" -lwinmm
 compile "$root/.local/bridge/startmenu.exe" -std=gnu11 "$helpers/startmenu.c" -lshell32 -lole32 -luuid -ladvapi32 -luser32
 compile "$root/.local/bridge/iexplore.exe" -std=gnu11 "$helpers/iexplore.c" -mwindows -lshell32

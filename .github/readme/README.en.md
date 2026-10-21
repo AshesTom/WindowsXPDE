@@ -65,11 +65,11 @@ and **XP Explorer** ([xp-explorer/](../../xp-explorer/README.md)), which opens X
   Linux applications are listed under All Programs.
 - **Notification area**: Linux tray icons (StatusNotifierItem and XEmbed) show up in XP's notification area,
   beside XP's own network, battery and volume icons and their flyouts (Volume, Power Meter, Wireless Network
-  Connection Status), fed by NetworkManager and PipeWire or PulseAudio (from XP Explorer, [xp-explorer/](../../xp-explorer/README.md)).
+  Connection Status) and XP's Volume Control mixer, fed by NetworkManager and PipeWire or PulseAudio (from XP Explorer, [xp-explorer/](../../xp-explorer/README.md)).
 - **From XP Explorer**: the folder task pane, Display Properties (the Windows XP and Windows Classic themes, styles and
   color schemes; the schemes are made from your ISO's HIVEDEF.INF and themeui.dll), image thumbnails and previews,
   XP's sounds (startup, logon and logoff too),
-  Network Connections, Internet Explorer 6, Windows Media Player 9, and the Start menu's left column (Internet,
+  Network Connections, Internet Explorer 6, the Search Companion with Rover, Windows Media Player 9, and the Start menu's left column (Internet,
   E-mail and the most used programs), all from your own ISO's files (`prefix/extras.py`).
 - **Keyboard layout**: the Linux system's (`localectl`) at first. Add input languages or change the default in
   Control Panel, Regional and Language Options, Languages, Details (XP's own), and the session's layout (labwc on

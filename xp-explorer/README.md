@@ -79,7 +79,11 @@ into `.local/`, which Git ignores.
   them; its Settings button opens KDE's network settings. Clicking the network notification icon,
   **Wireless Network Connection** in Accessories\Communications, or **View Available Wireless Networks** opens an XP-style
   chooser populated by nearby NetworkManager access points; Connect activates the selected SSID through `nmcli`.
-  Right-click menus also open the matching settings.
+  Right-click menus also open the matching settings. The volume icon's **Open Volume Control** (and a double
+  click) opens XP's own Volume Control, `sndvol32.exe` itself: a copy of it in `C:\xp\bin` imports
+  `xpmix.dll` (`helpers/xpmix.c`) in place of `WINMM.dll`, which hands its volume, balance and mute to the default
+  PipeWire / PulseAudio sink (and its Recording view to the default source) and tells it of changes made
+  elsewhere; Wine's own mixer would only change sndvol32's own sound.
 - **Running applications on the taskbar.** Wine sends no shell hook messages; like win4wine's proxy,
   `xpstart.exe` follows the top-level windows and tells XP's taskbar about them. It also restarts Explorer when
   it ends without Log Off or Turn Off Computer (it watches for `WM_QUERYENDSESSION`), and points the desktop
@@ -89,6 +93,18 @@ into `.local/`, which Git ignores.
   native in it only. It opens plain `http://` pages; most of today's HTTPS sites need newer TLS than IE6 has, so
   the Start menu's Internet item and web links still open the Linux browser (`helpers/iexplore.c`). Assets
   extracted before this can add it with `XP_ISO=/path/to/the.iso ./xp.sh run`.
+- **The Search Companion with Rover**, the dog of Start > Search ("What do you want to search for?") and of
+  IE6's Search button: XP's `srchui.dll` and its pages (`%windir%\srchasst`), Microsoft Agent
+  (`%windir%\msagent`) and Rover's character file, installed and registered as XP's setup did. The companion is
+  HTML, so IE6's engine is native in XP's Explorer too (staged in `syswow64`, where every other program keeps
+  Wine's), with XP's `msxml3.dll` and `oleacc.dll`: Wine's msxml3 calls an urlmon function IE6's lacks, and
+  Wine's oleacc lacks one IE6 calls. Searches run in XP's own Search Results folder (shell32), with two
+  registrations of XP's shell32 that Wine's registration of shell32 lacks (`xp_defaults` in
+  `scripts/prefix.py`): the `IFileSearchBand` interface, through which Start > Search, opening its window in
+  another thread, has it show Search Results; and the Search Results folders in `Desktop\NameSpace`, without
+  which XP's desktop refuses to parse `::{CLSID}` for them and the search command, unable to tell that the
+  window shows Search Results, fails with "Unexpected Error". "Look in" Local Hard Drives includes Z:, the
+  whole Linux file system.
 - **XP's minimize, maximize and restore animation**: the caption flies to the taskbar and back (Display
   Properties, Appearance, Effects, "Animate windows when minimizing and maximizing").
 - **16x16 icons in title bars**, taken from each program's icon resource rather than its big icon shrunk.
@@ -149,6 +165,7 @@ xp.sh run
          ├─ xpcompat.dll                   (system Wine only: run-time fixes)
          └─ C:\xp\xp-explorer.exe          (XP's explorer.exe, shell32, browseui... from your ISO)
              ├─ Run key: xptray.exe        (network, battery, volume)
+             │   └─ sndvol32.exe + xpmix.dll (XP's Volume Control on PipeWire / PulseAudio)
              └─ Start menu: Linux apps via linux-launch.exe, pins via startmenu.exe
 ```
 

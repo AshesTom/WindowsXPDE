@@ -46,6 +46,22 @@ FILES = {
     # Languages (input.dll) and what they load, and the INFs that list XP's
     # keyboard layouts (prefix/extras.py).
     **dict.fromkeys(('intl.cpl', 'input.dll', 'syssetup.dll', 'sfcfiles.dll', 'intl.inf', 'hivesys.inf'), 'intl'),
+    # The Search Companion and its animated characters (Rover): what XP's
+    # srchasst.inf and Microsoft Agent install, and the msxml3 and oleacc
+    # they need beside IE6's engine (xp-explorer/scripts/prefix.py copy_search).
+    **dict.fromkeys(('srchui.dll', 'srchctls.dll', 'msgr3en.dll', 'nls302en.lex'), 'srchasst'),
+    **dict.fromkeys(('rover.acs', 'courtney.acs', 'earl.acs'), 'srchasst/chars'),
+    **dict.fromkeys(('balloon.xsl', 'bar.xsl', 'charchsr.xml', 'charctxt.xml', 'error.xml', 'finish.xml',
+                     'indxsvc.xml', 'inetfind.xml', 'inetopts.xml', 'inetpref.xml', 'inetsrch.xml',
+                     'intents.xml', 'intro.xml', 'lcladv.xml', 'lcladvd.xml', 'lcladvdf.xml', 'lcladvmm.xml',
+                     'lclcomp.xml', 'lcldate.xml', 'lcldocs.xml', 'lclkwrds.xml', 'lcllook.xml', 'lclmm.xml',
+                     'lclmode.xml', 'lclother.xml', 'lclprog.xml', 'lclrfine.xml', 'lclsize.xml',
+                     'lclsrch.xml', 'lcltechy.xml'), 'srchasst/mui'),
+    **dict.fromkeys(('agentsvr.exe', 'agentctl.dll', 'agentdp2.dll', 'agentdpv.dll', 'agentmpx.dll',
+                     'agentanm.dll', 'agentsr.dll', 'agentpsh.dll', 'agtintl.dll', 'mslwvtts.dll',
+                     'agtctl15.tlb'), 'srchasst/msagent'),
+    **dict.fromkeys(('agt0409.dll', 'agt0411.dll'), 'srchasst/msagent/intl'),
+    **dict.fromkeys(('msxml3.dll', 'msxml3r.dll', 'oleacc.dll', 'oleaccrc.dll'), 'srchasst/system'),
     # XP's registry defaults (sounds, Explorer settings), read by prefix/extras.py.
     **dict.fromkeys(('hivedef.inf', 'hivesft.inf'), 'inf'),
     # Image thumbnails and previews in folder windows (and Windows Picture and Fax Viewer).
@@ -81,7 +97,7 @@ LANGUAGE_FILES = {
 # Files that XP's setup installs under another name (LAYOUT.INF).
 RENAMED = {'classic.the': 'Windows Classic.theme'}
 # Groups a later version added; setup.sh adds them to an earlier extraction (--only).
-ADDED_GROUPS = ('cpl', 'tray', 'ie', 'wmp', 'inf', 'shell', 'media', 'duser', 'intl', 'themes')
+ADDED_GROUPS = ('cpl', 'tray', 'ie', 'wmp', 'inf', 'shell', 'media', 'duser', 'intl', 'themes', 'srchasst')
 
 
 def setup_sources(paths):
@@ -136,7 +152,7 @@ def missing_groups(output):
     checks = {'cpl': 'cpl/desk.cpl', 'tray': 'tray/xpsp2res.dll', 'ie': 'ie/iexplore.exe',
               'wmp': 'wmp/wmplayer.exe', 'inf': 'inf/hivedef.inf', 'shell': 'shell/shimgvw.dll',
               'media': 'media', 'duser': 'system32/duser.dll', 'intl': 'intl/input.dll',
-              'themes': 'themes/Windows Classic.theme'}
+              'themes': 'themes/Windows Classic.theme', 'srchasst': 'srchasst/srchui.dll'}
     return [group for group in ADDED_GROUPS if not has(checks[group])]
 
 
@@ -196,7 +212,7 @@ def extract(source, output, only=None):
         if only:
             # Add groups of files to assets extracted before they existed.
             groups = set(only)
-            group_files = {name: group for name, group in FILES.items() if group in groups}
+            group_files = {name: group for name, group in FILES.items() if group.split('/')[0] in groups}
             if 'duser' in groups:
                 group_files['duser.dll'] = 'system32'
             if 'media' in groups:

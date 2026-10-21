@@ -31,8 +31,10 @@ def environment(base, config, shell):
     prefix = Path(config['prefix']).resolve(strict=True)
     # WIN4WINE_EXTERNAL_SHELL is the opt-in of win4wine's Wine changes: without
     # it a program gets Wine's own behaviour (no Windows 7 Basic frames, for one).
+    # mshtml stays disabled in the registry, except where IE6's engine is
+    # native: Internet Explorer 6 and the XP shell (its Search Companion).
     env = dict(base, WINEPREFIX=str(prefix), WIN4WINE_EXTERNAL_SHELL='1',
-               WINEDLLOVERRIDES=f'explorer=b;{shell["module"]}=n;mscoree,mshtml=;uxtheme=b')
+               WINEDLLOVERRIDES=f'explorer=b;{shell["module"]}=n;mscoree=;uxtheme=b')
     if shell['folders']:
         # Wine's explorer.exe hands folder windows to the shell's own explorer.
         env['WIN4WINE_FOLDER_SHELL'] = shell['command']
