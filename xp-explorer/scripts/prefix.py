@@ -163,6 +163,9 @@ def ie_registry(r):
         if dll != 'mshtml':
             r.add(r'HKCU\Software\Wine\DllOverrides', dll, 'builtin')
         r.add(r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides', dll, 'native')
+        # Display Properties (rundll32) previews the wallpaper with shimgvw's
+        # HTML thumbnail extractor, which needs IE6's mshtml.
+        r.add(r'HKCU\Software\Wine\AppDefaults\rundll32.exe\DllOverrides', dll, 'native')
     for dll in SEARCH_NATIVE:
         r.add(r'HKCU\Software\Wine\AppDefaults\iexplore.exe\DllOverrides', dll, 'native')
     r.add(r'HKCU\Software\Wine\AppDefaults\regsvr32.exe\DllOverrides', 'msxml3', 'native,builtin')
@@ -544,8 +547,9 @@ def xp_defaults(assets, prefix, wine, folders=True):
     # script, which only its DllRegisterServer applies, as XP's setup ran it.
     if shimgvw.is_file():
         subprocess.run([wine, r'C:\windows\syswow64\regsvr32.exe', '/s', r'C:\windows\system32\shimgvw.dll'], env=env)
-        # XP's DllRegisterServer leaves the image ProgID open commands cut off
-        # at "...\system32\s" under Wine. Restore the viewer verb explicitly
+        # XP's DllRegisterServer writes the image ProgIDs' open commands and
+        # icons with SHRegSetPath, which a Wine without win4wine's patch 0154
+        # cuts in half ("...\system32\s"). Restore the viewer verb explicitly
         # after registration so Explorer can launch the real image viewer.
         image_open = Reg()
         command = r'rundll32.exe %SystemRoot%\system32\shimgvw.dll,ImageView_Fullscreen "%1"'

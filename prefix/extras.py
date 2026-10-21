@@ -30,7 +30,7 @@ import xp_schemes
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / '.local/bridge'
 # Bumped when apply() changes; setup.sh applies it again on existing prefixes.
-VERSION = '6'
+VERSION = '8'
 MARKER = '.xp-extras'
 HELPERS = ('xptray.exe', 'xpmix.dll', 'startmenu.exe', 'iexplore.exe', 'linux-links.exe')
 # XP's Regional and Language Options and what it loads (assets/intl), native
@@ -86,6 +86,10 @@ def registry(xpx):
     r.add(associations, 'KillList', '%1;explorer.exe;dvdplay.exe;mplay32.exe;msohtmed.exe;quikview.exe;'
           'rundll.exe;rundll32.exe;taskman.exe;bck32api.dll;')
     r.add(associations, 'CutList', ['Application File', 'MFC Application'], 'REG_MULTI_SZ')
+    # Display Properties lists the wallpapers of this folder (and of the
+    # Windows folder and My Pictures); IE6's setup (IE.INF) names it.
+    r.add(r'HKLM\Software\Microsoft\Windows\CurrentVersion', 'WallPaperDir', r'%SystemRoot%\Web\Wallpaper',
+          'REG_EXPAND_SZ')
     # XP's .theme files name their visual style with %ResourceDir%.
     r.add(r'HKLM\System\CurrentControlSet\Control\Session Manager\Environment', 'ResourceDir',
           r'%SystemRoot%\resources', 'REG_EXPAND_SZ')
@@ -158,6 +162,12 @@ def copy_files(assets, prefix):
     for name in ('Resources/Themes', 'resources/themes'):
         if (assets / 'themes').is_dir() and (windows / name).is_dir():
             shutil.copytree(assets / 'themes', windows / name, dirs_exist_ok=True)
+    # XP's wallpapers where its setup puts them: the JPEG ones in
+    # Web\Wallpaper, the bitmaps in the Windows folder (extract.py).
+    for group, target in (('web', windows / 'Web/Wallpaper'), ('windows', windows)):
+        for path in sorted((assets / 'wallpaper' / group).glob('*')):
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, target / path.name)
     if (assets / 'intl/input.dll').is_file():
         for name in INTL:
             shutil.copyfile(assets / 'intl' / name, native / name)
@@ -172,12 +182,17 @@ def themes(assets, prefix, wine):
     """Display Properties' Windows XP and Windows Classic themes."""
     env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all', WINEDLLOVERRIDES='themeui=n')
     env.pop('WINEARCH', None)
-    # The Windows XP theme (luna.theme) names %WinDir%\web\wallpaper\Bliss.bmp.
-    jpeg = prefix / 'drive_c/windows/Web/Wallpaper/Bliss.jpg'
+    # The Windows XP theme (luna.theme) names %WinDir%\web\wallpaper\Bliss.bmp,
+    # XP's only Bliss there; a Bliss.jpg beside it (stage.py before) would be
+    # listed twice in Display Properties.
+    jpeg, bitmap = assets / 'web/wallpaper/bliss.jpg', prefix / 'drive_c/windows/Web/Wallpaper/Bliss.bmp'
     converter = BRIDGE / 'wallpaper-convert.exe'
-    if jpeg.is_file() and converter.is_file() and not jpeg.with_suffix('.bmp').exists():
+    if jpeg.is_file() and converter.is_file() and not bitmap.exists():
+        bitmap.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run([wine, str(converter), 'Z:' + str(jpeg).replace('/', '\\'),
-                        'Z:' + str(jpeg.with_suffix('.bmp')).replace('/', '\\')], env=env, check=False)
+                        'Z:' + str(bitmap).replace('/', '\\')], env=env, check=False)
+    if bitmap.is_file():
+        bitmap.with_suffix('.jpg').unlink(missing_ok=True)
     # themeui's own registration: Theme.Manager, the visual style folders,
     # .theme and .msstyles files.
     subprocess.run([wine, r'C:\windows\syswow64\regsvr32.exe', '/s', r'C:\windows\system32\themeui.dll'],

@@ -151,3 +151,5 @@
 0151-server-external-xp-stored-dacl.patch
 0152-user32-paired-icon-sizes.patch
 0153-uxtheme-xp-display-properties-samples.patch
+0154-shcore-sh-reg-set-path.patch
+0155-user32-external-wallpaper-reload.patch

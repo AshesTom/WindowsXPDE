@@ -125,8 +125,7 @@ def stage_media(prefix, wine=None):
         return
     user = pwd.getpwuid(os.getuid()).pw_name
     pictures = prefix / 'drive_c/ProgramData/Microsoft/User Account Pictures'
-    for source, target in ((assets / 'web/wallpaper/bliss.jpg', prefix / 'drive_c/windows/Web/Wallpaper/Bliss.jpg'),
-                           (assets / 'pictures/beach.bmp', pictures / 'Default Pictures/beach.bmp'),
+    for source, target in ((assets / 'pictures/beach.bmp', pictures / 'Default Pictures/beach.bmp'),
                            (assets / 'pictures/beach.bmp', pictures / f'{user}.bmp')):
         if source.is_file() and not target.exists():
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -140,7 +139,9 @@ def stage_media(prefix, wine=None):
         shutil.copyfile(source, target)
     # XP converts a JPEG wallpaper to Wallpaper1.bmp; without it, XP's desktop
     # switches to the HTML Active Desktop that this shell does not provide.
-    jpeg = prefix / 'drive_c/windows/Web/Wallpaper/Bliss.jpg'
+    # Bliss is the extracted JPEG: XP's Web\Wallpaper has it only as Bliss.bmp
+    # (prefix/extras.py), and Display Properties would list it twice.
+    jpeg = assets / 'web/wallpaper/bliss.jpg'
     bitmap = prefix / f'drive_c/users/{user}/AppData/Local/Microsoft/Wallpaper1.bmp'
     converter = Path(__file__).resolve().parents[1] / '.local/bridge/wallpaper-convert.exe'
     if wine and jpeg.is_file() and converter.is_file() and not bitmap.exists():

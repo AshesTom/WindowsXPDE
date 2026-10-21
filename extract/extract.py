@@ -97,7 +97,8 @@ LANGUAGE_FILES = {
 # Files that XP's setup installs under another name (LAYOUT.INF).
 RENAMED = {'classic.the': 'Windows Classic.theme'}
 # Groups a later version added; setup.sh adds them to an earlier extraction (--only).
-ADDED_GROUPS = ('cpl', 'tray', 'ie', 'wmp', 'inf', 'shell', 'media', 'duser', 'intl', 'themes', 'srchasst')
+ADDED_GROUPS = ('cpl', 'tray', 'ie', 'wmp', 'inf', 'shell', 'media', 'duser', 'intl', 'themes', 'srchasst',
+                'wallpaper')
 
 
 def setup_sources(paths):
@@ -145,6 +146,70 @@ def media_files(paths):
     return renamed
 
 
+def inf_text(path, root):
+    """The text of the INF PATH, expanded first when the medium has it compressed (.IN_)."""
+    if path.name.lower().endswith('_'):
+        stage = root / 'inf-expanded'
+        if stage.exists():
+            shutil.rmtree(stage)
+        stage.mkdir()
+        run('cabextract', '-q', '-d', str(stage), str(path))
+        path = next(stage.iterdir())
+    raw = path.read_bytes()
+    if raw[:2] in (b'\xff\xfe', b'\xfe\xff'):
+        return raw.decode('utf-16')
+    for encoding in ('utf-8', 'cp932'):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            pass
+    return raw.decode('latin-1')
+
+
+def inf_copies(text, sections):
+    """{source name: installed name} of the INF TEXT's CopyFiles SECTIONS,
+    their %strings% resolved from its [Strings]."""
+    strings, lines, section = {}, {}, None
+    for raw in text.splitlines():
+        line = raw.split(';', 1)[0].strip()
+        if line.startswith('['):
+            section = line.strip('[]').strip().lower()
+        elif section == 'strings' and '=' in line:
+            key, value = line.split('=', 1)
+            strings[key.strip().lower()] = value.strip().strip('"')
+        elif section in sections and line:
+            lines.setdefault(section, []).append(line)
+    copies = {}
+    for section in sections:
+        for line in lines.get(section, []):
+            fields = [f.strip().strip('"') for f in line.split(',')]
+            target, source = fields[0], (fields[1] if len(fields) > 1 and fields[1] else fields[0])
+            if target.startswith('%') and target.endswith('%'):
+                target = strings.get(target.strip('%').lower(), '')
+            if target and source:
+                copies[source.lower()] = target
+    return copies
+
+
+def wallpaper_files(paths, root):
+    """XP's wallpapers, as its setup installs them: {name on the medium:
+    (group, installed name)}. SHL_IMG.INF puts the JPEG ones in
+    %windir%\\Web\\Wallpaper ("Red moon desert.jpg"), ACCESSOR.INF the
+    bitmaps of the Desktop Wallpaper component in %windir% ("Coffee
+    Bean.bmp"). Bliss is extracted on its own (FILES)."""
+    lists = (('shl_img', ('wallpaper.copyfiles',), 'wallpaper/web'),
+             ('accessor', ('deskpapercopyfilessys',), 'wallpaper/windows'))
+    files = {}
+    for stem, sections, group in lists:
+        inf = next((p for p in paths if p.name.lower() in (stem + '.inf', stem + '.in_')), None)
+        if not inf:
+            continue
+        for source, target in inf_copies(inf_text(inf, root), sections).items():
+            if source != 'bliss.jpg':
+                files[source] = (group, target)
+    return files
+
+
 def missing_groups(output):
     """The ADDED_GROUPS an extraction made before them lacks."""
     def has(path):
@@ -152,7 +217,8 @@ def missing_groups(output):
     checks = {'cpl': 'cpl/desk.cpl', 'tray': 'tray/xpsp2res.dll', 'ie': 'ie/iexplore.exe',
               'wmp': 'wmp/wmplayer.exe', 'inf': 'inf/hivedef.inf', 'shell': 'shell/shimgvw.dll',
               'media': 'media', 'duser': 'system32/duser.dll', 'intl': 'intl/input.dll',
-              'themes': 'themes/Windows Classic.theme', 'srchasst': 'srchasst/srchui.dll'}
+              'themes': 'themes/Windows Classic.theme', 'srchasst': 'srchasst/srchui.dll',
+              'wallpaper': 'wallpaper'}
     return [group for group in ADDED_GROUPS if not has(checks[group])]
 
 
@@ -209,6 +275,8 @@ def extract(source, output, only=None):
                              'sha256': hashlib.sha256(target.read_bytes()).hexdigest()})
         sounds = media_files(paths)
         RENAMED.update(sounds)
+        wallpapers = wallpaper_files(paths, root)
+        RENAMED.update({name: target for name, (_, target) in wallpapers.items()})
         if only:
             # Add groups of files to assets extracted before they existed.
             groups = set(only)
@@ -217,6 +285,8 @@ def extract(source, output, only=None):
                 group_files['duser.dll'] = 'system32'
             if 'media' in groups:
                 group_files.update(dict.fromkeys(sounds, 'media'))
+            if 'wallpaper' in groups:
+                group_files.update({name: group for name, (group, _) in wallpapers.items()})
             copy(group_files)
             listed = output / 'manifest.json'
             old = json.loads(listed.read_text()) if listed.is_file() else []
@@ -226,6 +296,7 @@ def extract(source, output, only=None):
             return
         copy(FILES)
         copy(dict.fromkeys(sounds, 'media'))
+        copy({name: group for name, (group, _) in wallpapers.items()})
         for original in paths:
             if original.name.lower() != 'shellstyle.dll':
                 continue

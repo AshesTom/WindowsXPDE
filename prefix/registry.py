@@ -151,8 +151,7 @@ def install(run, exists, language='ja'):
             '/t', 'REG_SZ', '/d', '-1170', '/f')
         run('reg', 'add', marker, '/v', 'IconSpacing', '/t', 'REG_DWORD', '/d', '1', '/f')
     # XP's default user desktop: Bliss stretched over the screen. stage.py
-    # copies the user's extracted Bliss.jpg and converts it to Wallpaper1.bmp
-    # as XP does. Seed once and keep any later choice.
+    # converts the user's extracted Bliss.jpg to Wallpaper1.bmp as XP does. Seed once and keep any later choice.
     if not exists(marker, 'WallpaperBitmap'):
         user = pwd.getpwuid(os.getuid()).pw_name
         desktop = r'HKCU\Control Panel\Desktop'
