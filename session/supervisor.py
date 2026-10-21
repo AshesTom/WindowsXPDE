@@ -272,6 +272,24 @@ class Session:
             return None
         return self.spawn([self.wine, str(player), event], 'sounds')
 
+    def logon_sound(self):
+        """XP's start up sound for the first logon since the machine started,
+        its logon sound for the next ones."""
+        try:
+            boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+        except OSError:
+            return 'SystemStart'
+        marker = self.state / 'logon-boot'
+        try:
+            first = marker.read_text().strip() != boot
+        except OSError:
+            first = True
+        try:
+            marker.write_text(boot + '\n')
+        except OSError:
+            pass
+        return 'SystemStart' if first else 'WindowsLogon'
+
     def keyboard(self):
         """The session's keyboard layout from XP's input languages (Wine patch
         0043), or the Linux system's while the prefix has none."""
@@ -530,7 +548,7 @@ class Session:
                     self.status('xp-shell', attempt=attempt)
                     self.hide_welcome()
                     if attempt == 1:
-                        self.play_sound('SystemStart')
+                        self.play_sound(self.logon_sound())
                 if ready and not has_tray:
                     break
                 if not ready and (time.monotonic()-started > self.readiness_timeout or shell.poll() is not None):
@@ -579,7 +597,8 @@ class Session:
             return False
         self.show_welcome('logoff')
         self.wait_welcome()
-        sound = self.play_sound('WindowsLogoff')
+        # XP plays its shut down sound instead of the log off sound when the machine goes off.
+        sound = self.play_sound('WindowsLogoff' if request == 'logoff' else 'SystemExit')
         try:
             shell.wait(timeout=30)  # let wineboot end the applications first
         except subprocess.TimeoutExpired:

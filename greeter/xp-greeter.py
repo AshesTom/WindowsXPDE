@@ -305,11 +305,42 @@ class Greeter:
         elif name == 'standby' and s.can_standby:
             s.dialog = False
             LightDM.suspend()
-        elif name == 'off':
-            LightDM.shutdown()
-        elif name == 'restart':
-            LightDM.restart()
+        elif name in ('off', 'restart'):
+            self.power_off(name)
         self.refresh()
+
+    def power_off(self, name):
+        """XP's "Windows is shutting down..." with its shut down sound, then the power goes off."""
+        s = self.screen
+        s.dialog, s.tooltip, s.hover, s.selected = False, None, None, None
+        s.mode, s.status = 'status', self.assets.string('winlogon', 1684)
+        self.fade_start = None
+        self.refresh()
+        action = LightDM.shutdown if name == 'off' else LightDM.restart
+        done = []
+
+        def finish(*_):
+            if not done:
+                done.append(True)
+                try:
+                    action()
+                except GLib.Error as e:
+                    log(f'cannot {name}: {e.message}')
+            return False
+        sound = self.assets.root / 'media/Windows XP Shutdown.wav'
+        player = next((p for p in (['pw-play'], ['paplay'], ['aplay', '-q']) if shutil.which(p[0])), None)
+        pid = None
+        if sound.is_file() and player:
+            try:
+                pid, *_ = GLib.spawn_async([shutil.which(player[0]), *player[1:], str(sound)],
+                                           flags=GLib.SpawnFlags.DO_NOT_REAP_CHILD)
+            except GLib.Error as e:
+                log(f'cannot play {sound.name}: {e.message}')
+        if pid:
+            GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, finish)
+            GLib.timeout_add_seconds(10, finish)  # a sound server that never answers
+        else:
+            GLib.timeout_add(1500, finish)  # long enough to read the line
 
     def on_key(self, area, event):
         s = self.screen

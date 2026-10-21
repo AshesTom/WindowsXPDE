@@ -45,7 +45,7 @@ for f in system32/logonui.exe system32/msgina.dll system32/winlogon.exe fonts/ms
 done
 # LightDM runs the greeter as its own user, which cannot read a private home or checkout.
 sudo install -d -m755 "$share/code" "$share/assets/system32" "$share/assets/fonts" "$share/assets/pictures" \
-    "$share/assets/themes/Luna"
+    "$share/assets/themes/Luna" "$share/assets/media"
 sudo install -m644 "$root"/greeter/{welcome,xpres,xdraw}.py "$share/code/"
 sudo install -m755 "$root/greeter/xp-greeter.py" "$share/code/"
 sudo install -m644 "$assets"/system32/{logonui.exe,msgina.dll,winlogon.exe} "$share/assets/system32/"
@@ -57,7 +57,8 @@ if [[ $(python3 "$root/extract/media.py" "$assets") == en ]]; then
 fi
 # Only this media's fonts (another language's may be left from an earlier install).
 sudo find "$share/assets/fonts" -maxdepth 1 -type f -delete
-for f in "${fonts[@]}" themes/Luna/luna.msstyles; do
+# XP's shut down sound, for the Welcome screen's Turn Off and Restart.
+for f in "${fonts[@]}" themes/Luna/luna.msstyles "media/Windows XP Shutdown.wav"; do
     [[ ! -f $assets/$f ]] || sudo install -m644 "$assets/$f" "$share/assets/$f"
 done
 shopt -s nullglob
