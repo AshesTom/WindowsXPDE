@@ -29,12 +29,10 @@
 #define ID_POWER     1
 #define ID_NETWORK   2
 #define ID_VOLUME    3
-#define ID_SECURITY  4
-#define ID_COUNT     5
+#define ID_COUNT     4
 #define TIMER_POLL   1
 #define TIMER_FIND   2
 #define TIMER_APPLY  3
-#define TIMER_ALERT  4
 #define TIMER_CONNECTIONS 5
 #define TIMER_WIRELESS 6
 #define TIMER_WIRELESS_CONNECT 7
@@ -45,7 +43,6 @@
 #define CMD_EXIT     104
 #define CMD_STATUS   105
 #define CMD_METER    106
-#define CMD_SECURITY 107
 #define CMD_CONNECTIONS 108
 #define CMD_NETWORK_SETTINGS 109
 
@@ -156,7 +153,6 @@ static struct { const WCHAR *file; int id; HICON icon; } xp_icons[] = {
     { L"xpsp2res.dll", 1003, NULL }, /* 10 wireless connected */
     { L"xpsp2res.dll", 1004, NULL }, /* 11 wireless not connected */
     { L"xpsp2res.dll", 1018, NULL }, /* 12 wireless limited connectivity */
-    { L"xpsp2res.dll", 6106, NULL }, /* 13 Security Center: at risk (red shield) */
 };
 
 static HICON xp_icon(int index)
@@ -691,26 +687,6 @@ static void show_network(void)
     set_icon(ID_NETWORK, TRUE, xp_icon(index), tip, balloon ? title : NULL, balloon ? info : NULL, NIIF_INFO);
 }
 
-/* XP SP2's Security Center alert (wscntfy.exe): Linux has no antivirus XP
- * would recognize, so, as on a fresh XP, the red shield says the computer
- * might be at risk, with its balloon once after logon. Texts from xpsp2res.dll. */
-static void xp_string(UINT id, WCHAR *out, int size, const WCHAR *fallback)
-{
-    HMODULE module = xp_module(L"xpsp2res.dll");
-    if (!module || !LoadStringW(module, id, out, size)) lstrcpynW(out, fallback, size);
-}
-
-static void show_security(BOOL balloon)
-{
-    WCHAR title[64], line[128], click[128], info[256];
-    xp_string(17119, title, ARRAYSIZE(title), L"Your computer might be at risk");
-    xp_string(17006, line, ARRAYSIZE(line), L"Antivirus software might not be installed");
-    xp_string(17013, click, ARRAYSIZE(click), L"Click this balloon to fix this problem.");
-    swprintf(info, ARRAYSIZE(info), L"%ls\n%ls", line, click);
-    set_icon(ID_SECURITY, TRUE, xp_icon(13), title, balloon ? title : NULL, balloon ? info : NULL,
-             NIIF_WARNING);
-}
-
 static void poll(void)
 {
     static int last_up = -2;
@@ -734,9 +710,6 @@ static void add_all(void)
     for (int i = 0; i < ID_COUNT; i++) icons[i].shown = FALSE;
     tick = 0;
     poll();
-    show_security(FALSE);
-    /* As wscntfy.exe, the balloon comes a little after logon. */
-    SetTimer(window, TIMER_ALERT, 10000, NULL);
 }
 
 static void run_settings(UINT command);
@@ -1953,10 +1926,6 @@ static void run_settings(UINT command)
         spawn(L"kcmshell6 kcm_powerdevilprofilesconfig 2>/dev/null || systemsettings kcm_powerdevilprofilesconfig",
               NULL);
         break;
-    case CMD_SECURITY:
-        /* No Security Center here: KDE's firewall settings. */
-        spawn(L"kcmshell6 kcm_firewall 2>/dev/null || systemsettings kcm_firewall", NULL);
-        break;
     }
 }
 
@@ -1977,13 +1946,6 @@ static void context_menu(UINT id)
         AppendMenuW(menu, MF_STRING, CMD_NETWORK, L"&View Available Wireless Networks");
         AppendMenuW(menu, MF_STRING, CMD_CONNECTIONS, L"Open &Network Connections");
         SetMenuDefaultItem(menu, CMD_STATUS, FALSE);
-    }
-    else if (id == ID_SECURITY)
-    {
-        WCHAR open[64];
-        xp_string(17008, open, ARRAYSIZE(open), L"Open Security Center");
-        AppendMenuW(menu, MF_STRING, CMD_SECURITY, open);
-        SetMenuDefaultItem(menu, CMD_SECURITY, FALSE);
     }
     else
     {
@@ -2040,11 +2002,6 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPAR
             poll();
             flyouts_update();
         }
-        else if (wparam == TIMER_ALERT)
-        {
-            KillTimer(hwnd, TIMER_ALERT);
-            show_security(TRUE);
-        }
         else if (wparam == TIMER_APPLY)
         {
             KillTimer(hwnd, TIMER_APPLY);
@@ -2060,18 +2017,13 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPAR
     case WM_TRAY:
         switch (LOWORD(lparam))
         {
-        case NIN_BALLOONUSERCLICK:
-            if (wparam == ID_SECURITY) run_settings(CMD_SECURITY);
-            break;
         case WM_LBUTTONUP:
-            if (wparam == ID_SECURITY) show_security(TRUE);
-            else if (wparam == ID_VOLUME) show_popup();
+            if (wparam == ID_VOLUME) show_popup();
             else if (wparam == ID_NETWORK) show_wireless_networks();
             else show_power_meter();
             break;
         case WM_LBUTTONDBLCLK:
             if (wparam == ID_VOLUME) run_settings(CMD_MIXER);
-            else if (wparam == ID_SECURITY) run_settings(CMD_SECURITY);
             break;
         case WM_RBUTTONUP:
             context_menu((UINT)wparam);
