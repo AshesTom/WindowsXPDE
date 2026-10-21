@@ -11,8 +11,8 @@ prefix's: Japanese or English).
 Windows 7's x64 explorer runs as C:\\w7\\w7-explorer.exe, a 64-bit process.
 Its shell DLLs are kept in C:\\w7\\native and placed in system32, each with
 its MUI file in the language's folder (system32\\ja-JP\\shell32.dll.mui), as
-Windows 7 keeps them; Wine reads MUI files (patch 0092). Windows 7's Common
-Controls 6 is C:\\w7\\comctl32.dll, beside the shell (patch 0116); Wine's own
+Windows 7 keeps them; Wine reads MUI files (patch 0102). Windows 7's Common
+Controls 6 is C:\\w7\\comctl32.dll, beside the shell (patch 0126); Wine's own
 assembly stays every other program's. The files are placed as they are on
 the media, under the names the prefix uses. Every program of the prefix gets
 the DLLs that a file dialog needs (DllOverrides native,builtin: Windows
@@ -59,7 +59,7 @@ NAMES = (
 # session (the shell, and the file dialogs of Windows applications), but for
 # Wine's own programs (WINE_PROGRAMS) and those the user gives Wine's DLLs
 # back (win7.py builtin). Windows 7's DLLs get Windows 7's Common Controls 6
-# from C:\w7 (Wine 0116); the programs keep Wine's. These are what an
+# from C:\w7 (Wine 0126); the programs keep Wine's. These are what an
 # application's file dialog loads (explorerframe's browser, its views and
 # thumbnails).
 NATIVE = ('explorerframe', 'shell32', 'shlwapi', 'propsys', 'shdocvw', 'dui70', 'duser', 'profapi',
@@ -491,7 +491,7 @@ def mark_folders(prefix, user):
     """Mark the profile's and the Start menu's folders that have a desktop.ini as
     system folders again: Windows 7 makes some of them read-only in the first
     session (its known folders' attributes), which cleared the system attribute
-    before Wine kept the read-only one (Wine 0111), and their items lost their
+    before Wine kept the read-only one (Wine 0121), and their items lost their
     localized names (Links' "Recent Places", the Start menu's "Startup")."""
     profile_folders(prefix, user)
     for root in ('ProgramData', f'users/{user}/AppData/Roaming'):

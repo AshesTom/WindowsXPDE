@@ -15,7 +15,7 @@ Change: FileAttributes 0 leaves the attributes as they are; the times are
 set as before.
 Evidence: SHGetKnownFolderPath(FOLDERID_Links, KF_FLAG_CREATE |
 KF_FLAG_INIT) in the Windows 7 shell prefix turned Links from 0x14 into
-0x10; with this and 0111 it is 0x11, as on Windows 7.
+0x10; with this and 0121 it is 0x11, as on Windows 7.
 Scope: everywhere.
 ---
  dlls/ntdll/unix/file.c | 3 ++-

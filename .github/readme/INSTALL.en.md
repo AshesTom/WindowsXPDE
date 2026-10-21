@@ -11,6 +11,8 @@
 ## Requirements
 
 - A **Debian 13 (trixie) amd64** machine (real or virtual). No desktop environment is needed.
+  On Arch Linux and its derivatives (CachyOS, ...), `scripts/setup.sh` installs the same packages with pacman
+  and keeps the display manager in use (untested beyond the package step). The checkout path must not contain spaces.
 - A **Windows XP Professional SP3 (x86) ISO** (or an XP Windows directory), **Japanese or English**; which one is
   detected from the ISO.
 - Network access (packages and the Wine source) and **about 40 GB of free space** (Wine's source and build).

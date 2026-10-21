@@ -52,9 +52,55 @@
   0129〜0131（XP と ReactOS の細部）の後の末尾に 0132（ほかのプロセスの窓の SetWindowPlacement）と 0133（Windows 7 の項目
   ダイアログ）を加え、0094 を広げた。
 - 2026-10-21 に末尾の 0132・0133 をまとまりの位置に移した（下の「クイック起動の後の整理」）。最後に当てた後のソースは並べ直しの前と同じ。
+- 2026-10-21 に AshesTom さんのフォークの XP のセッションのための 17 本を、まとまりの位置に加えた（下の「AshesTom さんのフォークの
+  統合」）。150 本。
 
 それ以前の文書（`docs/history/investigations.md` の各節と、Git 管理外の開発の記録）に出てくるパッチ番号は、書いた時点の番号（段階 2 より前の旧番号、
 段階 2〜4 の 10.0 版の番号、段階 5 の 11.0 版の番号、または段階 6 の番号）。下の対応表で今の番号に読み替える。
+
+## AshesTom さんのフォークの統合（2026-10-21）
+
+旧番号は、この統合の前（v0.14.0、7e14d50）の番号。新しいパッチは AshesTom さんのフォーク（AshesTom/win4wine の
+09c7b93 と 0ca1242。そちらの 0127〜0141、0143、0144）から入れたもの。
+
+| 現在 | 旧番号 | 名前 |
+|---|---|---|
+| 0001〜0015 | 同じ | （順は同じ） |
+| 0016 | （AshesTom） | `user32-sys-colors-temp` |
+| 0017 | （AshesTom） | `winmm-expand-sound-paths` |
+| 0018 | （AshesTom） | `kernelbase-geo-friendly-name` |
+| 0019〜0041 | 0016〜0038 | （順は同じ） |
+| 0042 | （AshesTom） | `winex11-external-keep-shell-window-down` |
+| 0043 | （AshesTom） | `win32u-external-xp-input-languages` |
+| 0044〜0051 | 0039〜0046 | （順は同じ） |
+| 0052 | （AshesTom） | `user32-external-xp-caption-animation` |
+| 0053〜0063 | 0047〜0057 | （順は同じ） |
+| 0064 | （AshesTom） | `win32u-external-xp-simulated-bold` |
+| 0065〜0084 | 0058〜0077 | （順は同じ） |
+| 0085 | （AshesTom） | `uxtheme-classic-metrics-exports` |
+| 0086 | （AshesTom） | `uxtheme-display-properties-styles` |
+| 0087 | （AshesTom） | `uxtheme-external-theme-refresh` |
+| 0088〜0143 | 0078〜0133 | （順は同じ） |
+| 0144 | （AshesTom） | `apphelp-advapi32-run-checks` |
+| 0145 | （AshesTom） | `uxtheme-export-ordinals` |
+| 0146 | （AshesTom） | `uxtheme-is-theme-active-by-policy` |
+| 0147 | （AshesTom） | `uxtheme-external-caption-small-icons` |
+| 0148 | （AshesTom） | `user32-external-xp-themed-controls-beside-comctl32` |
+| 0149 | （AshesTom） | `ntdll-external-xp-comctl32-beside-exe` |
+| 0150 | （AshesTom） | `user32-external-xp-plain-comctl32-classes` |
+
+フォークの 0142（wineboot が StartUp の desktop.ini を開かない）は、同じことをする 0010 があるので入れていない。入力言語（0043）、
+最小化・最大化のアニメーション（0052）、擬似太字（0064）は XP のセッションだけにした（フォークでは外部シェル全体）。
+apphelp と uxtheme の関数の表、タイトルバー、comctl32 の切り替えに触れる 7 本（0144〜0150）は、Windows 7 のためのパッチの後の
+「XP と ReactOS のシェルの細部」に置いた。どの段階でも、最後のツリーはフォークのパッチを末尾に当てたもの（移植用のリポジトリの
+タグ ash-before-reorder）と同じ。
+
+統合の後、0086 の DrawNCPreview（画面のプロパティの見本）の文字を、呼んだ themeui.dll の文字列（日本語版では日本語）にし、
+Luna の見本のタイトルの文字をスタイルのタイトルの文字色（白）にした（フォークでは英語の固定の文字と、DC の黒い文字色）。
+0086 では、クラス名なしの OpenThemeDataFromFile にスタイル全体の値を返し（クラシックから Windows XP スタイルに戻せなかった）、
+XP のセッションでは Wine 自身の Light を一覧に出さないようにした。0087 は、新しいスタイルを後から読んだプロセスが自分の窓に
+WM_THEMECHANGED をもう一度送る。0149 と 0150 は、システムのディレクトリのプログラム（メモ帳など）を XP の comctl32 の横とみなさない
+（フォークでは system32 の Wine の comctl32.dll を見て、メモ帳の編集欄とステータス バーが作られなかった）。
 
 ## クイック起動の後の整理（2026-10-21）
 

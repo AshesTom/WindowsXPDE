@@ -212,14 +212,18 @@ try:
         return all(abs(((pixel>>shift)&255)-target) <= 1
                    for shift,target in zip((16,8,0),expected))
     wait(visible_half_alpha, 'actual caption image blends half-alpha native icon against Luna background')
+    small = [0xff902050] * 256
     large = [0xff502090] * (32*32)
     native.change_property(atom('_NET_WM_ICON'), Xatom.CARDINAL, 32,
-                           [16, 16] + pixels + [32, 32] + large)
+                           [16, 16] + small + [32, 32] + large)
     d.flush()
-    expect_icon(32, 32, large, 'updated EWMH icon chooses suitable32px image and replaces HICON')
+    expect_icon(16, 16, small, 'updated EWMH icon gives the caption its own 16x16 image and replaces HICON')
     if os.environ.get('XP_FRAME_TASKBAR_ICONS'):
-        wait(lambda: visible_task_icon([large[0]] * 256), 'actual XP taskbar replaces its icon after native property update')
+        wait(lambda: visible_task_icon(small), 'actual XP taskbar replaces its icon after native property update')
         print('PASS: actual XP taskbar pixels show initial and updated native icons')
+    native.change_property(atom('_NET_WM_ICON'), Xatom.CARDINAL, 32, [32, 32] + large)
+    d.flush()
+    expect_icon(16, 16, [large[0]] * 256, 'a 32px-only EWMH icon is shrunk to the caption\'s 16x16 image')
     pixmap = root.create_pixmap(16, 16, root.get_geometry().depth)
     mask = root.create_pixmap(16, 16, 1)
     gc = pixmap.create_gc(foreground=0x112233)

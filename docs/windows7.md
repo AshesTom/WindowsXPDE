@@ -32,14 +32,14 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | `Branding\Basebrd\basebrd.dll` | ログオン画面のエディションの名前 |
 | 上の DLL と `imageres` の 32bit 版（`SysWOW64`） | 32bit のプログラムのファイルのダイアログ、アイコンと名前 |
 | Common Controls 6（amd64 と x86） | Windows 7 の DLL だけが使う comctl32。`C:\w7\comctl32.dll`（32bit は `C:\w7\wow64\comctl32.dll`） |
-| user32.dll（データ） | システム アイコンだけを読む。`C:\w7\res\user32-w7.dll`（Wine の 0122） |
+| user32.dll（データ） | システム アイコンだけを読む。`C:\w7\res\user32-w7.dll`（Wine の 0132） |
 | `ja-JP\notepad.exe.mui`（データ） | テキスト ファイルの種類名（「テキスト ドキュメント」、新規作成の名前）だけを読む。`C:\w7\res\notepad.exe.mui`。メモ帳そのものは Wine のもの |
 | Segoe UI、Tahoma、Microsoft Sans Serif、メイリオと MS UI Gothic（日本語のとき） | Windows 7 の UI とダイアログのフォント |
-| `Resources\Themes\Aero` | Aero のテーマ（形式 4 の msstyles。Wine の 0103 で読みます） |
+| `Resources\Themes\Aero` | Aero のテーマ（形式 4 の msstyles。Wine の 0113 で読みます） |
 | `img0.jpg`、User Account Pictures、スタートメニューの `desktop.ini` | 壁紙、利用者の画像、スタートメニューのフォルダの日本語の名前 |
 
 取り出したファイルには手を加えません。prefix には、Windows 7 と同じく DLL の隣の言語のフォルダに MUI ファイルを置き
-（`system32\ja-JP\shell32.dll.mui`）、Wine がそれを読みます（Wine のパッチ 0092。言語に依存しない DLL で見つからない
+（`system32\ja-JP\shell32.dll.mui`）、Wine がそれを読みます（Wine のパッチ 0102。言語に依存しない DLL で見つからない
 リソースを、その DLL の MUI ファイルから探します）。名前を変えて置くもの（`w7-explorer.exe`、`w7actxprxy.dll`）は、MUI ファイルも
 その名前にします。
 
@@ -63,7 +63,7 @@ Windows 7 の comdlg32 の部品が登録する `FileOpenDialog`（シェルの�
   どのプログラムがどれを使うかは、下の「どのプログラムが Windows 7 の DLL を使うか」のとおりです。
 - Windows 7 の Common Controls 6 は `C:\w7\comctl32.dll`（32bit は `C:\w7\wow64\comctl32.dll`）に置きます。Windows 7 のシェルの
   セッションでは、シェル（`w7-explorer.exe`）と、ほかのプログラムの中の Windows 7 の DLL がこれを使い、プログラム自身は Wine の
-  Common Controls 6 のままです（Wine のパッチ 0116。Windows 7 の comctl32 をプログラムに使わせると Wine のアプリが壊れるため）。
+  Common Controls 6 のままです（Wine のパッチ 0126。Windows 7 の comctl32 をプログラムに使わせると Wine のアプリが壊れるため）。
   サムネイルを作る `dllhost.exe` は、Wine の Common Controls 6 のままにします。
 - `HKLM\...\Winlogon` の `Shell` を `w7-explorer.exe` にします。
 - 利用者のフォルダー（ドキュメント・ピクチャ・ミュージック・ビデオなど）とライブラリは Windows 7 と同じ日本語の名前で出ます
@@ -71,7 +71,7 @@ Windows 7 の comdlg32 の部品が登録する `FileOpenDialog`（シェルの�
 - フォントのつなぎ（FontLink）と置き換え（FontSubstitutes）は日本語の Windows 7 と同じです（MS Shell Dlg は MS UI Gothic、
   MS Shell Dlg 2 は Tahoma、Segoe UI には Tahoma とメイリオ。参照用の実機で読んだ値）。古い形のダイアログの文字も Windows 7 と
   同じフォントです。以前に取り出したファイル（MS UI Gothic と Tahoma が無い）では、これまでどおりメイリオ UI で代わりにします。
-- 見た目: ClearType（Windows 7 の既定。色の付き方も Windows 7 と同じ: Wine の 0124）、Aero のテーマ（`prefix/theme-settings.c`）。テーマのフォント（メイリオ 9pt）を利用者の
+- 見た目: ClearType（Windows 7 の既定。色の付き方も Windows 7 と同じ: Wine の 0134）、Aero のテーマ（`prefix/theme-settings.c`）。テーマのフォント（メイリオ 9pt）を利用者の
   フォントとして保存します（`prefix/theme-fonts.c`。Windows でテーマを当てたときと同じ。日本語のフォント名はテーマの MUI にあるので、
   prefix の言語で動かします）。壁紙は Windows 7 と同じく `TranscodedWallpaper.bmp` に変換して使います。
 - 「ドキュメント」は Linux のホーム（`H:`）です（XP のシェルと同じ）。
@@ -91,7 +91,7 @@ Windows のアプリのファイルを開く・保存するダイアログを Wi
 | サムネイルを作る `dllhost.exe` | ファイルのダイアログの 10 個（Common Controls 6 は Wine のもの） | AppDefaults で comctl32 だけ `builtin` |
 
 アプリの中では、Windows 7 の DLL は Windows 7 の Common Controls 6 を、アプリ自身は Wine の Common Controls 6 を使います
-（Wine のパッチ 0116）。
+（Wine のパッチ 0126）。
 
 Windows 7 の DLL でうまく動かないアプリには、Wine の DLL を使わせることができます（ファイルのダイアログは Wine のものに
 なります）。実行ファイルの名前で指定し、prefix に記録されるので、次からもそうなります。
@@ -130,29 +130,29 @@ prefix/win7.py builtin .local/prefix-win7 app.exe --undo   # Windows 7 の DLL �
 session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` で、supervisor は次のように動きます。
 
 - `C:\w7\w7-explorer.exe` を起動し、`prefix/win7.py stage` を使います。ようこそ画面は Windows 7 のもの（下の「カーソルとログオン画面」）です。
-- `WIN4WINE_SHELL=win7` を設定します。Windows 7 のためだけの Wine のパッチ（0110、0111、0113〜0115 の一部）は、これがあるときだけ効きます。
+- `WIN4WINE_SHELL=win7` を設定します。Windows 7 のためだけの Wine のパッチ（0120、0121、0123〜0125 の一部）は、これがあるときだけ効きます。
 - Linux の窓は、アプリ（X11 の `WM_CLASS`、Wayland の app_id）ごとにタスクバーのボタンにまとまります（proxy が窓に
   AppUserModelID を付けます）。スタートメニューにあるアプリなら、ジャンプリストの題とアイコンはそのアプリのもので、
   「タスク バーにこのプログラムを表示する」で固定でき、固定したボタンから起動できます（`session/linux_apps.py` が
   `C:\xp\linux-apps\relaunch.tsv` に名前・コマンド・アイコンを書き、proxy が Windows 7 の shell32 と同じ窓のプロパティ
   （AppUserModel の RelaunchCommand、RelaunchIconResource、RelaunchDisplayNameResource）に付けます。以前は題が "proxy" でした）。
-- Linux のトレイアイコン（StatusNotifierItem と XEmbed）は、Windows 7 の通知領域に出ます（Wine の 0114）。
+- Linux のトレイアイコン（StatusNotifierItem と XEmbed）は、Windows 7 の通知領域に出ます（Wine の 0124）。
 - 日本語入力は XP のシェルと同じ fcitx5 + Mozc です。入力モード（「あ」など）は通知領域に出て、Wine のアプリでは窓の中で
   変換します。
 - Windows のアプリがスタートメニューに作るショートカットは、「すべてのプログラム」に並びます。
 - ファイルを開く・保存するダイアログ: Windows のアプリ（64bit・32bit）は Windows 7 のダイアログです（一覧は Windows 7 の shell32 と
   explorerframe が描きます。ダイアログの枠は Wine の comdlg32 で、Windows 7 と同じ大きさ・配置・フォントにし、上の段の戻る・進む、
   パンくずのアドレス（各フォルダーの ▸ でその中のフォルダーの一覧、空いた所のクリックで入力）、更新、検索欄も実機と同じ部品で
-  描きます。Wine の 0127）。検索は今のフォルダーの中を名前で絞り込みます（実機は Windows Search の索引を検索しますが、prefix には
+  描きます。Wine の 0137）。検索は今のフォルダーの中を名前で絞り込みます（実機は Windows Search の索引を検索しますが、prefix には
   ありません）。最初に開くのは「ドキュメント」フォルダーです（実機はドキュメント ライブラリ。ライブラリの一覧には Windows Search の
   部品が要ります）。Notepad のように古い形のダイアログを使うアプリも、一覧は Windows 7 の
-  ものです（Wine の 0096、0098）。Linux のアプリ（GTK 3・GTK 4・Qt）はそれぞれのダイアログです。どちらも「ドキュメント」（`H:`）は
+  ものです（Wine の 0106、0108）。Linux のアプリ（GTK 3・GTK 4・Qt）はそれぞれのダイアログです。どちらも「ドキュメント」（`H:`）は
   Linux のホームで、日本語の名前のファイルも開け、保存できます。
 - Windows キー、Ctrl+Esc（Linux の窓からも）、Win+R、Win+E、Alt+Tab が使えます。
 - タスクバーを右クリックして「プロパティ」を開くと、実機と同じように「小さいアイコンを使う」（高さ 30 px のタスクバー）と
   「タスク バーのボタン」（常に結合、ラベルを非表示／タスク バーがいっぱいの場合に結合／結合しない）を変えられます。
   「適用」か「OK」ですぐにタスクバーが変わり、最大化した窓（Wine の窓も Linux の窓も）も新しい作業領域に合わせ直します
-  （Wine の 0027、0101、0102）。設定は prefix のレジストリ（`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` の
+  （Wine の 0030、0111、0112）。設定は prefix のレジストリ（`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` の
   `TaskbarSmallIcons` と `TaskbarGlomLevel`）に残り、次のセッションでもそのままです。Linux の窓のボタンも、ラベル付きのボタンになります。
 - クイック起動: 実機と同じく、タスクバーの右クリック →「ツール バー」→「新規ツール バー」で
   `%APPDATA%\Microsoft\Internet Explorer\Quick Launch` を選ぶと、タスクバーに出ます（「ボタン名の表示」と「タイトルの表示」を外し、
@@ -160,54 +160,54 @@ session.json（`~/.config/win4wine/win7-session.json`）の `"shell": "win7"` �
   右端に寄ります。起動中のアプリの帯のつまみを左へ引きずると、普通の幅に戻ります（ログオフで保存されます）。フォルダには Windows 7 の既定のユーザーと同じく「デスクトップの表示」と
   「ウィンドウを切り替える」が入ります（ISO から取り出したものを prefix が一度だけ置きます。EXTRACT_VERSION 6）。ツールバーは
   ログオフで保存され、次のセッションでもそのままです。「デスクトップの表示」は 2 回目に窓を元に戻し、最後に使っていた窓が前面に
-  戻ります（Wine の 0046）。フォルダの選択のダイアログは実機と同じ「フォルダー:」と「フォルダーの選択」で、入力した `%APPDATA%`
-  などを展開し、入力したフォルダを受け付けます（Wine の 0095、0127）。
+  戻ります（Wine の 0051）。フォルダの選択のダイアログは実機と同じ「フォルダー:」と「フォルダーの選択」で、入力した `%APPDATA%`
+  などを展開し、入力したフォルダを受け付けます（Wine の 0105、0137）。
 - ピン留め: タスクバーのボタンを右クリックして「タスク バーにこのプログラムを表示する」で、Windows のアプリも Linux のアプリも
   タスクバーに残り、そこから起動できます（ログオフ後も残ります）。実機の既定のピン留め（Internet Explorer など）は置きません。
 - タスク一覧の空いた所の明るい光（大きいアイコンのとき）は実機と同じです（Windows 7 の TaskBand2 の部品。小さいアイコンでは
   出ません）。
 - フォルダーは、Windows のアプリからも、Wine 自身のプログラム（`wine explorer C:\パス`、`wine start C:\パス`）からも Windows 7 の
-  フォルダーウィンドウで開きます（Wine の 0118）。フォルダーウィンドウのアドレス バーと検索欄の高さは実機と同じです（Wine の 0109）。
+  フォルダーウィンドウで開きます（Wine の 0128）。フォルダーウィンドウのアドレス バーと検索欄の高さは実機と同じです（Wine の 0119）。
 - フォルダーウィンドウのナビゲーション ウィンドウは実機と同じです: 「お気に入り」のダウンロード・デスクトップ・最近表示した場所
-  （prefix の `user-profile.exe` が Links フォルダーに作るリンクと日本語の名前）、ライブラリごとのアイコン（Wine の 0090）。
+  （prefix の `user-profile.exe` が Links フォルダーに作るリンクと日本語の名前）、ライブラリごとのアイコン（Wine の 0100）。
   既定のライブラリ（ドキュメント・ピクチャ・ビデオ・ミュージック）も `user-profile.exe` が Windows 7 の shell32 に作らせます。
   ダウンロードが Linux のフォルダーへのリンクのときは、そこに desktop.ini を置かないため、アイコンは普通のフォルダーです。
-- 詳細ペインなど、アイコンを元の大きさ以外で出すところは Windows 7 と同じく面積平均で縮めます（Wine の 0100）。
+- 詳細ペインなど、アイコンを元の大きさ以外で出すところは Windows 7 と同じく面積平均で縮めます（Wine の 0110）。
 - リスト ビュー（Explorer テーマ）とメニュー バーは、実機と同じくマウスの下の項目を光らせます。無効な窓のメニュー バーの文字は
-  灰色です（Wine の 0121、0107）。
+  灰色です（Wine の 0131、0117）。
 - Tahoma（MS Shell Dlg 2）などの中の日本語は、実機と同じ大きさと字形です（8 pt のダイアログの文字は MS UI Gothic の
-  12 px のビットマップ。Wine の 0125）。
+  12 px のビットマップ。Wine の 0135）。
 - 種類の列のテキスト ファイルは「テキスト ドキュメント」です（Windows 7 のメモ帳の MUI の文字列。メモ帳そのものは Wine のもの）。
 - Alt+Tab は Windows 7 ベーシックの形です。Windows 7 のテーマの `AltTab` クラスで描き（背景、選んだ項目の枠、題の字体と色）、
   大きさや並びは Windows 7 SP1 の実機に合わせています（1 行に 7 個、行は作業領域に入るだけ）。最初の行の最後に「デスクトップ」が
   入り、選ぶとすべての窓を最小化します（Windows 7 では、デスクトップを見せたあと元に戻せますが、ここでは窓ごとに戻します）。
 - 窓の枠とキャプションのボタンは Windows 7 ベーシックと同じ大きさです（枠 8 px、最小化・最大化・閉じるのボタン 31x17。Wine の
-  0106。Windows 7 SP1 の実機で同じ位置・大きさの Notepad と画素ごとに比べています）。
-- メニュー（メニュー バーとポップアップ）は Windows 7 のテーマで描きます（Wine の 0107、0119）。項目の大きさや文字の位置、影は
+  0116。Windows 7 SP1 の実機で同じ位置・大きさの Notepad と画素ごとに比べています）。
+- メニュー（メニュー バーとポップアップ）は Windows 7 のテーマで描きます（Wine の 0117、0129）。項目の大きさや文字の位置、影は
   実機と画素ごとに同じです（ClearType の色を除く）。Windows 7 の既定どおりキーボードの手掛かりは隠れ、アクセス キーの下線は
   Alt や F10 でメニューを使う間だけ出ます。
 - システム アイコン（アプリの既定のアイコン、メッセージ ボックスのエラー・警告・情報・質問、盾）は Windows 7 のものです。Windows 7 の
-  user32.dll をデータとしてだけ `C:\w7\res\user32-w7.dll` に置き、Wine の user32 がそこから読みます（Wine の 0122。名前を変えて
+  user32.dll をデータとしてだけ `C:\w7\res\user32-w7.dll` に置き、Wine の user32 がそこから読みます（Wine の 0132。名前を変えて
   いるのは、Wine の user32 と取り違えないため）。
 - メッセージ ボックスは Windows 7 の形（白地に下のボタン帯、右寄せのボタン）で、既定のボタンの脈動とプログレス バーの光も
-  Windows 7 と同じです（Wine の 0123）。
-- スタートメニューの右の列の文字は実機と同じく 1 回だけ描きます（Wine の 0117）。
+  Windows 7 と同じです（Wine の 0133）。
+- スタートメニューの右の列の文字は実機と同じく 1 回だけ描きます（Wine の 0127）。
 - Windows のアプリのコントロール（Wine の Common Controls 6）は、ドロップダウン リスト、ステータス バー、タブ、プログレス バー、
   エディットの枠、トラック バー、リスト ビュー（詳細表示、Explorer テーマの選択と列の線）、フォーカスの点線、文字の位置を Windows 7 に合わせています（Wine の
-  0120、0121）。
+  0130、0131）。
 - スタートメニューの「シャットダウン」と、その横のメニューの「ログオフ」「再起動」で、セッションを終えます（XP のシェルと同じく、
   終了と再起動では session.json の `shutdown_command`・`reboot_command` を実行します）。
 
-- 壁紙は、モニターが複数あるときも、実機と同じくモニターごとに描きます（Wine の 0084 の PaintMonitor）。
+- 壁紙は、モニターが複数あるときも、実機と同じくモニターごとに描きます（Wine の 0094 の PaintMonitor）。
 - 日本語の prefix では、メモ帳（Wine のもの）の既定のフォントを日本語版の Windows 7 のメモ帳と同じ「ＭＳ ゴシック」12 ポイントに
   します（利用者が選んだフォントは変えません）。Wine の既定（System）には日本語の字が無く、日本語のフォントの無い Linux では
   四角になっていました。
 - タスクバーのボタンを指したときの窓の一覧は、実機の Windows 7 ベーシックと同じ見た目です（シェルにはデスクトップの合成が無いと
-  答えます。Wine の 0115）。
+  答えます。Wine の 0125）。
 - Wayland のセッション「Windows 7 Shell (Wine, Wayland)」もあります（`setup.sh --shell win7 --wayland`）。モニターごとの倍率が
   使え、スタート ボタンの縁は compositor が本物の透明度で描きます（[wayland.md](wayland.md)）。
 
-Windows 7 のシェルのために足した Wine のパッチは 0084〜0126 です（[patches.md](patches.md)）。
+Windows 7 のシェルのために足した Wine のパッチは 0094〜0136 です（[patches.md](patches.md)）。
 
 ## 制限
 

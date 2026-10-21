@@ -65,7 +65,7 @@ class Session:
         self.env = environment(dict(os.environ, WINEDEBUG=config.get('debug', '+timestamp,fixme-all')),
                                config, self.shell)
         # Under the compositor, layered windows' translucent pixels are blended
-        # by it; Wine leaves them as they are (Windows 7's Start button, patch 0113).
+        # by it; Wine leaves them as they are (Windows 7's Start button, patch 0123).
         if self.compositor:
             self.env['WIN4WINE_COMPOSITED'] = '1'
         # Opt-in: the proxy snaps windows to half of the screen (Win+arrows, dragging to an edge).
@@ -259,10 +259,49 @@ class Session:
                 subprocess.run(menu, env=self.env, stdout=log, stderr=subprocess.STDOUT, timeout=180, check=False)
             except subprocess.TimeoutExpired:
                 print('Linux menu sync timed out; see linux-apps.log', file=sys.stderr)
+        self.pin_recent()
         # Wine's desktop process keeps the environment of the program that
         # started it; let the shell start it with the session's own.
         self.stop_wine()
         self.spawn([*menu, '--watch'], 'linux-apps')
+
+    def play_sound(self, event):
+        """An event of XP's sound scheme (the XP shell only), as XP plays it."""
+        player = ROOT / '.local/bridge/playsound.exe'
+        if self.shell['marker'] != 'xp-shell.json' or not player.is_file():
+            return None
+        return self.spawn([self.wine, str(player), event], 'sounds')
+
+    def keyboard(self):
+        """The session's keyboard layout from XP's input languages (Wine patch
+        0043), or the Linux system's while the prefix has none."""
+        if self.shell['marker'] != 'xp-shell.json':
+            return
+        with (self.state / 'keyboard.log').open('ab') as log:
+            subprocess.run([sys.executable, str(ROOT / 'session/keyboard.py'), 'apply', str(self.prefix)],
+                           env=self.env, stdout=log, stderr=subprocess.STDOUT, timeout=30, check=False)
+
+    def keyboard_watch(self):
+        """Follow the input languages that XP's Regional and Language Options set."""
+        watch = ROOT / '.local/bridge/keyboard-watch.exe'
+        if self.shell['marker'] == 'xp-shell.json' and watch.is_file():
+            self.spawn([self.wine, str(watch), str(ROOT / 'session/keyboard.py')], 'keyboard')
+
+    def pin_recent(self):
+        """Pin the most used programs in the Start menu's left column.
+
+        XP's own list of them stays empty under Wine; XP Explorer's
+        startmenu.exe (prefix/extras.py) counts them from XP's usage data
+        before the shell starts, as XP Explorer's xpstart.exe does."""
+        helper = self.prefix / 'drive_c/xp/bin/startmenu.exe'
+        if self.shell['marker'] != 'xp-shell.json' or not helper.is_file():
+            return
+        with (self.state / 'startmenu.log').open('ab') as log:
+            try:
+                subprocess.run([self.wine, r'C:\xp\bin\startmenu.exe', 'recent'], env=self.env, stdout=log,
+                               stderr=subprocess.STDOUT, timeout=60, check=False)
+            except subprocess.TimeoutExpired:
+                print('startmenu.exe recent timed out', file=sys.stderr)
 
     def status(self, state, **extra):
         record = dict(state=state, time=time.time(), **extra)
@@ -280,14 +319,22 @@ class Session:
         self.processes.append(process)
         return process
 
+    def xp_assets(self):
+        """The XP files the prefix was made from (xp-shell.json), or this checkout's."""
+        try:
+            return Path(json.loads((self.prefix / 'xp-shell.json').read_text())['assets'])
+        except (OSError, ValueError, KeyError):
+            return ROOT / '.local/assets'
+
     def show_welcome(self, mode):
         if not self.welcome_screen:
             return
         self.hide_welcome()
         log = (self.state / 'welcome.log').open('ab', buffering=0)
         self.logs.append(log)
+        extra = ['--assets', str(self.xp_assets())] if self.welcome_screen == 'greeter/xp-splash.py' else []
         self.welcome = subprocess.Popen([sys.executable, str(ROOT / self.welcome_screen), mode,
-                                         '--dpi', str(self.dpi)],
+                                         '--dpi', str(self.dpi), *extra],
                                         stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
                                         start_new_session=True)
 
@@ -453,8 +500,12 @@ class Session:
         # Install only the shell family in this dedicated prefix. Runtime overrides select them.
         script, *command = self.shell['stage']
         subprocess.run(['python3', str(ROOT / script), *command, str(self.prefix), '--wine', self.wine], check=True)
+        self.keyboard()
         if self.linux_menu:
             self.start_linux_menu()
+        else:
+            self.pin_recent()
+            self.stop_wine()
         crashes = deque()
         attempt = 0
         while not self.stopping:
@@ -464,6 +515,7 @@ class Session:
             self.request.unlink(missing_ok=True)
             ipc_win = 'Z:' + str(self.ipc).replace('/', '\\')
             proxy = self.spawn([self.wine, str(self.proxy), ipc_win], 'proxy')
+            self.keyboard_watch()
             shell = self.spawn([self.wine, self.shell['command']], 'xp-shell')
             started = time.monotonic()
             ready = False
@@ -477,6 +529,8 @@ class Session:
                     ready = True
                     self.status('xp-shell', attempt=attempt)
                     self.hide_welcome()
+                    if attempt == 1:
+                        self.play_sound('SystemStart')
                 if ready and not has_tray:
                     break
                 if not ready and (time.monotonic()-started > self.readiness_timeout or shell.poll() is not None):
@@ -525,10 +579,16 @@ class Session:
             return False
         self.show_welcome('logoff')
         self.wait_welcome()
+        sound = self.play_sound('WindowsLogoff')
         try:
             shell.wait(timeout=30)  # let wineboot end the applications first
         except subprocess.TimeoutExpired:
             pass
+        if sound:
+            try:
+                sound.wait(timeout=10)  # XP's log off sound ends before the session
+            except subprocess.TimeoutExpired:
+                pass
         self.status('ending', request=request)
         self.tell_welcome('saving')
         self.stopping = True

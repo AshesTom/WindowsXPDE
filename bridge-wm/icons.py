@@ -6,7 +6,7 @@ MAX_SIDE = 256
 MAX_WORDS = 262144
 
 
-def net_icon(window, atom):
+def net_icon(window, atom, side=32):
     prop = window.get_property(atom, Xatom.CARDINAL, 0, MAX_WORDS)
     if not prop or prop.format != 32 or prop.bytes_after:
         return None
@@ -20,7 +20,7 @@ def net_icon(window, atom):
         if not width or not height or width * height > len(values) - offset:
             return None
         if width <= MAX_SIDE and height <= MAX_SIDE:
-            candidate = (abs(max(width, height)-32), -width*height, offset, width, height)
+            candidate = (abs(max(width, height)-side), -width*height, offset, width, height)
             if best is None or candidate < best:
                 best = candidate
         offset += width * height
@@ -109,9 +109,39 @@ def hints_icon(display, window):
     return width, height, [colors[p] if mask is None or mask[i] else 0 for i, p in enumerate(pixels)]
 
 
-def payload(display, window, icon_atom):
+def shrink(width, height, pixels, side):
+    """The image fitted in SIDE x SIDE by averaging its pixels (alpha
+    weighted), centred: a caption draws its small icon at that size, and
+    stretching it there would only keep some of the pixels."""
+    scale = side / max(width, height)
+    w, h = max(1, round(width * scale)), max(1, round(height * scale))
+    left, top = (side - w) // 2, (side - h) // 2
+    out = [0] * (side * side)
+    for y in range(h):
+        y0, y1 = y * height // h, max(y * height // h + 1, (y + 1) * height // h)
+        for x in range(w):
+            x0, x1 = x * width // w, max(x * width // w + 1, (x + 1) * width // w)
+            a = r = g = b = 0
+            for sy in range(y0, y1):
+                for p in pixels[sy * width + x0:sy * width + x1]:
+                    alpha = p >> 24
+                    a += alpha
+                    r += (p >> 16 & 0xff) * alpha
+                    g += (p >> 8 & 0xff) * alpha
+                    b += (p & 0xff) * alpha
+            count = (y1 - y0) * (x1 - x0)
+            if a:
+                out[(top + y) * side + left + x] = (a // count) << 24 | (r // a) << 16 | (g // a) << 8 | b // a
+    return side, side, out
+
+
+def payload(display, window, icon_atom, side=32):
+    """The icon nearest SIDE pixels; a small one (side 16) is shrunk to
+    16x16 when the client has none that small."""
     try:
-        image = net_icon(window, icon_atom) or hints_icon(display, window)
+        image = net_icon(window, icon_atom, side) or hints_icon(display, window)
+        if image and side < 32 and max(image[:2]) > side:
+            image = shrink(*image, side)
         if image:
             width, height, pixels = image
             return b'W4I1' + struct.pack('<II', width, height) + struct.pack(f'<{len(pixels)}I', *pixels)

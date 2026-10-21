@@ -25,7 +25,20 @@ if python3 -c 'import json, sys; sys.exit(not json.load(open(sys.argv[1])).get("
     sed -e 's|<range>0</range>|<range>1</range>|' -e 's|<topMaximize>no</topMaximize>|<topMaximize>yes</topMaximize>|' \
         "$root/wayland/labwc/rc.xml" > "$rc"
 fi
+# labwc's configuration directory, with the keyboard layout of XP's input
+# languages in its environment file; the supervisor rewrites it when they
+# change and labwc rereads it on SIGHUP (session/keyboard.py).
+labwc_config=$ipc/labwc
+mkdir -p "$labwc_config"
+for file in "$root"/wayland/labwc/*; do
+    ln -s "$file" "$labwc_config/$(basename "$file")"
+done
+prefix=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["prefix"])' "$config" 2>/dev/null || true)
+if [[ -n $prefix && -f $prefix/xp-shell.json ]]; then
+    python3 "$root/session/keyboard.py" env "$prefix" > "$labwc_config/environment" || true
+fi
+export WIN4WINE_LABWC_ENV=$labwc_config/environment
 status=0
-"$labwc" -C "$root/wayland/labwc" -c "$rc" -S "$command" || status=$?
+"$labwc" -C "$labwc_config" -c "$rc" -S "$command" || status=$?
 rm -rf -- "$ipc"
 exit $status

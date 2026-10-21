@@ -84,12 +84,28 @@ wlroots は `SOURCE/subprojects/wlroots` に `wayland/patches/wlroots` を当て
 | `tests/tray_host.py` | トレイの仲介（StatusNotifierItem と XEmbed） |
 | `tests/linux_apps.py` | Linux のアプリのスタートメニュー |
 | `tests/recovery_integration.py CONFIG.json` | シェルが落ちたときの切り替え |
-| `tests/reactos_session.py CONFIG.json` | ReactOS のシェルのセッション: タスクバーとデスクトップ、`explorer.exe` で開くフォルダ（0080）、ログオフ（0021） |
+| `tests/reactos_session.py CONFIG.json` | ReactOS のシェルのセッション: タスクバーとデスクトップ、`explorer.exe` で開くフォルダ（0090）、ログオフ（0024） |
 | `tests/reactos_greeter.py ASSETS [OUTDIR]` | ReactOS のログイン画面の配置（英語と日本語）。ASSETS は `extract/reactos.py` が取り出したもの |
 | `tests/greeter_layout.py ASSETS`, `tests/cursor_theme.py ASSETS` | ようこそ画面の配置（96・120・144 DPI）、カーソル（32 と 64） |
 | `tests/patch_state.py`, `tests/font_*.py`, `tests/workarea.py`, `tests/dpi_settings.py` | 単体の試験 |
 | `tests/xp_language.py [ja=ASSETS] [en=ASSETS]` | 日本語版と英語版の XP で変わるレジストリの設定と、取り出したファイルの言語の判断 |
 | `tests/*.c` | 公開 API のプローブ。同じものを Wine と実際の XP で動かして数値を比べます（DPI は `dpi-metrics.c`、`char-widths-dpi.c`、`caption-glyph-dpi.c`、`text-bits-dpi.c`） |
+
+## ウィンドウの中で試す（`xp.sh`）
+
+Arch / CachyOS などで、いま使っているデスクトップ（KDE など）を離れずに XP のセッションを試すための入口です。
+システムのファイルには触れません（必要なパッケージは足りないときに表示します）。
+
+```sh
+./xp.sh setup /path/to/WindowsXP-SP3.iso   # Wine、bridge、取り出し、prefix（setup.sh と同じ .local/ に作る）
+./xp.sh run 1280x800                       # Xephyr の窓の中で本物のセッション（supervisor.py）を動かす
+./xp.sh log proxy                          # 動いているセッションのログ（既定は xp-shell）
+./xp.sh kill                               # セッションと prefix のプロセスを止める
+```
+
+`run` のセッションは自分の D-Bus で動き（tray.py がデスクトップの StatusNotifierWatcher を取らない）、スタートメニューの
+「終了」はその窓のセッションを終えるだけです（`shutdown_command` を `true` にします）。`XP_PREFIX`、`XP_LOG`、`XP_DISPLAY`、
+`XP_WINEDEBUG` で、別の prefix、ログの場所、X のディスプレイ、Wine のデバッグ チャンネルを選べます。
 
 ## 手作業での導入
 

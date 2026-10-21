@@ -5,7 +5,10 @@ Reads the desktop entries of the XDG data directories (freedesktop.org Desktop
 Entry Specification) and keeps one shortcut per shown application in the
 prefix's common Programs folder, sorted into XP-like folders by category and
 named "NAME (Linux)". Each shortcut starts the program through
-linux-launch.exe, with an icon converted from the icon theme. Only shortcuts
+linux-launch.exe, under a name of its own (apps\\<desktop file ID>.exe, a hard
+link): XP's Start menu counts the uses of a program by the executable its
+shortcut runs, so with one launcher for all, every application would count as
+one. Icons are converted from the icon theme. Only shortcuts
 that this module made are changed or removed; their list is kept in
 C:\\xp\\linux-apps\\state.json. With --watch it follows changes to the
 application directories until it is stopped; --remove takes them all out.
@@ -14,6 +17,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import select
 import shutil
@@ -472,13 +476,27 @@ class Menu:
         temp.write_text(text, encoding='utf-8')
         temp.replace(target)
 
-    def install_launcher(self):
+    def install_launcher(self, launchers=()):
         source = ROOT / '.local/bridge/linux-launch.exe'
         target = self.state_dir / 'linux-launch.exe'
         if not target.is_file() or target.read_bytes() != source.read_bytes():
             temp = target.with_suffix('.tmp')
             shutil.copyfile(source, temp)
             temp.replace(target)
+        # One name per application: hard links to the launcher (copies elsewhere).
+        apps = self.state_dir / 'apps'
+        apps.mkdir(exist_ok=True)
+        wanted = set(launchers)
+        for path in apps.glob('*.exe'):
+            if path.name not in wanted or (not path.samefile(target) and path.read_bytes() != target.read_bytes()):
+                path.unlink()
+        for name in wanted:
+            path = apps / name
+            if not path.exists():
+                try:
+                    os.link(target, path)
+                except OSError:
+                    shutil.copyfile(target, path)
 
     def wanted(self):
         """{file ID: link description} for the current desktop entries."""
@@ -498,6 +516,7 @@ class Menu:
             work = unescape(entry.get('Path', ''))
             result[file_id] = dict(
                 link=f'{directory}\\{link}.lnk' if directory else f'{link}.lnk',
+                launcher=re.sub(r'[^A-Za-z0-9._-]', '_', file_id.removesuffix('.desktop')) + '.exe',
                 arguments=quote(args),
                 directory='Z:' + work.replace('/', '\\') if work.startswith('/') else '',
                 description=(localized(entry, 'Comment', locales) or localized(entry, 'GenericName', locales)
@@ -510,9 +529,9 @@ class Menu:
         """Bring the shortcuts up to date, or with REMOVE take out all of them."""
         self.state_dir.mkdir(parents=True, exist_ok=True)
         (self.state_dir / 'icons').mkdir(exist_ok=True)
-        self.install_launcher()
         old, folders = self.load()
         new = {} if remove else self.wanted()
+        self.install_launcher(item['launcher'] for item in new.values())
         for file_id, item in new.items():
             item['hash'] = hashlib.sha256(json.dumps(item, sort_keys=True).encode()).hexdigest()
         # Remove the links that went away or moved, then the folders made for them.
@@ -540,7 +559,7 @@ class Menu:
                     folders.add(directory)
             icon = self.state_dir / 'icons' / f'{file_id}.ico'
             icon_location = windows_path(self.prefix, icon) if make_icon(item['icon'], icon) else ''
-            lines.append('\t'.join((f'{WINDOWS_PROGRAMS}\\{item["link"]}', f'{WINDOWS_STATE}\\linux-launch.exe',
+            lines.append('\t'.join((f'{WINDOWS_PROGRAMS}\\{item["link"]}', f'{WINDOWS_STATE}\\apps\\{item["launcher"]}',
                                     item['arguments'], item['directory'], icon_location, item['description'])))
             done[file_id] = None
         failed = set()
