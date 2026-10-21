@@ -11,7 +11,7 @@ with the recent places' arrow, the address as a breadcrumb (the current
 folder's icon, then each folder with an arrow that lists its folders; an
 edit box when the empty part is clicked; AddressBand frame, BreadcrumbBar
 split buttons, Go::Toolbar drop-down and Refresh), and the search box
-("<folder>の検索", SearchBox frame, magnifier). The browser fills the width
+("<folder>の検索" in italics, grey, on the inside of the SearchBox frame, magnifier). The browser fills the width
 below it, without the details and preview panes (nor their buttons). At
 the bottom: the name box (27 high, its label ending at 193) and the buttons
 (30 high, at least 86 wide, 15 apart, 17 from the right and 14 from the
@@ -41,13 +41,13 @@ in its view callbacks.
 Scope: WIN4WINE_SHELL=win7 only; the XP and ReactOS sessions and Wine's
 programs keep Wine's dialog.
 ---
- dlls/comdlg32/Makefile.in |   3 +-
- dlls/comdlg32/cdlg.h      |   1 +
- dlls/comdlg32/comdlg32.rc |   1 +
- dlls/comdlg32/itemdlg.c   | 221 +++++++++-
- dlls/comdlg32/navbar7.c   | 995 ++++++++++++++++++++++++++++++++++++++++++++++
- dlls/comdlg32/navbar7.h   |  28 ++
- 6 files changed, 1234 insertions(+), 15 deletions(-)
+ dlls/comdlg32/Makefile.in |    3 +-
+ dlls/comdlg32/cdlg.h      |    1 +
+ dlls/comdlg32/comdlg32.rc |    1 +
+ dlls/comdlg32/itemdlg.c   |  221 +++++++++-
+ dlls/comdlg32/navbar7.c   | 1080 +++++++++++++++++++++++++++++++++++++++++++++
+ dlls/comdlg32/navbar7.h   |   28 ++
+ 6 files changed, 1319 insertions(+), 15 deletions(-)
 
 diff --git a/dlls/comdlg32/Makefile.in b/dlls/comdlg32/Makefile.in
 index c298c08..8236673 100644
@@ -437,10 +437,10 @@ index c88820e..dc03595 100644
      if(FAILED(hr))
 diff --git a/dlls/comdlg32/navbar7.c b/dlls/comdlg32/navbar7.c
 new file mode 100644
-index 0000000..8fc57b4
+index 0000000..9bef5f8
 --- /dev/null
 +++ b/dlls/comdlg32/navbar7.c
-@@ -0,0 +1,995 @@
+@@ -0,0 +1,1080 @@
 +/*
 + * win4wine: the item dialog's navigation bar as Windows 7 draws it (the Windows 7
 + * shell's session: WIN4WINE_SHELL is win7): Back and Forward with the recent
@@ -536,7 +536,9 @@ index 0000000..8fc57b4
 +    HTHEME nav, bb, go, ab, sb, rebar;
 +    HMODULE ef;
 +    HBITMAP icons, magnifier, clear[3];
-+    HFONT font;
++    HFONT font, cue_font;
++    HBRUSH search_brush[4];
++    WCHAR *cue;
 +    UINT dpi;
 +    PIDLIST_ABSOLUTE current;
 +    HICON current_icon;
@@ -827,6 +829,41 @@ index 0000000..8fc57b4
 +        draw_cell(bar, hdc, bar->magnifier, 0, 16, &bar->clearbtn);
 +}
 +
++/* the inside of the search box as its frame draws it over the bar (state 1 normal, 2 hot,
++ * 3 focused): the edit box shows it as its background */
++static void update_search_brushes(struct navbar *bar)
++{
++    RECT client, rc;
++    HDC screen, hdc;
++    HBITMAP bitmap;
++    HGDIOBJ old;
++    int state;
++
++    for (state = 1; state <= 3; state++)
++    {
++        if (bar->search_brush[state]) DeleteObject(bar->search_brush[state]);
++        bar->search_brush[state] = NULL;
++    }
++    if (!bar->sb || IsRectEmpty(&bar->searchbox)) return;
++    GetClientRect(bar->hwnd, &client);
++    screen = GetDC(NULL);
++    hdc = CreateCompatibleDC(screen);
++    bitmap = CreateCompatibleBitmap(screen, client.right, client.bottom);
++    old = SelectObject(hdc, bitmap);
++    for (state = 1; state <= 3; state++)
++    {
++        if (bar->rebar) DrawThemeBackground(bar->rebar, hdc, RP_BACKGROUND, 0, &client, NULL);
++        else FillRect(hdc, &client, GetSysColorBrush(COLOR_BTNFACE));
++        rc = bar->searchbox;
++        DrawThemeBackground(bar->sb, hdc, 1, state, &rc, NULL);
++        bar->search_brush[state] = CreateSolidBrush(GetPixel(hdc, (rc.left + rc.right) / 2, (rc.top + rc.bottom) / 2));
++    }
++    SelectObject(hdc, old);
++    DeleteObject(bitmap);
++    DeleteDC(hdc);
++    ReleaseDC(NULL, screen);
++}
++
 +static int hit_test(const struct navbar *bar, POINT pt)
 +{
 +    int i;
@@ -1100,9 +1137,31 @@ index 0000000..8fc57b4
 +    case WM_KILLFOCUS:
 +        if (hwnd == bar->edit) PostMessageW(bar->hwnd, WM_USER, 0, 0);
 +        InvalidateRect(bar->hwnd, NULL, FALSE);
++        InvalidateRect(hwnd, NULL, TRUE);
 +        break;
 +    case WM_SETFOCUS:
 +        InvalidateRect(bar->hwnd, NULL, FALSE);
++        InvalidateRect(hwnd, NULL, TRUE);
++        break;
++    case WM_PAINT:
++        /* the search box's prompt, in italics as Windows 7 draws it, while it is empty */
++        if (hwnd == bar->search && bar->cue && !GetWindowTextLengthW(hwnd))
++        {
++            LRESULT ret = DefSubclassProc(hwnd, msg, wparam, lparam);
++            DWORD margins = SendMessageW(hwnd, EM_GETMARGINS, 0, 0);
++            HDC hdc = GetDC(hwnd);
++            HGDIOBJ old = SelectObject(hdc, bar->cue_font ? bar->cue_font : bar->font);
++            RECT rc;
++
++            GetClientRect(hwnd, &rc);
++            rc.left += LOWORD(margins) + 1;
++            SetBkMode(hdc, TRANSPARENT);
++            SetTextColor(hdc, GetSysColor(COLOR_GRAYTEXT));
++            DrawTextW(hdc, bar->cue, -1, &rc, DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
++            SelectObject(hdc, old);
++            ReleaseDC(hwnd, hdc);
++            return ret;
++        }
 +        break;
 +    }
 +    return DefSubclassProc(hwnd, msg, wparam, lparam);
@@ -1185,7 +1244,8 @@ index 0000000..8fc57b4
 +    {
 +        WCHAR *text = cue;
 +        while (*text == ' ') text++;
-+        SendMessageW(bar->search, EM_SETCUEBANNER, FALSE, (LPARAM)text);
++        free(bar->cue);
++        bar->cue = wcsdup(text);
 +        InvalidateRect(bar->search, NULL, TRUE);
 +        LocalFree(cue);
 +    }
@@ -1231,6 +1291,7 @@ index 0000000..8fc57b4
 +    if (bar->hot == hot) return;
 +    bar->hot = hot;
 +    InvalidateRect(bar->hwnd, NULL, FALSE);
++    if (bar->search) InvalidateRect(bar->search, NULL, TRUE);
 +}
 +
 +static void click(struct navbar *bar, int element)
@@ -1274,6 +1335,7 @@ index 0000000..8fc57b4
 +        return 1;
 +    case WM_SIZE:
 +        layout(bar);
++        update_search_brushes(bar);
 +        InvalidateRect(hwnd, NULL, FALSE);
 +        return 0;
 +    case WM_MOUSEMOVE:
@@ -1332,6 +1394,17 @@ index 0000000..8fc57b4
 +        if ((HWND)lparam == bar->search && HIWORD(wparam) == EN_CHANGE) search_changed(bar);
 +        return 0;
 +    case WM_CTLCOLOREDIT:
++        if ((HWND)lparam == bar->search)
++        {
++            int state = GetFocus() == bar->search ? 3 : (bar->hot == EL_SEARCH || bar->hot == EL_CLEAR) ? 2 : 1;
++            HBRUSH brush = bar->search_brush[state];
++            LOGBRUSH lb;
++            if (brush && GetObjectW(brush, sizeof(lb), &lb))
++            {
++                SetBkColor((HDC)wparam, lb.lbColor);
++                return (LRESULT)brush;
++            }
++        }
 +        SetBkMode((HDC)wparam, TRANSPARENT);
 +        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
 +    case WM_USER:  /* the address edit box lost the focus */
@@ -1357,6 +1430,9 @@ index 0000000..8fc57b4
 +            if (bar->browser) IExplorerBrowser_Release(bar->browser);
 +            if (bar->ef) FreeLibrary(bar->ef);
 +            DeleteObject(bar->font);
++            DeleteObject(bar->cue_font);
++            for (i = 1; i <= 3; i++) DeleteObject(bar->search_brush[i]);
++            free(bar->cue);
 +            free(bar);
 +        }
 +        break;
@@ -1376,6 +1452,7 @@ index 0000000..8fc57b4
 +    bar->ab = OpenThemeData(NULL, L"AB::AddressBand");
 +    bar->sb = OpenThemeData(NULL, L"SearchBox");
 +    bar->rebar = OpenThemeData(NULL, L"Navbar::Rebar");
++    update_search_brushes(bar);
 +    InvalidateRect(hwnd, NULL, TRUE);
 +}
 +
@@ -1412,6 +1489,14 @@ index 0000000..8fc57b4
 +    bar->magnifier = load_bitmap(bar->ef, EF_BMP_SEARCH);
 +    for (i = 0; i < 3; i++) bar->clear[i] = load_bitmap(bar->ef, EF_BMP_CLEAR + 6 * i);
 +    bar->font = navbar7_message_font(bar->dpi);
++    {
++        LOGFONTW lf;
++        if (GetObjectW(bar->font, sizeof(lf), &lf))
++        {
++            lf.lfItalic = TRUE;
++            bar->cue_font = CreateFontIndirectW(&lf);
++        }
++    }
 +
 +    bar->hwnd = CreateWindowExW(0, class_name, NULL, WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, 0, 0, 0,
 +                                parent, (HMENU)(UINT_PTR)id, COMDLG32_hInstance, bar);
