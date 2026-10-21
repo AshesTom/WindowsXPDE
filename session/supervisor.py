@@ -319,13 +319,20 @@ class Session:
         self.processes.append(process)
         return process
 
+    def xp_assets(self):
+        """The XP files the prefix was made from (xp-shell.json), or this checkout's."""
+        try:
+            return Path(json.loads((self.prefix / 'xp-shell.json').read_text())['assets'])
+        except (OSError, ValueError, KeyError):
+            return ROOT / '.local/assets'
+
     def show_welcome(self, mode):
         if not self.welcome_screen:
             return
         self.hide_welcome()
         log = (self.state / 'welcome.log').open('ab', buffering=0)
         self.logs.append(log)
-        extra = ['--assets', str(ROOT / '.local/assets')] if self.welcome_screen == 'greeter/xp-splash.py' else []
+        extra = ['--assets', str(self.xp_assets())] if self.welcome_screen == 'greeter/xp-splash.py' else []
         self.welcome = subprocess.Popen([sys.executable, str(ROOT / self.welcome_screen), mode,
                                          '--dpi', str(self.dpi), *extra],
                                         stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
