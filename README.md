@@ -40,8 +40,9 @@ Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベー�
   Linux のアプリは「すべてのプログラム」に並びます。
 - **通知領域**: Linux のトレイアイコン（StatusNotifierItem と XEmbed）が XP の通知領域に出ます。
   XP 自身のネットワーク・バッテリー・音量のアイコンと、そのフライアウト（音量、電源メーター、ワイヤレス ネットワーク接続の状態）も
-  出ます。NetworkManager と PipeWire / PulseAudio の状態から作ります（XP Explorer から。[xp-explorer/](xp-explorer/README.md)）。
-- **XP Explorer からの追加**: フォルダの左のタスク ペイン、画面のプロパティ、画像の縮小版とプレビュー、XP のサウンド、
+  出ます。NetworkManager と PipeWire / PulseAudio の状態から作ります（[AshesTom さんのフォーク](https://github.com/AshesTom/win4wine)の XP Explorer から）。
+- **XP Explorer からの追加**: フォルダの左のタスク ペイン、画面のプロパティ（Windows XP とクラシックのテーマ、スタイルと配色。
+  配色は ISO の HIVEDEF.INF と themeui.dll から作ります）、画像の縮小版とプレビュー、XP のサウンド（起動、ログオン、ログオフも）、
   ネットワーク接続、Internet Explorer 6、Windows Media Player 9、スタートメニューの左の列（インターネット、電子メール、
   よく使うプログラム）。どれもお手元の ISO のファイルで動きます（`prefix/extras.py`）。
 - **キーボードの配列**: 最初は Linux のシステムの配列（`localectl`）です。コントロール パネルの「地域と言語のオプション」→
@@ -53,6 +54,7 @@ Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベー�
 - **Windows のアプリ**: WoW64 の Wine 11.0 で、32bit と 64bit のアプリが動きます。端末で `wine setup.exe` と打つと、
   インストーラーが作るショートカットは XP のスタートメニューに入ります。
 - **XP のようこそ画面**: LightDM の greeter として、XP のようこそ画面とログオフの画面を出せます（任意）。
+  シェルが起動するまでは XP と同じ大きな「ようこそ」の画面を出します。
 - **XP のキー操作**: Windows キー、Ctrl+Esc、Win+R、Win+E が使えます。
 - **クイック起動**: タスクバーの右クリック →「ツール バー」→「クイック起動」で出せます（XP と ReactOS。Windows 7 は実機と同じく
   「新規ツール バー」でクイック起動のフォルダを選びます）。スタートメニューから Linux のアプリのショートカットも置けます。
@@ -164,6 +166,12 @@ LightDM ─ XP のようこそ画面 (greeter/)
 - Windows 由来のバイナリには手を加えません。違いは Wine とその周辺で吸収します。
 - Microsoft のバイナリを逆アセンブルしません。挙動は公開 API と、実際の XP の上で動かす自作のプローブで調べています。
 - Microsoft のファイル、取り出したもの、Wine の prefix は、Git 管理外の `localres/` と `.local/` にだけ置きます。
+
+## 貢献してくださった方
+
+- [AshesTom](https://github.com/AshesTom) さん（[フォーク](https://github.com/AshesTom/win4wine)）: XP の画面のプロパティ、
+  サウンド、キーボードの配列、通知領域の XP のアイコン、スタートメニューの左の列、Internet Explorer 6 と Windows Media Player 9、
+  起動中のようこそ画面、タイトルバーのアニメーションと小さいアイコン、Arch Linux への対応、`xp.sh` など。
 
 ## ライセンス
 

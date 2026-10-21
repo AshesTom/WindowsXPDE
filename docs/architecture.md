@@ -23,6 +23,7 @@ win4wine がどの部品でできていて、どうつながっているかの�
 | `wine/build.sh` | Wine 11.0 を取得し、`wine/patches/` を当ててビルドします（[patches.md](patches.md)）。 |
 | `prefix/create.py`、`prefix/stage.py` | XP 用の Wine の prefix を作り、XP の DLL と COM の登録、レジストリの設定（registry profile）を入れます。設定は XP の言語に合わせます（日本語版は MS UI Gothic の字体の profile とコンソールの MS ゴシック、英語版はクラシックの Tahoma、MS Shell Dlg の Microsoft Sans Serif、コンソールの Terminal）。言語は `xp-shell.json` の `language` に記録します。 |
 | `bridge-wm/build.sh` | proxy.exe などの Win32 の補助プログラムをビルドします（`.local/bridge`）。 |
+| `prefix/extras.py` | XP のセッションの prefix に、[AshesTom さんのフォーク](https://github.com/AshesTom/win4wine)の XP Explorer から入れた追加（通知領域の XP のアイコン、画面のプロパティ、サウンド、Internet Explorer 6、Windows Media Player 9 など）を、`xp-explorer/scripts/` のコードで入れます。画面のプロパティの配色（New Schemes）は、XP が最初のログオンで作るものを `prefix/xp_schemes.py` が ISO の HIVEDEF.INF と themeui.dll から作ります。変わったときは `VERSION` を上げ、setup.sh がもう一度入れます。 |
 
 ## XP のシェルの動かし方
 
