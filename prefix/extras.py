@@ -25,10 +25,12 @@ import subprocess
 import sys
 import tempfile
 
+import xp_schemes
+
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / '.local/bridge'
 # Bumped when apply() changes; setup.sh applies it again on existing prefixes.
-VERSION = '4'
+VERSION = '5'
 MARKER = '.xp-extras'
 HELPERS = ('xptray.exe', 'startmenu.exe', 'iexplore.exe', 'linux-links.exe')
 # XP's Regional and Language Options and what it loads (assets/intl), native
@@ -166,6 +168,28 @@ def copy_files(assets, prefix):
     (prefix / '.patched-wine').write_text('1\n')
 
 
+def themes(assets, prefix, wine):
+    """Display Properties' Windows XP and Windows Classic themes."""
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all', WINEDLLOVERRIDES='themeui=n')
+    env.pop('WINEARCH', None)
+    # The Windows XP theme (luna.theme) names %WinDir%\web\wallpaper\Bliss.bmp.
+    jpeg = prefix / 'drive_c/windows/Web/Wallpaper/Bliss.jpg'
+    converter = BRIDGE / 'wallpaper-convert.exe'
+    if jpeg.is_file() and converter.is_file() and not jpeg.with_suffix('.bmp').exists():
+        subprocess.run([wine, str(converter), 'Z:' + str(jpeg).replace('/', '\\'),
+                        'Z:' + str(jpeg.with_suffix('.bmp')).replace('/', '\\')], env=env, check=False)
+    # themeui's own registration: Theme.Manager, the visual style folders,
+    # .theme and .msstyles files.
+    subprocess.run([wine, r'C:\windows\syswow64\regsvr32.exe', '/s', r'C:\windows\system32\themeui.dll'],
+                   env=env, check=False)
+    # The Windows Classic style's color schemes and the themes' visual style
+    # settings, which XP's themeui writes at first logon and Wine's does not:
+    # made from the user's HIVEDEF.INF and themeui.dll (prefix/xp_schemes.py).
+    hivedef, themeui = assets / 'inf/hivedef.inf', assets / 'cpl/themeui.dll'
+    if hivedef.is_file() and themeui.is_file():
+        regedit(wine, prefix, xp_schemes.registry(xp_schemes.xpreg.read_inf(hivedef), themeui))
+
+
 def stage(prefix, xpx=None):
     """XP's files back in syswow64 after Wine updates the prefix: XP
     Explorer's, and the Regional and Language Options over Wine's intl.cpl."""
@@ -228,6 +252,9 @@ def apply(prefix, wine):
     subprocess.run([wine, r'C:\xp\bin\startmenu.exe', 'webview'], env=env, check=False)
     print("* XP's sounds, Explorer settings, image previews and Network Connections", flush=True)
     xpx.xp_defaults(assets, prefix, wine, folders=False)
+    stop(wine, prefix)
+    print("* XP's Windows XP and Windows Classic themes", flush=True)
+    themes(assets, prefix, wine)
     stop(wine, prefix)
     print('* Internet Explorer 6 and Windows Media Player 9', flush=True)
     xpx.install_ie(assets, prefix, wine)

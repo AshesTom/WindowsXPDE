@@ -81,7 +81,7 @@ LANGUAGE_FILES = {
 # Files that XP's setup installs under another name (LAYOUT.INF).
 RENAMED = {'classic.the': 'Windows Classic.theme'}
 # Groups a later version added; setup.sh adds them to an earlier extraction (--only).
-ADDED_GROUPS = ('cpl', 'tray', 'ie', 'wmp', 'inf', 'shell', 'media', 'duser', 'intl')
+ADDED_GROUPS = ('cpl', 'tray', 'ie', 'wmp', 'inf', 'shell', 'media', 'duser', 'intl', 'themes')
 
 
 def media_files(paths):
@@ -116,7 +116,8 @@ def missing_groups(output):
         return (output / path).exists()
     checks = {'cpl': 'cpl/desk.cpl', 'tray': 'tray/stobject.dll', 'ie': 'ie/iexplore.exe',
               'wmp': 'wmp/wmplayer.exe', 'inf': 'inf/hivedef.inf', 'shell': 'shell/shimgvw.dll',
-              'media': 'media', 'duser': 'system32/duser.dll', 'intl': 'intl/input.dll'}
+              'media': 'media', 'duser': 'system32/duser.dll', 'intl': 'intl/input.dll',
+              'themes': 'themes/Windows Classic.theme'}
     return [group for group in ADDED_GROUPS if not has(checks[group])]
 
 
