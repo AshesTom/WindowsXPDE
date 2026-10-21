@@ -65,7 +65,7 @@ class Session:
         self.env = environment(dict(os.environ, WINEDEBUG=config.get('debug', '+timestamp,fixme-all')),
                                config, self.shell)
         # Under the compositor, layered windows' translucent pixels are blended
-        # by it; Wine leaves them as they are (Windows 7's Start button, patch 0113).
+        # by it; Wine leaves them as they are (Windows 7's Start button, patch 0123).
         if self.compositor:
             self.env['WIN4WINE_COMPOSITED'] = '1'
         # Opt-in: the proxy snaps windows to half of the screen (Win+arrows, dragging to an edge).

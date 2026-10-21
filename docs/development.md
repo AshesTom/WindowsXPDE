@@ -84,7 +84,7 @@ wlroots は `SOURCE/subprojects/wlroots` に `wayland/patches/wlroots` を当て
 | `tests/tray_host.py` | トレイの仲介（StatusNotifierItem と XEmbed） |
 | `tests/linux_apps.py` | Linux のアプリのスタートメニュー |
 | `tests/recovery_integration.py CONFIG.json` | シェルが落ちたときの切り替え |
-| `tests/reactos_session.py CONFIG.json` | ReactOS のシェルのセッション: タスクバーとデスクトップ、`explorer.exe` で開くフォルダ（0080）、ログオフ（0021） |
+| `tests/reactos_session.py CONFIG.json` | ReactOS のシェルのセッション: タスクバーとデスクトップ、`explorer.exe` で開くフォルダ（0090）、ログオフ（0024） |
 | `tests/reactos_greeter.py ASSETS [OUTDIR]` | ReactOS のログイン画面の配置（英語と日本語）。ASSETS は `extract/reactos.py` が取り出したもの |
 | `tests/greeter_layout.py ASSETS`, `tests/cursor_theme.py ASSETS` | ようこそ画面の配置（96・120・144 DPI）、カーソル（32 と 64） |
 | `tests/patch_state.py`, `tests/font_*.py`, `tests/workarea.py`, `tests/dpi_settings.py` | 単体の試験 |
