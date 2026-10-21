@@ -1,6 +1,6 @@
 /* Run-time compatibility fixes for XP Explorer on a stock, unpatched Wine.
  *
- * win4wine fixes these in Wine itself (patches 0009-0012, 0017, 0046). Here
+ * win4wine fixes these in Wine itself (patches 0012-0015, 0023, 0066). Here
  * xpstart.exe loads this DLL into XP Explorer and calls xpcompat_init, which
  * redirects, in the import tables of XP's own modules or at Wine's stub
  * entry points, the few calls that a stock Wine does not answer the way XP's
@@ -70,7 +70,7 @@ static BOOL WINAPI is_wow64_process(HANDLE process, BOOL *wow64)
 }
 
 
-/* ---- The Start button (win4wine patch 0055) ----------------------------
+/* ---- The Start button (win4wine patch 0066) ----------------------------
  * XP's taskbar creates its Start button as a Button child of Shell_TrayWnd,
  * gives it the "Start" window theme and an image list (BCM_SETIMAGELIST), and
  * sizes itself from BCM_GETIDEALSIZE. user32's classic Button knows neither

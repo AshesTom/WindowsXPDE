@@ -110,7 +110,7 @@ scripts/setup.sh --shell reactos --lang en
 
 ## The Windows 7 shell
 
-Windows 7's shell is on the `win7` branch (`git switch win7`).
+Windows 7's shell is on the `master` branch (`git switch master`).
 
 ## 3. Log in
 
@@ -126,6 +126,7 @@ Restart the display manager (or reboot).
 | toggle Japanese input | Ctrl+Space or Zenkaku/Hankaku, or click the icon in the notification area |
 | start a Linux application | Start → All Programs |
 | install a Windows application | `wine setup.exe` in a terminal; the session's `PATH` starts with this Wine |
+| start a Windows application from outside the session (ssh, another desktop) | `win4wine-wine setup.exe` (`~/.local/bin`): it runs with the session's prefix, Wine and settings, and looks as in the session. With more than one shell set up, choose with `--shell xp` or `reactos`. Plain `wine` uses `~/.wine` and Wine's own look |
 | open the Start menu | the Windows key, Ctrl+Esc |
 | Run / Explorer | Win+R / Win+E |
 | log off or shut down | Start → Log Off / Turn Off Computer |
@@ -139,7 +140,7 @@ Restart the display manager (or reboot).
 | `input_method` | `fcitx5` (none for English XP) | the input method; leave it out to start none |
 | `linux_font` | `MS UI Gothic` (`Tahoma` for English XP) | font of Linux applications; `null` leaves it alone |
 | `linux_menu` | `true` | list Linux applications in the Start menu |
-| `welcome_screen` | `true` | show XP's screens after login and while logging off |
+| `welcome_screen` | `true` | show XP's screens after login and while logging off (Windows 7's "Welcome", "Logging off" and so on for the Windows 7 shell) |
 | `cursor_theme` | `win4wine-xp` | cursor theme; `null` for none |
 | `shutdown_command`, `reboot_command` | `systemctl poweroff` / `reboot` | commands run by Turn Off Computer |
 | `outputs` | (none) | the Wayland session's settings per output, e.g. `{"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}` (`mode` too; `wlr-randr` lists the names) |

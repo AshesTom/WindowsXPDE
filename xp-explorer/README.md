@@ -12,7 +12,7 @@
 > **XP Explorer is a fork of [win4wine](https://github.com/mikuta0407/win4wine) by mikuta0407**, trimmed down
 > and extended with quality-of-life additions. It lives in `xp-explorer/` of this win4wine checkout and builds
 > on its Wine patches (`../wine/patches`), so it gets win4wine's XP fixes as they land. Its own Wine patches are
-> part of that series (0127 to 0139), and win4wine's XP Shell session gets its additions too (`../prefix/extras.py`). All the hard work (the Wine patches, the ISO extraction, the
+> part of that series, and win4wine's XP Shell session gets its additions too (`../prefix/extras.py`). All the hard work (the Wine patches, the ISO extraction, the
 > prefix profile, the Linux applications in the Start menu) is theirs.
 > Like win4wine, this is a **personal, experimental project**. It has only been tried on CachyOS with KDE Plasma,
 > inside a Wine virtual desktop.
@@ -102,26 +102,25 @@ into `.local/`, which Git ignores.
 - **Windows Media Player 9** from your ISO is in Accessories\Entertainment and in Open With for its supported
   audio and video formats; Play commands open it directly. Wine's DirectShow uses its GStreamer backend for
   playback.
-- **The Security Center balloon** ("Your computer might be at risk") with XP's red shield, from `xpsp2res.dll`.
 - `C:\xp\xpstart.log` notes why each session ended, for bug reports.
 - **XP's Display Properties** (Themes, Desktop, Screen Saver, Appearance, Settings) from your ISO's `desk.cpl`
   and `themeui.dll`, so the wallpaper can be changed.
 - **The folder task pane** (System Tasks, Other Places, Details) with your ISO's DirectUser (`duser.dll`).
-- **Thirteen more Wine patches**, at the end of win4wine's series (`../wine/patches`), each described at the
-  top of its file: `0127` (apphelp/advapi32 checks XP's shell32 makes before running a program), `0128`,
-  `0131`, `0132` and `0134` (uxtheme exports and ordinals XP's Display Properties uses), `0129`, `0130` and
-  `0137` (XP's common controls beside the program), `0133` (`SetSysColorsTemp`), `0135` (the desktop window
-  stays under the taskbar), `0136` (small caption icons), `0138` (the caption animation) and `0139` (sound
-  paths with environment variables). The message pump hook for DirectUser is now
-  win4wine's own (its patch 0080).
+- **Its Wine patches**, in win4wine's series (`../wine/patches`, renumbered there by topic), each described at
+  the top of its file: `0144` (apphelp/advapi32 checks XP's shell32 makes before running a program), `0085`,
+  `0086`, `0145` and `0146` (uxtheme exports and ordinals XP's Display Properties uses), `0087` (the theme
+  refresh across shell processes), `0148`, `0149` and `0150` (XP's common controls beside the program), `0016`
+  (`SetSysColorsTemp`), `0042` (the desktop window stays under the taskbar), `0147` (small caption icons),
+  `0052` (the caption animation), `0017` (sound paths with environment variables), `0018`, `0043`, `0010` and
+  `0064`. The message pump hook for DirectUser is win4wine's own (its patch 0095).
 - **win4wine's later XP fixes**, through its series: XP's menu bar, control and message box metrics, system
   icons (from your ISO's `user32.dll`, kept as `C:\xp\res\user32-xp.dll`), bitmap font metrics, and more.
 - **A Wine virtual desktop instead of a session.** The desktop is not named "Default", so Wine's own desktop
   does not claim the shell window and XP Explorer becomes the shell without a window manager or greeter.
 - **Runs on the system's Wine too, in a degraded mode.** Without `./xp.sh wine`, a launcher (`xpstart.exe`) loads
   a small compatibility DLL (`xpcompat.dll`) into XP Explorer. It fills in at run time the essentials that
-  win4wine patches into Wine: the SCM readiness event (0009), the dock station, Automatic Updates and shut down
-  reason exports (0010–0012), hiding WOW64 (0017) and the Start button (0055). The taskbar background, the
+  win4wine patches into Wine: the SCM readiness event (0012), the dock station, Automatic Updates and shut down
+  reason exports (0013–0015), hiding WOW64 (0023) and the Start button (0066). The taskbar background, the
   stretched wallpaper and icon transparency still need the patched Wine.
 - **Much smaller.** The X11 session, window manager bridge, greeter, Wayland compositor, ReactOS shell,
   Japanese profile and test suite are left out. `xp.sh` replaces `scripts/setup.sh`.

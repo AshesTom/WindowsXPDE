@@ -107,7 +107,7 @@ scripts/setup.sh --shell reactos --lang ja
 
 ## Windows 7 のシェル
 
-Windows 7 のシェルは `win7` ブランチにあります（`git switch win7`）。
+Windows 7 のシェルは `master` ブランチにあります（`git switch master`）。
 
 ## 3. ログインする
 
@@ -123,6 +123,7 @@ Windows 7 のシェルは `win7` ブランチにあります（`git switch win7`
 | 日本語入力の切り替え | Ctrl+Space または 全角/半角。通知領域のアイコンのクリックでも切り替えられます |
 | Linux のアプリを起動 | スタート → すべてのプログラム |
 | Windows のアプリを入れる | 端末で `wine setup.exe`。セッションの `PATH` の先頭にはこの Wine が入っています |
+| セッションの外（ssh、ほかのデスクトップ）から Windows のアプリを起動 | `win4wine-wine setup.exe`（`~/.local/bin`）。セッションと同じ prefix・Wine・設定で動き、見た目もセッションと同じになります。シェルを複数入れたときは `--shell xp`・`reactos` で選びます。素の `wine` では `~/.wine` と Wine の標準の見た目になります |
 | スタートメニュー | Windows キー、Ctrl+Esc |
 | ファイル名を指定して実行 / エクスプローラ | Win+R / Win+E |
 | ログオフ・終了 | スタート → ログオフ / 終了オプション |
@@ -136,7 +137,7 @@ Windows 7 のシェルは `win7` ブランチにあります（`git switch win7`
 | `input_method` | `fcitx5`（英語版の XP では無し） | 入力メソッド。省くと起動しません |
 | `linux_font` | `MS UI Gothic`（英語版の XP では `Tahoma`） | Linux のアプリの字体。`null` で変えません |
 | `linux_menu` | `true` | Linux のアプリをスタートメニューに入れます |
-| `welcome_screen` | `true` | ログイン後とログオフ中に XP の画面を出します |
+| `welcome_screen` | `true` | ログイン後とログオフ中に XP の画面（Windows 7 のシェルでは「ようこそ」「ログオフしています」など）を出します |
 | `cursor_theme` | `win4wine-xp` | カーソルのテーマ。`null` で使いません |
 | `shutdown_command`, `reboot_command` | `systemctl poweroff` / `reboot` | 終了オプションで実行するコマンド |
 | `outputs` | （無し） | Wayland のセッションの、出力ごとの設定。例: `{"HDMI-A-1": {"scale": 1.5}, "DP-1": {"scale": 1, "position": "2560,0"}}`（`mode` も書けます。出力の名前は `wlr-randr` で見られます） |

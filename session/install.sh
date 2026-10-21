@@ -3,7 +3,8 @@
 # labwc built by wayland/build.sh also the Wayland session. With --reactos, the
 # "ReactOS Shell" session, which reads ~/.config/win4wine/reactos-session.json
 # (with --wayland also its Wayland session). The Windows 7 shell's sessions are
-# on the win7 branch.
+# on master.
+# Also, per user, ~/.local/bin/win4wine-wine (session/wine.py).
 set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 [[ $root != *$'\n'* ]] || exit 1
@@ -25,6 +26,11 @@ printf '#!/bin/bash\nexec python3 %q "$@"\n' "$root/session/supervisor.py" > "$w
 as_root install -Dm755 "$wrapper" /usr/local/bin/xp-shell-session
 as_root install -Dm644 "$root/session/xp-shell.desktop" /usr/share/xsessions/xp-shell.desktop
 printf 'Installed Xsession. Configuration: ~/.config/win4wine/session.json\n'
+# win4wine-wine: "wine" as the session runs it, for terminals outside the
+# session. Per user, as it runs this user's checkout and session.json.
+printf '#!/bin/bash\nexec python3 %q "$@"\n' "$root/session/wine.py" > "$wrapper"
+install -Dm755 "$wrapper" "$HOME/.local/bin/win4wine-wine"
+printf 'Installed ~/.local/bin/win4wine-wine\n'
 if [[ $reactos == yes ]]; then
     printf '#!/bin/bash\nexec python3 %q --config "${XDG_CONFIG_HOME:-$HOME/.config}/win4wine/reactos-session.json" "$@"\n' \
         "$root/session/supervisor.py" > "$wrapper"

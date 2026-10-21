@@ -21,9 +21,9 @@ win4wine の主な判断とその理由を、話題ごとにまとめたもの�
 | explorer.exe | XP | タスクバー、スタートメニュー、デスクトップの本体です |
 | shell32、browseui、shdocvw、shlwapi | XP | Wine の browseui は XP の explorer が使う機能（序数 107 など）が未実装で、同じ世代の組で使う必要があります（調査 1） |
 | browselc、shdoclc、linkinfo、msgina、mydocs | XP（資源・一部の機能） | 日本語のメニューと文字、ショートカット、ログオフ・終了のダイアログ、アイコン（調査 8・14・36・39） |
-| comctl32 | XP の v6（XP のシェルのプロセスだけ） | Wine の comctl32 では XP の explorer の toolbar が動きません。ボタンなどは Wine のテーマ付きの実装を別名で使います（調査 7、パッチ 0055・0056） |
+| comctl32 | XP の v6（XP のシェルのプロセスだけ） | Wine の comctl32 では XP の explorer の toolbar が動きません。ボタンなどは Wine のテーマ付きの実装を別名で使います（調査 7、パッチ 0066・0067） |
 | uxtheme | Wine | 利用者の Luna のテーマファイルを Wine の uxtheme で描きます。XP のテーマのサービスは入れません |
-| user32.dll（データとして） | XP（アイコンだけ） | アプリの既定のアイコンやメッセージ ボックスのアイコンを XP のものにします。`C:\xp\res\user32-xp.dll` に置いて資源だけを読みます（パッチ 0124。カーソルもここから取り出しています） |
+| user32.dll（データとして） | XP（アイコンだけ） | アプリの既定のアイコンやメッセージ ボックスのアイコンを XP のものにします。`C:\xp\res\user32-xp.dll` に置いて資源だけを読みます（パッチ 0141。カーソルもここから取り出しています） |
 | kernel32、ntdll、user32、gdi32 など | Wine | Linux の上で動かす基盤です |
 | mshtml、mscoree | 無効 | IE と .NET は対象外です |
 
@@ -46,13 +46,13 @@ prefix を作り、そのシェルの DLL はそのシェルのプロセスに�
 
 - **ReactOS**（[reactos.md](reactos.md)）: 自由なソフトウェアなので公式のリリースから取得します。登録は ReactOS の DLL 自身の
   `DllRegisterServer` に書かせます。
-- **Windows 7**（windows7.md（`win7` ブランチ）、実験的）: 64bit のシェルを使います（prefix が WoW64 なので、64bit のまま動かせます）。
+- **Windows 7**（windows7.md（`master` ブランチ）、実験的）: 64bit のシェルを使います（prefix が WoW64 なので、64bit のまま動かせます）。
   登録は、XP のように 1 つずつ確かめて手で書くには多すぎる（DirectUI、プロパティ システム、既知のフォルダなど）ので、
   **使うファイルの部品のマニフェスト**（WinSxS）が登録するものを入れます。インストール済みの Windows のレジストリは移しません。
   Windows 7 のためだけの Wine の挙動は `WIN4WINE_SHELL=win7` のときだけ効かせ、XP と ReactOS のシェルには影響させません。
   例外として、アプリのファイルのダイアログを Windows 7 の形にするため、ダイアログが読み込む DLL（shell32 など 10 個）は
   アプリにも使わせます。Wine 自身のプログラムは Wine の DLL のままで、うまく動かないアプリも Wine の DLL に戻せます
-  （windows7.md（`win7` ブランチ） の「どのプログラムが Windows 7 の DLL を使うか」）。
+  （windows7.md（`master` ブランチ） の「どのプログラムが Windows 7 の DLL を使うか」）。
 
 ## Linux のアプリとの統合（bridge）
 
@@ -78,7 +78,7 @@ prefix を作り、そのシェルの DLL はそのシェルのプロセスに�
 - 入力モードは、fcitx5 のアイコンを XP の通知領域に出して示します。
 - 変換中の文字は、XP の IME と同じく入力欄の中に出します（XIM の on-the-spot）。fcitx5 は XIM の利用者に on-the-spot を
   `~/.config/fcitx5/conf/xim.conf` の `UseOnTheSpot=True` のときだけ出すので、supervisor が（利用者が決めていなければ）書きます。
-  Wine はキャレットの行の下端を fcitx5 に渡し、候補の窓はその下に出ます（パッチ 0029）。xterm などは今までどおり over-the-spot です。
+  Wine はキャレットの行の下端を fcitx5 に渡し、候補の窓はその下に出ます（パッチ 0035）。xterm などは今までどおり over-the-spot です。
 
 ## ログイン画面
 
@@ -89,7 +89,7 @@ prefix を作り、そのシェルの DLL はそのシェルのプロセスに�
 ## DPI
 
 - XP と同じく `LogPixels` 1 つで決めます。XP には DPI の仮想化が無く、どのアプリも自分で大きく描くので、Wine の画像の拡大
-  （ぼける）を止め、XP のシェルのプロセスを system DPI aware にしています（パッチ 0051）。
+  （ぼける）を止め、XP のシェルのプロセスを system DPI aware にしています（パッチ 0061）。
 - アイコンやカーソルの大きさなど、XP が独自の規則を持つものは、実際の XP を 96〜216 DPI にして測りました（「DPI の拡大」）。
 - Linux のアプリには同じ DPI を `Xft.dpi` などで渡します。
 
@@ -112,4 +112,4 @@ prefix を作り、そのシェルの DLL はそのシェルのプロセスに�
 - 測るのは寸法、色、規則などの数値だけで、XP の画素そのものはリポジトリに入れません。
 - 試験は `tests/` にあり、同じプローブを実際の XP と Wine の両方で動かして結果を比べます（[development.md](development.md)）。
 - コントロールやメッセージ ボックスは、同じ窓を実際の XP と XP のセッションの両方に出して画素で比べ、Wine の側を XP に合わせています
-  （パッチ 0053、0121〜0125。Windows 7 は 0113〜0119）。
+  （パッチ 0063、0138〜0142。Windows 7 は 0129〜0135）。

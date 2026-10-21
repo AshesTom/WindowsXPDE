@@ -4,7 +4,7 @@
 python3 greeter/cursors.py USER32.DLL THEME_DIRECTORY [--reactos]
 
 With --reactos the user32.dll is ReactOS's: its cursors get no shadow, as in
-ReactOS and Windows 2000. (Windows 7's Aero cursors are on the win7 branch.)
+ReactOS and Windows 2000. (Windows 7's Aero cursors are on the master branch.)
 
 Wine shows Windows' standard cursors through the X cursor theme (winex11
 maps them to names such as left_ptr), Linux applications and the greeter use

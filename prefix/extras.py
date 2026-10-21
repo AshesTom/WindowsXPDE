@@ -25,6 +25,8 @@ import subprocess
 import sys
 import tempfile
 
+import xp_schemes
+
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / '.local/bridge'
 # Bumped when apply() changes; setup.sh applies it again on existing prefixes.
@@ -103,7 +105,7 @@ def keyboard_layouts(assets):
     files."""
     import xpreg
     intl = assets / 'intl'
-    texts = [xpreg.hive_entries((intl / 'hivesys.inf').read_text(encoding='latin-1'), 'HKLM', (LAYOUTS_KEY,))]
+    texts = [xpreg.hive_entries(xpreg.read_inf(intl / 'hivesys.inf'), 'HKLM', (LAYOUTS_KEY,))]
     raw = (intl / 'intl.inf').read_bytes()
     text = raw.decode('utf-16') if raw[:2] in (b'\xff\xfe', b'\xfe\xff') else raw.decode('latin-1')
     # Its strings and the sections that add the layouts of each language
@@ -162,8 +164,30 @@ def copy_files(assets, prefix):
         (windows / 'inf').mkdir(exist_ok=True)
         shutil.copyfile(assets / 'intl/intl.inf', windows / 'inf/intl.inf')
     # Ours, so that XP Explorer's stage() keeps the common controls 6 assembly
-    # in winsxs and puts XP's comctl32 beside rundll32 (Wine patch 0130).
+    # in winsxs and puts XP's comctl32 beside rundll32 (Wine patch 0149).
     (prefix / '.patched-wine').write_text('1\n')
+
+
+def themes(assets, prefix, wine):
+    """Display Properties' Windows XP and Windows Classic themes."""
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all', WINEDLLOVERRIDES='themeui=n')
+    env.pop('WINEARCH', None)
+    # The Windows XP theme (luna.theme) names %WinDir%\web\wallpaper\Bliss.bmp.
+    jpeg = prefix / 'drive_c/windows/Web/Wallpaper/Bliss.jpg'
+    converter = BRIDGE / 'wallpaper-convert.exe'
+    if jpeg.is_file() and converter.is_file() and not jpeg.with_suffix('.bmp').exists():
+        subprocess.run([wine, str(converter), 'Z:' + str(jpeg).replace('/', '\\'),
+                        'Z:' + str(jpeg.with_suffix('.bmp')).replace('/', '\\')], env=env, check=False)
+    # themeui's own registration: Theme.Manager, the visual style folders,
+    # .theme and .msstyles files.
+    subprocess.run([wine, r'C:\windows\syswow64\regsvr32.exe', '/s', r'C:\windows\system32\themeui.dll'],
+                   env=env, check=False)
+    # The Windows Classic style's color schemes and the themes' visual style
+    # settings, which XP's themeui writes at first logon and Wine's does not:
+    # made from the user's HIVEDEF.INF and themeui.dll (prefix/xp_schemes.py).
+    hivedef, themeui = assets / 'inf/hivedef.inf', assets / 'cpl/themeui.dll'
+    if hivedef.is_file() and themeui.is_file():
+        regedit(wine, prefix, xp_schemes.registry(xp_schemes.xpreg.read_inf(hivedef), themeui))
 
 
 def stage(prefix, xpx=None):
@@ -229,16 +253,8 @@ def apply(prefix, wine):
     print("* XP's sounds, Explorer settings, image previews and Network Connections", flush=True)
     xpx.xp_defaults(assets, prefix, wine, folders=False)
     stop(wine, prefix)
-    # Display Properties' themes: themeui's own registration (Theme.Manager,
-    # the visual style folders, .theme and .msstyles files), then the
-    # Windows Classic style's color schemes and the Windows XP and Windows
-    # Classic themes' visual style settings (prefix/themes.reg).
     print("* XP's Windows XP and Windows Classic themes", flush=True)
-    # The Windows XP theme (luna.theme) names %WinDir%\web\wallpaper\Bliss.bmp.
-    xpx.wallpaper(assets, prefix)
-    subprocess.run([wine, r'C:\windows\syswow64\regsvr32.exe', '/s', r'C:\windows\system32\themeui.dll'],
-                   env=dict(env, WINEDLLOVERRIDES='themeui=n'), check=False)
-    regedit(wine, prefix, (ROOT / 'prefix/themes.reg').read_text(encoding='latin-1'))
+    themes(assets, prefix, wine)
     stop(wine, prefix)
     print('* Internet Explorer 6 and Windows Media Player 9', flush=True)
     xpx.install_ie(assets, prefix, wine)

@@ -4,7 +4,7 @@
 XP keeps the user's input languages in HKCU\\Keyboard Layout\\Preload (in
 order, with Substitutes for variants such as French (Canada)) and the key
 that switches them in HKCU\\Keyboard Layout\\Toggle; XP's Text Services and
-Input Languages (input.dll) writes them, and Wine patch 0141 gives them to
+Input Languages (input.dll) writes them, and Wine patch 0043 gives them to
 Windows programs. The keys themselves follow the session's XKB layout, so the
 session sets XKB from the same list: labwc's environment file in the Wayland
 session, setxkbmap in the X11 session. A prefix first takes the Linux

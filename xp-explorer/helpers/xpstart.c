@@ -2,12 +2,12 @@
  * winlogon did, and restarts it if it crashes.
  *
  * - XP Explorer waits up to 60 s for Global\ScmCreatedEvent before it builds
- *   the desktop; Wine's service manager never sets it (win4wine patch 0009).
+ *   the desktop; Wine's service manager never sets it (win4wine patch 0012).
  *   While Explorer waits, this loads xpcompat.dll into it, then sets the event.
  * - Wine sends no shell hook messages, so XP's taskbar would list no windows.
  *   As win4wine's proxy does (bridge-wm/proxy.c), this follows the top-level
  *   windows and posts SHELLHOOK create, destroy, activate and redraw messages
- *   to the windows that registered for them (Wine patch 0020 marks them).
+ *   to the windows that registered for them (Wine patch 0026 marks them).
  * - Before Explorer starts, startmenu.exe pins the most used programs, in
  *   place of XP's list of them (empty under Wine).
  * - XP's startup sound plays when the session opens and its logoff sound when

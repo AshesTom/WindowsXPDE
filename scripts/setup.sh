@@ -13,7 +13,7 @@
 #                  (classic look), downloaded from the ReactOS release, so no XP media
 #                  is needed. Each is registered as its own session ("ReactOS Shell
 #                  (Wine, X11)"), beside the others that are set up. The Windows 7
-#                  shell is on the win7 branch
+#                  shell is on master
 #   --lang L       ja or en: the language of the ReactOS shell and its session
 #                  (default: ja when the current locale is Japanese, else en;
 #                  an existing prefix keeps its language: move it away to change
@@ -88,7 +88,7 @@ while (($#)); do
     esac
 done
 if [[ $shell == win7 ]]; then
-    printf -- 'The Windows 7 shell is on the win7 branch: git switch win7\n' >&2; exit 2
+    printf -- 'The Windows 7 shell is on master: git switch master\n' >&2; exit 2
 fi
 [[ $shell == xp || $shell == reactos ]] || { printf -- '--shell is xp or reactos\n' >&2; exit 2; }
 if [[ $shell == reactos ]]; then

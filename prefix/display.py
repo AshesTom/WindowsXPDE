@@ -57,7 +57,7 @@ if args.dpi:
 if args.font_smoothing:
     # What XP's Display Properties write (SPI_SETFONTSMOOTHING and
     # SPI_SETFONTSMOOTHINGTYPE): ClearType with XP's RGB order. The shell's
-    # session reads them when it starts (Wine patch 0052, session/dpi.py).
+    # session reads them when it starts (Wine patch 0062, session/dpi.py).
     desktop = r'HKCU\Control Panel\Desktop'
     reg(desktop, 'FontSmoothing', '2')
     reg(desktop, 'FontSmoothingType', 2 if args.font_smoothing == 'cleartype' else 1, 'REG_DWORD')

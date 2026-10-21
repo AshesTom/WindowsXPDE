@@ -1,5 +1,5 @@
 /* A caption follows WM_NCACTIVATE, also for a window that is not the foreground window
- * (patch 0058; bridge-wm's frames of Linux windows are drawn active this way).
+ * (patch 0069; bridge-wm's frames of Linux windows are drawn active this way).
  * Usage: caption-ncactivate. Run with WIN4WINE_EXTERNAL_SHELL, Luna or classic. */
 #include <windows.h>
 #include <stdio.h>

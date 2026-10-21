@@ -1,5 +1,5 @@
 /* exit-windows-test.exe logoff|shutdown|reboot: call ExitWindowsEx as a shell's
- * dialog does (in the session, Wine patch 0018 records the request). */
+ * dialog does (in the session, Wine patch 0024 records the request). */
 #ifndef UNICODE
 #define UNICODE
 #endif

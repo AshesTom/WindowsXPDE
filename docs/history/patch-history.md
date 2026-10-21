@@ -43,12 +43,120 @@
   （`WIN4WINE_COMPOSITED`）では合成しないようにした。0079 の PaintMonitor をモニターごとの壁紙にし、0109 で Windows 7 の
   シェルのプロセスには DwmIsCompositionEnabled を FALSE にした。番号と本数は変えていない。labwc のパッチを広げ、wlroots に
   0003 を加えた。
-- 2026-10-19 に XP Explorer（`xp-explorer/`）の系列の 13 本を末尾に移した（0127〜0139、旧番号は XP Explorer の 0001〜0013）。
-  XP のセッションも XP Explorer の追加（`prefix/extras.py`）を使うため。wlroots に 0004（libinput 1.30 以降の新しいスイッチ）を加えた。
-- 同じ日に、XP の地域と言語のオプション（キーボードの入力言語）のために 0140〜0142 を末尾に加えた。
+- 2026-10-17 の見直し（review-fixes ブランチ）で、0075 を「Wayland のセッション」のまとまりに加えた（別のスレッドからの前面の
+  知らせが遅れて届いたとき、その後に前面にした窓を活性化し直さない）。旧 0075〜0126 は 0076〜0127 になった（下の「見直し」）。
+  上の win7-wayland の項の 0079・0107・0109 は、今の 0080・0108・0110。
+- 2026-10-20 の性能の調整で、0009 を「Wine 一般の修正」の最後に加えた（TrackMouseEvent の追跡が、上に重なった窓で
+  終わるように）。旧 0009〜0127 は 0010〜0128 になった（下の「性能」）。
+- 2026-10-20 の english-win7 ブランチで、0010・0011・0110 を加えた（下の「英語版の Windows 7」）。続く quick-launch ブランチで、
+  0129〜0131（XP と ReactOS の細部）の後の末尾に 0132（ほかのプロセスの窓の SetWindowPlacement）と 0133（Windows 7 の項目
+  ダイアログ）を加え、0094 を広げた。
+- 2026-10-21 に末尾の 0132・0133 をまとまりの位置に移した（下の「クイック起動の後の整理」）。最後に当てた後のソースは並べ直しの前と同じ。
+- 2026-10-21 に AshesTom さんのフォークの XP のセッションのための 17 本を、まとまりの位置に加えた（下の「AshesTom さんのフォークの
+  統合」）。150 本。
 
 それ以前の文書（`docs/history/investigations.md` の各節と、Git 管理外の開発の記録）に出てくるパッチ番号は、書いた時点の番号（段階 2 より前の旧番号、
 段階 2〜4 の 10.0 版の番号、段階 5 の 11.0 版の番号、または段階 6 の番号）。下の対応表で今の番号に読み替える。
+
+## AshesTom さんのフォークの統合（2026-10-21）
+
+旧番号は、この統合の前（v0.14.0、7e14d50）の番号。新しいパッチは AshesTom さんのフォーク（AshesTom/win4wine の
+09c7b93 と 0ca1242。そちらの 0127〜0141、0143、0144）から入れたもの。
+
+| 現在 | 旧番号 | 名前 |
+|---|---|---|
+| 0001〜0015 | 同じ | （順は同じ） |
+| 0016 | （AshesTom） | `user32-sys-colors-temp` |
+| 0017 | （AshesTom） | `winmm-expand-sound-paths` |
+| 0018 | （AshesTom） | `kernelbase-geo-friendly-name` |
+| 0019〜0041 | 0016〜0038 | （順は同じ） |
+| 0042 | （AshesTom） | `winex11-external-keep-shell-window-down` |
+| 0043 | （AshesTom） | `win32u-external-xp-input-languages` |
+| 0044〜0051 | 0039〜0046 | （順は同じ） |
+| 0052 | （AshesTom） | `user32-external-xp-caption-animation` |
+| 0053〜0063 | 0047〜0057 | （順は同じ） |
+| 0064 | （AshesTom） | `win32u-external-xp-simulated-bold` |
+| 0065〜0084 | 0058〜0077 | （順は同じ） |
+| 0085 | （AshesTom） | `uxtheme-classic-metrics-exports` |
+| 0086 | （AshesTom） | `uxtheme-display-properties-styles` |
+| 0087 | （AshesTom） | `uxtheme-external-theme-refresh` |
+| 0088〜0143 | 0078〜0133 | （順は同じ） |
+| 0144 | （AshesTom） | `apphelp-advapi32-run-checks` |
+| 0145 | （AshesTom） | `uxtheme-export-ordinals` |
+| 0146 | （AshesTom） | `uxtheme-is-theme-active-by-policy` |
+| 0147 | （AshesTom） | `uxtheme-external-caption-small-icons` |
+| 0148 | （AshesTom） | `user32-external-xp-themed-controls-beside-comctl32` |
+| 0149 | （AshesTom） | `ntdll-external-xp-comctl32-beside-exe` |
+| 0150 | （AshesTom） | `user32-external-xp-plain-comctl32-classes` |
+
+フォークの 0142（wineboot が StartUp の desktop.ini を開かない）は、同じことをする 0010 があるので入れていない。入力言語（0043）、
+最小化・最大化のアニメーション（0052）、擬似太字（0064）は XP のセッションだけにした（フォークでは外部シェル全体）。
+apphelp と uxtheme の関数の表、タイトルバー、comctl32 の切り替えに触れる 7 本（0144〜0150）は、Windows 7 のためのパッチの後の
+「XP と ReactOS のシェルの細部」に置いた。どの段階でも、最後のツリーはフォークのパッチを末尾に当てたもの（移植用のリポジトリの
+タグ ash-before-reorder）と同じ。
+
+統合の後、0086 の DrawNCPreview（画面のプロパティの見本）の文字を、呼んだ themeui.dll の文字列（日本語版では日本語）にし、
+Luna の見本のタイトルの文字をスタイルのタイトルの文字色（白）にした（フォークでは英語の固定の文字と、DC の黒い文字色）。
+0086 では、クラス名なしの OpenThemeDataFromFile にスタイル全体の値を返し（クラシックから Windows XP スタイルに戻せなかった）、
+XP のセッションでは Wine 自身の Light を一覧に出さないようにした。0087 は、新しいスタイルを後から読んだプロセスが自分の窓に
+WM_THEMECHANGED をもう一度送る。0149 と 0150 は、システムのディレクトリのプログラム（メモ帳など）を XP の comctl32 の横とみなさない
+（フォークでは system32 の Wine の comctl32.dll を見て、メモ帳の編集欄とステータス バーが作られなかった）。
+
+## クイック起動の後の整理（2026-10-21）
+
+旧番号は、この整理の前（quick-launch ブランチのマージ、ea3f56e）の番号。0001〜0045 は同じ番号のまま。
+
+| 現在 | 旧番号 | 名前 |
+|---|---|---|
+| 0046 | 0132 | `win32u-external-other-process-placement` |
+| 0047〜0126 | 0046〜0125 | （順は同じ） |
+| 0127 | 0133 | `comdlg32-external-win7-item-dialog` |
+| 0128〜0133 | 0126〜0131 | （順は同じ） |
+
+0046 は XP・ReactOS・Windows 7 のどのシェルの「デスクトップの表示」も使う、外部シェルの窓の扱いなので、「ウィンドウの配置、
+UI 状態、メニュー、WM_PRINT、壁紙」のまとまりの最後に置いた。0127 は Windows 7 のシェルのセッションだけで効く見た目なので、
+「Windows 7 の見た目」の最後に置いた。どの段階でも、最後のツリーは並べ直しの前（移植用のリポジトリのタグ pre-tidy-ql）と同じ。
+説明の中の番号（ほかのパッチを指すもの）も今の番号に直した（「Old patches:」の行は書いた時の番号のまま）。
+
+## 英語版の Windows 7（2026-10-20）
+
+旧番号は、この変更の前（v0.12.0）の番号。0001〜0009 は同じ番号のまま。
+
+| 現在 | 旧番号 | 名前 |
+|---|---|---|
+| 0010 | （新規） | `wineboot-skip-protected-startup-items` |
+| 0011 | （新規） | `ntdll-basic-information-zero-attributes` |
+| 0012〜0109 | 0010〜0107 | （順は同じ） |
+| 0110 | （新規） | `ntdll-external-win7-readonly-folders` |
+| 0111〜0131 | 0108〜0128 | （順は同じ） |
+
+0010 と 0011 は Windows の動作に合わせる一般の修正なので、「Wine 一般の修正」のまとまりの最後に置いた。0110 は Windows 7 の
+シェルのセッションだけで効くファイルの属性の扱いなので、同じく拡張属性に残す 0109（旧 0107）の次に置いた。
+説明の中の番号（ほかのパッチを指すもの）も今の番号に直した。0127・0129〜0131 の説明には、以前の付け替えから
+古いままだった番号（Windows 7 の対応するパッチ）があったので、それも直した。
+
+## 性能（2026-10-20）
+
+旧番号は、この変更の前（見直しの後）の番号。0001〜0008 は同じ番号のまま。
+
+| 現在 | 旧番号 | 名前 |
+|---|---|---|
+| 0009 | （新規） | `win32u-mouse-leave-over-other-windows` |
+| 0010〜0128 | 0009〜0127 | （順は同じ） |
+
+0009 は Windows の動作に合わせる一般の修正なので、「Wine 一般の修正」のまとまりの最後に置いた。
+
+## 見直し（2026-10-17、v0.11.0 の後）
+
+旧番号は v0.11.0 の番号。0001〜0074 は同じ番号のまま。
+
+| 現在 | 旧番号 | 名前 |
+|---|---|---|
+| 0075 | （新規） | `win32u-external-stale-activation` |
+| 0076〜0127 | 0075〜0126 | （順は同じ） |
+
+0075 は Wayland のセッションで見つかった活性化の競合（遅れて届いた前面の知らせ）の修正なので、Wayland のセッションの
+まとまりに置いた。wlroots に 0004 を加え、labwc の 0001 を直した（番号は変えていない）。
 
 ## タスクバーの設定（2026-10-17）
 

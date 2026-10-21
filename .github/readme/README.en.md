@@ -55,7 +55,7 @@ No Microsoft files are included. Only the files that are needed are extracted lo
 Without an XP ISO, the session can run **[ReactOS](https://reactos.org/)'s shell** instead (a Windows 2000-like classic look).
 ReactOS is free software, so the setup script downloads it from its official release ([docs/reactos.md](../../docs/reactos.md), Japanese).
 
-**Windows 7's shell** is on the [`win7` branch](../../../../tree/win7). This branch (`main`) has the XP (and ReactOS) shells,
+**Windows 7's shell** is on the [`master` branch](../../../../tree/master). This branch (`WinXP`) has the XP (and ReactOS) shells,
 and **XP Explorer** ([xp-explorer/](../../xp-explorer/README.md)), which opens XP's shell in a window of your Linux desktop.
 
 ## What it does
@@ -66,7 +66,9 @@ and **XP Explorer** ([xp-explorer/](../../xp-explorer/README.md)), which opens X
 - **Notification area**: Linux tray icons (StatusNotifierItem and XEmbed) show up in XP's notification area,
   beside XP's own network, battery and volume icons and their flyouts (Volume, Power Meter, Wireless Network
   Connection Status), fed by NetworkManager and PipeWire or PulseAudio (from XP Explorer, [xp-explorer/](../../xp-explorer/README.md)).
-- **From XP Explorer**: the folder task pane, Display Properties, image thumbnails and previews, XP's sounds,
+- **From XP Explorer**: the folder task pane, Display Properties (the Windows XP and Windows Classic themes, styles and
+  color schemes; the schemes are made from your ISO's HIVEDEF.INF and themeui.dll), image thumbnails and previews,
+  XP's sounds (startup, logon and logoff too),
   Network Connections, Internet Explorer 6, Windows Media Player 9, and the Start menu's left column (Internet,
   E-mail and the most used programs), all from your own ISO's files (`prefix/extras.py`).
 - **Keyboard layout**: the Linux system's (`localectl`) at first. Add input languages or change the default in
@@ -79,7 +81,11 @@ and **XP Explorer** ([xp-explorer/](../../xp-explorer/README.md)), which opens X
 - **Windows applications**: a WoW64 Wine 11.0 runs 32-bit and 64-bit programs. Run `wine setup.exe` in a terminal and
   the installer's shortcuts land in XP's Start menu.
 - **XP Welcome screen**: an optional LightDM greeter that shows XP's Welcome and log-off screens.
+  While the shell starts, XP's big "welcome" screen is shown.
 - **XP's keys**: the Windows key, Ctrl+Esc, Win+R and Win+E.
+- **Quick Launch**: right-click the taskbar, Toolbars, Quick Launch (XP and ReactOS; on Windows 7, as on the real one, New
+  Toolbar with the Quick Launch folder). Shortcuts to Linux applications from the Start menu can go there too, and Show
+  Desktop gives the windows back when used again, as on Windows.
 - **Recovery**: if the XP shell keeps crashing, the session falls back to Wine's own explorer and an xterm.
 - **Wayland session (optional, even more experimental than the X11 session)**: a patched labwc instead of the X11 WM
   (XP and ReactOS shells), with a scale per monitor and scales such as 125% or 150%; the shell stays crisp,
@@ -118,7 +124,7 @@ and **XP Explorer** ([xp-explorer/](../../xp-explorer/README.md)), which opens X
 ```text
 LightDM ─ XP Welcome greeter (greeter/)
    └─ XP Shell session (session/supervisor.py)
-        ├─ Wine 11.0 + 126 patches (wine/patches/)
+        ├─ Wine 11.0 + 150 patches (wine/patches/)
         │    └─ XP's explorer.exe, shell32.dll, … (extracted from the ISO; ReactOS's or Windows 7's in their sessions)
         ├─ bridge-wm: an X11 WM + Win32 proxy windows (bridge-wm/)
         │    (Wayland session: a patched labwc instead of the WM, wayland/)
@@ -138,9 +144,16 @@ The design documents are in Japanese; [docs/README.md](../../docs/README.md) lis
 - Microsoft binaries are never disassembled. Behavior is studied through public APIs and our own probes on a real XP.
 - Microsoft files, extracted files and prefixes live only in `localres/` and `.local/`, which Git ignores.
 
+## Contributors
+
+- [AshesTom](https://github.com/AshesTom) ([fork](https://github.com/AshesTom/win4wine)): XP's Display Properties,
+  sounds, keyboard layouts, XP's own notification area icons, the Start menu's left column, Internet Explorer 6 and
+  Windows Media Player 9, the welcome screen while the shell starts, caption animation and small icons, Arch Linux
+  support, `xp.sh` and more.
+
 ## License
 
 [LGPL-2.1-or-later](../../LICENSE), the same as Wine. It covers only the code and patches in this repository,
 except `wayland/patches/labwc/` (GPL-2.0-only, as labwc) and `wayland/patches/wlroots/` (MIT, as wlroots).
-The Windows XP and Windows 7 files, and the XP screens in the screenshot, are copyrighted by Microsoft.
+The Windows XP and Windows 7 files, and the XP and Windows 7 screens in the screenshots, are copyrighted by Microsoft.
 The ReactOS files that the ReactOS shell uses are under ReactOS's licenses (GPL-2.0-or-later; most of its DLLs LGPL-2.1-or-later).

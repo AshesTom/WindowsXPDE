@@ -41,8 +41,8 @@ GPL と LGPL に従い、対応するソース（`manifest.json` の `source`、
 
 - ReactOS の DLL は `syswow64` に置きます（shell32 などは KnownDlls なので、exe の隣は探されません）。prefix 全体では
   Wine の DLL のまま（DllOverrides の `builtin`）にし、`ros-explorer.exe` だけに AppDefaults で `native` を使わせます。
-  Common Controls 6 は `C:\ros\comctl32.dll` に置き、ros-explorer.exe だけがそれを使います（Wine のパッチ 0126。Windows 7 の
-  0110 と同じ仕組み）。`winsxs` の Wine のアセンブリはそのままで、ほかのプログラムは Wine の Common Controls 6 を使います
+  Common Controls 6 は `C:\ros\comctl32.dll` に置き、ros-explorer.exe だけがそれを使います（Wine のパッチ 0143。Windows 7 の
+  0126 と同じ仕組み）。`winsxs` の Wine のアセンブリはそのままで、ほかのプログラムは Wine の Common Controls 6 を使います
   （以前は Wine のファイルを置き換えていたため、ほかの 32bit のアプリでボタンやエディットが作られませんでした）。
 - ReactOS の explorer は、`HKLM\...\Winlogon` の `Shell` に自分のファイル名があるときだけシェルになります。`ros-explorer.exe` にします。
 - COM の登録などは、ReactOS の shell32、browseui、shdocvw 自身の `DllRegisterServer` に書かせます（32bit の view）。
@@ -63,18 +63,22 @@ session.json（`~/.config/win4wine/reactos-session.json`）の `"shell": "reacto
 
 - `C:\ros\ros-explorer.exe` を起動し、`prefix/reactos.py stage` を使います。XP のようこそ画面は出しません。
 - `WIN4WINE_FOLDER_SHELL` を設定します。ReactOS のシェルはコントロール パネル、検索、Win+E、ショートカットの「リンク先を開く」を
-  `explorer.exe` の起動で開きますが、この prefix の explorer.exe は Wine のデスクトップの管理です。パッチ 0075 で、Wine の explorer は
+  `explorer.exe` の起動で開きますが、この prefix の explorer.exe は Wine のデスクトップの管理です。パッチ 0090 で、Wine の explorer は
   そうした起動を ros-explorer.exe に渡します。
 - `WIN4WINE_SWITCHER=reactos` を設定し、proxy は Alt+Tab の窓を ReactOS の形（`appswitch.c`）で描きます。
 
 bridge と XP 向けのパッチは、そのまま ReactOS のシェルにも効きます（タスクバーのボタン、Linux の窓の枠、Alt+Tab、
 Windows キーと Ctrl+Esc、通知領域、ログオフとシャットダウン）。
 
+クイック起動は、タスクバーの右クリック →「Toolbars」→「Quick Launch」で出ます。prefix がクイック起動のフォルダ
+（`%APPDATA%\Microsoft\Internet Explorer\Quick Launch`）を作ります（無いと「Cannot create toolbar.」）。ただし ReactOS 0.4.16 の
+explorer はツールバーの配置を保存しないので（ReactOS 自身の制限。ツールバーのフォルダも保存しません）、セッションごとに出し直します。
+
 ## テーマ（任意）
 
 既定はクラシックですが、ReactOS の 3 つのテーマも選べます。`scripts/setup.sh --shell reactos --theme lautus`（`lunar`、`mizu`）、
 または `python3 prefix/reactos.py theme PREFIX lautus`。テーマは Wine の uxtheme が描きます（`prefix/theme-settings.c` の
-`msstyles` で当てます）。ReactOS のテーマのスタートボタンは負の余白を持つので、Wine のパッチ 0076 で余白の負の値を読めるようにしました。
+`msstyles` で当てます）。ReactOS のテーマのスタートボタンは負の余白を持つので、Wine のパッチ 0091 で余白の負の値を読めるようにしました。
 
 ## ログイン画面（任意）
 

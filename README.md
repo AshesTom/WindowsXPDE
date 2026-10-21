@@ -31,7 +31,7 @@ Microsoft のファイルは同梱していません。お手元の XP の ISO �
 XP の ISO が無い方は、XP のシェルの代わりに **[ReactOS](https://reactos.org/) のシェル**（Windows 2000 風のクラシックの見た目）でも
 試せます。ReactOS は自由なソフトウェアなので、導入スクリプトが公式のリリースから取得します（[docs/reactos.md](docs/reactos.md)）。
 
-**Windows 7 のシェル**は [`win7` ブランチ](../../tree/win7)にあります。このブランチ（`main`）は XP（と ReactOS）のシェルと、
+**Windows 7 のシェル**は [`master` ブランチ](../../tree/master)にあります。このブランチ（`WinXP`）は XP（と ReactOS）のシェルと、
 Linux のデスクトップの窓の中で XP を動かす **XP Explorer**（[xp-explorer/](xp-explorer/README.md)）です。
 
 ## できること
@@ -42,7 +42,8 @@ Linux のデスクトップの窓の中で XP を動かす **XP Explorer**（[xp
 - **通知領域**: Linux のトレイアイコン（StatusNotifierItem と XEmbed）が XP の通知領域に出ます。
   XP 自身のネットワーク・バッテリー・音量のアイコンと、そのフライアウト（音量、電源メーター、ワイヤレス ネットワーク接続の状態）も
   出ます。NetworkManager と PipeWire / PulseAudio の状態から作ります（XP Explorer から。[xp-explorer/](xp-explorer/README.md)）。
-- **XP Explorer からの追加**: フォルダの左のタスク ペイン、画面のプロパティ、画像の縮小版とプレビュー、XP のサウンド、
+- **XP Explorer からの追加**: フォルダの左のタスク ペイン、画面のプロパティ（Windows XP とクラシックのテーマ、スタイルと配色。
+  配色は ISO の HIVEDEF.INF と themeui.dll から作ります）、画像の縮小版とプレビュー、XP のサウンド（起動、ログオン、ログオフも）、
   ネットワーク接続、Internet Explorer 6、Windows Media Player 9、スタートメニューの左の列（インターネット、電子メール、
   よく使うプログラム）。どれもお手元の ISO のファイルで動きます（`prefix/extras.py`）。
 - **キーボードの配列**: 最初は Linux のシステムの配列（`localectl`）です。コントロール パネルの「地域と言語のオプション」→
@@ -54,7 +55,11 @@ Linux のデスクトップの窓の中で XP を動かす **XP Explorer**（[xp
 - **Windows のアプリ**: WoW64 の Wine 11.0 で、32bit と 64bit のアプリが動きます。端末で `wine setup.exe` と打つと、
   インストーラーが作るショートカットは XP のスタートメニューに入ります。
 - **XP のようこそ画面**: LightDM の greeter として、XP のようこそ画面とログオフの画面を出せます（任意）。
+  シェルが起動するまでは XP と同じ大きな「ようこそ」の画面を出します。
 - **XP のキー操作**: Windows キー、Ctrl+Esc、Win+R、Win+E が使えます。
+- **クイック起動**: タスクバーの右クリック →「ツール バー」→「クイック起動」で出せます（XP と ReactOS。Windows 7 は実機と同じく
+  「新規ツール バー」でクイック起動のフォルダを選びます）。スタートメニューから Linux のアプリのショートカットも置けます。
+  「デスクトップの表示」も実機と同じく、もう一度押すと窓が元に戻ります。
 - **画面の拡大（DPI）**: XP と同じ「DPI 設定」で、文字や部品を大きくできます（96・120・144 など）。
 - **落ちても戻れる**: XP のシェルが繰り返し落ちると、Wine 標準の explorer と xterm に切り替わります。
 - **Wayland のセッション（任意・X11 のセッション以上に実験的）**: X11 のウィンドウマネージャーの代わりに、パッチを当てた labwc で
@@ -118,7 +123,7 @@ scripts/setup.sh --shell reactos --lang ja   # 英語なら --lang en
 ```text
 LightDM ─ XP のようこそ画面 (greeter/)
    └─ XP Shell セッション (session/supervisor.py)
-        ├─ Wine 11.0 + 126 本のパッチ (wine/patches/)
+        ├─ Wine 11.0 + 150 本のパッチ (wine/patches/)
         │    └─ XP の explorer.exe, shell32.dll, …（ISO から取り出したもの。ReactOS や Windows 7 のシェルではそれらのもの）
         ├─ bridge-wm: X11 のウィンドウマネージャー + Win32 の代理ウィンドウ (bridge-wm/)
         │    （Wayland のセッションでは、ウィンドウマネージャーの代わりにパッチを当てた labwc。wayland/）
@@ -138,9 +143,15 @@ LightDM ─ XP のようこそ画面 (greeter/)
 - Microsoft のバイナリを逆アセンブルしません。挙動は公開 API と、実際の XP の上で動かす自作のプローブで調べています。
 - Microsoft のファイル、取り出したもの、Wine の prefix は、Git 管理外の `localres/` と `.local/` にだけ置きます。
 
+## 貢献してくださった方
+
+- [AshesTom](https://github.com/AshesTom) さん（[フォーク](https://github.com/AshesTom/win4wine)）: XP の画面のプロパティ、
+  サウンド、キーボードの配列、通知領域の XP のアイコン、スタートメニューの左の列、Internet Explorer 6 と Windows Media Player 9、
+  起動中のようこそ画面、タイトルバーのアニメーションと小さいアイコン、Arch Linux への対応、`xp.sh` など。
+
 ## ライセンス
 
 [LGPL-2.1-or-later](LICENSE)（Wine と同じ）です。対象はこのリポジトリのコードとパッチだけです。
 ただし `wayland/patches/labwc/` は labwc と同じ GPL-2.0-only、`wayland/patches/wlroots/` は wlroots と同じ MIT です。
-Windows XP と Windows 7 のファイルと、スクリーンショットに写っている XP の画面の著作権は Microsoft にあります。
+Windows XP と Windows 7 のファイルと、スクリーンショットに写っている XP と Windows 7 の画面の著作権は Microsoft にあります。
 ReactOS のシェルで使う ReactOS のファイルは、ReactOS のライセンス（GPL-2.0-or-later、DLL の多くは LGPL-2.1-or-later）に従います。

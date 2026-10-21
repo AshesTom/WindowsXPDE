@@ -43,7 +43,7 @@ FILES = {
     **dict.fromkeys(('hivedef.inf', 'hivesft.inf'), 'inf'),
     # Image thumbnails and previews in folder windows (and Windows Picture and Fax Viewer).
     'shimgvw.dll': 'shell',
-    # Read as data only: XP's system icons (win4wine patch 0124) and cursors.
+    # Read as data only: XP's system icons (win4wine patch 0141) and cursors.
     'user32.dll': 'resources',
     **dict.fromkeys(('tahoma.ttf', 'tahomabd.ttf', 'msgothic.ttc', 'marlett.ttf',
                      'trebuc.ttf', 'trebucbd.ttf', 'trebucit.ttf', 'trebucbi.ttf', 'arial.ttf'), 'fonts'),

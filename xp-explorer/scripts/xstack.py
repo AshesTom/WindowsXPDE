@@ -8,7 +8,7 @@ taskbar, which Win32 still has topmost, and the taskbar vanishes until it is
 activated itself. XP keeps Progman at the bottom; this does the same on the
 X side: whenever Progman is not the lowest mapped child, it is lowered, and
 the windows it covered are asked to paint again (an X expose).
-Windows are recognised by the _WIN4WINE_CLASS property of Wine patch 0019.
+Windows are recognised by the _WIN4WINE_CLASS property of Wine patch 0025.
 
 Usage: xstack.py [TITLE]   (default: "XP - Wine Desktop"); exits with the desktop.
 """
