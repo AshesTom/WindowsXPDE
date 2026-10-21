@@ -1,0 +1,56 @@
+From: AshesTom <258768419+AshesTom@users.noreply.github.com>
+Subject: [PATCH] user32: make each requested size of PrivateExtractIcons from its own image
+
+Purpose: XP's shell (folder title bars, the address bar, taskbar buttons)
+shows each icon's own 16x16 image, as on XP: My Computer's small icon is a
+monitor, not its 32x32 monitor and tower shrunk.
+Windows behavior: with two sizes packed in cx and cy (LOWORD the big,
+HIWORD the small), PrivateExtractIcons returns for each icon the image of
+the group closest to each size; XP's shell32 fills its image lists so.
+Wine before: it looked up both images, but made both icons from the big
+one's data, scaling it down for the small icon (PE files, and .ico and NE
+files alike).
+Change: each icon is made from the image looked up for its own size.
+Scope: callers that ask two sizes at once (ExtractIconEx asks them apart).
+---
+---
+diff --git a/dlls/user32/exticon.c b/dlls/user32/exticon.c
+--- a/dlls/user32/exticon.c
++++ b/dlls/user32/exticon.c
+@@ -386,11 +386,10 @@
+ 
+ 	        if (pCIDir)
+                 {
++                  /* With two sizes, the odd entries are the small icons, each from its own image. */
++                  BOOL small_icon = cx2 && cy2 && (icon & 1);
+ 	          RetPtr[icon] = CreateIconFromResourceEx(pCIDir, uSize, TRUE, 0x00030000,
+-                                                                 cx1, cy1, flags);
+-                  if (cx2 && cy2)
+-                      RetPtr[++icon] = CreateIconFromResourceEx(pCIDir, uSize, TRUE, 0x00030000,
+-                                                                       cx2, cy2, flags);
++                                                          small_icon ? cx2 : cx1, small_icon ? cy2 : cy1, flags);
+                 }
+ 	        else
+ 	          RetPtr[icon] = 0;
+@@ -504,6 +503,9 @@
+ 	  for (i=0; i<nIcons; i++)
+ 	  {
+ 	    const IMAGE_RESOURCE_DIRECTORY *xresdir;
++	    /* With two sizes, the odd entries are the small icons: each is made
++	     * from its own image (the group's 16x16), not the big one shrunk. */
++	    BOOL small_icon = cx2 && cy2 && (i & 1);
+ 	    xresdir = find_entry_by_id(iconresdir, LOWORD(pIconId[i]), rootresdir);
+             if( !xresdir )
+             {
+@@ -521,9 +523,8 @@
+ 	      RetPtr[i]=0;
+ 	      continue;
+ 	    }
+-	    RetPtr[i] = CreateIconFromResourceEx(idata, idataent->Size, TRUE, 0x00030000, cx1, cy1, flags);
+-            if (cx2 && cy2)
+-                RetPtr[++i] = CreateIconFromResourceEx(idata, idataent->Size, TRUE, 0x00030000, cx2, cy2, flags);
++	    RetPtr[i] = CreateIconFromResourceEx(idata, idataent->Size, TRUE, 0x00030000,
++	                                         small_icon ? cx2 : cx1, small_icon ? cy2 : cy1, flags);
+ 	  }
+ 	  ret = i;	/* return number of retrieved icons */
+ 	}			/* if(sig == IMAGE_NT_SIGNATURE) */

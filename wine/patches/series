@@ -149,3 +149,4 @@
 0149-ntdll-external-xp-comctl32-beside-exe.patch
 0150-user32-external-xp-plain-comctl32-classes.patch
 0151-server-external-xp-stored-dacl.patch
+0152-user32-paired-icon-sizes.patch

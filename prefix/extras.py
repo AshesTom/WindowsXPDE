@@ -236,6 +236,10 @@ def apply(prefix, wine):
     print('* XP Explorer additions: files', flush=True)
     stop(wine, prefix)
     copy_files(assets, prefix)
+    # XP's shell keeps the icons it extracted in IconCache.db; drop it so that
+    # it extracts them again with this Wine (16x16 images: patch 0152).
+    for cache in (prefix / 'drive_c/users').glob('*/AppData/Local/IconCache.db'):
+        cache.unlink(missing_ok=True)
     print('* XP Explorer additions: registry', flush=True)
     regedit(wine, prefix, registry(xpx).text())
     regedit(wine, prefix, xpx.xp_registrations(assets))
