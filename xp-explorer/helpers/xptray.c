@@ -40,7 +40,6 @@
 #define CMD_SOUND    101
 #define CMD_NETWORK  102
 #define CMD_POWER    103
-#define CMD_EXIT     104
 #define CMD_STATUS   105
 #define CMD_METER    106
 #define CMD_CONNECTIONS 108
@@ -50,14 +49,12 @@
 #define CONN_CONNECT 500
 #define CONN_STATUS  501
 #define CONN_SETTINGS 502
-#define CONN_REFRESH 503
 #define CONN_CLOSE   504
 #define WIFI_TASKS 600
 #define WIFI_LIST 601
 #define WIFI_REFRESH 602
 #define WIFI_SETTINGS 603
 #define WIFI_CONNECT 604
-#define WIFI_HELP 605
 
 /* XP's NOTIFYICONDATAW (version 3, 956 bytes) in a 32-bit process, wrapped as
  * its tray expects it in WM_COPYDATA. */
@@ -126,7 +123,7 @@ static unsigned connection_count;
 static int nmcli_checked, nmcli_available;
 static NMWIRELESS wireless_networks[CONNECTION_LIMIT];
 static unsigned wireless_count;
-static ULONGLONG wireless_connect_started;
+static ULONGLONG wireless_connect_started, wireless_opened;
 static WCHAR wireless_connect_ssid[128];
 
 /* Linux state */
@@ -540,6 +537,98 @@ static void xp_text(const WCHAR *file, UINT id, const WCHAR *fallback, WCHAR *ou
     va_end(args);
 }
 
+/* The text of item COMMAND in menu MENU of XP's FILE, or FALLBACK. */
+static void xp_menu_text(const WCHAR *file, UINT menu_id, UINT command, const WCHAR *fallback, WCHAR *out, int size)
+{
+    HMODULE module = xp_module(file);
+    HMENU menu = module ? LoadMenuW(module, MAKEINTRESOURCEW(menu_id)) : NULL;
+    if (!menu || !GetMenuStringW(menu, command, out, size, MF_BYCOMMAND)) lstrcpynW(out, fallback, size);
+    if (menu) DestroyMenu(menu);
+}
+
+/* The text of control CONTROL (or with -1 the title) in dialog DIALOG of
+ * XP's FILE, read from its template, or FALLBACK. */
+static const WORD *template_string(const WORD *p, const WCHAR **text)
+{
+    if (*p == 0xffff)
+    {
+        *text = NULL;
+        return p + 2;
+    }
+    *text = (const WCHAR *)p;
+    return p + wcslen((const WCHAR *)p) + 1;
+}
+
+static void xp_dialog_text(const WCHAR *file, UINT dialog, int control, const WCHAR *fallback, WCHAR *out, int size)
+{
+    HMODULE module = xp_module(file);
+    HRSRC resource = module ? FindResourceW(module, MAKEINTRESOURCEW(dialog), (LPCWSTR)RT_DIALOG) : NULL;
+    const WORD *p = resource ? LockResource(LoadResource(module, resource)) : NULL;
+    const WCHAR *text = NULL;
+    lstrcpynW(out, fallback, size);
+    if (!p) return;
+    BOOL extended = p[0] == 1 && p[1] == 0xffff;
+    DWORD style = extended ? *(const DWORD *)(p + 6) : *(const DWORD *)p;
+    WORD count = extended ? p[8] : p[4];
+    p += extended ? 13 : 9;
+    p = template_string(p, &text);          /* menu */
+    p = template_string(p, &text);          /* class */
+    p = template_string(p, &text);          /* title */
+    if (control == -1)
+    {
+        if (text) lstrcpynW(out, text, size);
+        return;
+    }
+    if (style & DS_SETFONT)
+    {
+        p += extended ? 3 : 1;
+        p = template_string(p, &text);
+    }
+    for (WORD i = 0; i < count; i++)
+    {
+        DWORD id;
+        p = (const WORD *)(((ULONG_PTR)p + 3) & ~(ULONG_PTR)3);
+        if (extended)
+        {
+            id = *(const DWORD *)(p + 10);
+            p += 12;
+        }
+        else
+        {
+            id = p[8];
+            p += 9;
+        }
+        p = template_string(p, &text);      /* class */
+        p = template_string(p, &text);
+        if ((int)id == control && text)
+        {
+            lstrcpynW(out, text, size);
+            return;
+        }
+        p = (const WORD *)((const BYTE *)p + 2 + *p);
+    }
+}
+
+/* xptray's own words, for what XP's files have no text: Japanese in a
+ * Japanese session, otherwise English. */
+static const WCHAR *own_text(const WCHAR *english, const WCHAR *japanese)
+{
+    return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_JAPANESE ? japanese : english;
+}
+
+/* FORMAT with its printf-style %s (XP's wireless strings) replaced by TEXT;
+ * FORMAT is the string as it is, not through FormatMessage. */
+static void insert_text(const WCHAR *format, const WCHAR *text, WCHAR *out, size_t size)
+{
+    const WCHAR *at = wcsstr(format, L"%s");
+    if (!at)
+    {
+        lstrcpynW(out, format, (int)size);
+        return;
+    }
+    swprintf(out, size, L"%.*ls%ls%ls", (int)(at - format), format, text, at + 2);
+}
+
 static void signal_words(int signal, WCHAR *out, int size)
 {
     /* netshell's Very Low (2601) to Excellent (2605). */
@@ -600,9 +689,10 @@ static void show_power(void)
     }
     if (!on_ac && !charging && battery <= 10 && !warned_low)
     {
+        WCHAR title[64];
         warned_low = 1;
-        set_icon(ID_POWER, TRUE, xp_icon(3), tip, L"Your battery is running low",
-                 L"You might want to plug in your computer now.", NIIF_WARNING);
+        xp_text(L"powercfg.cpl", 94, L"Low Battery Alarm", title, ARRAYSIZE(title));
+        set_icon(ID_POWER, TRUE, xp_icon(3), tip, title, tip, NIIF_WARNING);
         return;
     }
     if (on_ac || battery > 15) warned_low = 0;
@@ -844,17 +934,22 @@ static void power_meter_update(void)
 {
     WCHAR text[64];
     if (!power_page) return;
-    SetDlgItemTextW(power_page, 1001, on_ac ? L"AC Power" : L"Batteries");
+    /* batmeter's own words for its page */
+    if (on_ac) xp_text(L"batmeter.dll", 100, L"AC power", text, 64);
+    else xp_text(L"batmeter.dll", 109, L"Batteries", text, 64);
+    SetDlgItemTextW(power_page, 1001, text);
     ShowWindow(GetDlgItem(power_page, 1001), SW_SHOW);
-    if (battery >= 0) swprintf(text, 64, L"%d%%", battery);
-    else wcscpy(text, L"Unknown");
+    if (battery >= 0) xp_text(L"batmeter.dll", 104, L"%1!u!%%", text, 64, battery);
+    else xp_text(L"batmeter.dll", 102, L"Unknown", text, 64);
     SetDlgItemTextW(power_page, 1002, text);
     ShowWindow(GetDlgItem(power_page, 1002), SW_SHOW);
     ShowWindow(GetDlgItem(power_page, 1006), charging ? SW_SHOW : SW_HIDE);
     SendDlgItemMessageW(power_page, 1004, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
     SendDlgItemMessageW(power_page, 1004, PBM_SETPOS, max(battery, 0), 0);
-    if (minutes_left > 0 && minutes_left < 60 * 24) swprintf(text, 64, L"%d hr %d min", minutes_left / 60, minutes_left % 60);
-    else wcscpy(text, L"Unknown");
+    if (minutes_left >= 60 && minutes_left < 60 * 24)
+        xp_text(L"batmeter.dll", 105, L"%1!u!:%2!02u! hours", text, 64, minutes_left / 60, minutes_left % 60);
+    else if (minutes_left > 0) xp_text(L"batmeter.dll", 106, L"%1!u! min", text, 64, minutes_left);
+    else xp_text(L"batmeter.dll", 102, L"Unknown", text, 64);
     SetDlgItemTextW(power_page, 1068, text);
     ShowWindow(GetDlgItem(power_page, 1067), on_ac ? SW_HIDE : SW_SHOW);
     ShowWindow(GetDlgItem(power_page, 1068), on_ac ? SW_HIDE : SW_SHOW);
@@ -960,12 +1055,19 @@ static void net_status_update(void)
     ULONGLONG seconds;
     HBITMAP old;
     if (!net_general) return;
-    SetDlgItemTextW(net_general, 1007, net_up > 0 ? (net_limited ? L"Limited or no connectivity" : L"Connected")
-                                                  : L"Disconnected");
+    if (net_up <= 0) xp_text(L"netshell.dll", 23010, L"Disconnected", text, 128);
+    else if (net_limited) xp_text(L"xpsp2res.dll", 142, L"Limited or no connectivity", text, 128);
+    else xp_text(L"netshell.dll", 23012, L"Connected", text, 128);
+    SetDlgItemTextW(net_general, 1007, text);
     seconds = net_up > 0 && net_since ? (GetTickCount64() - net_since) / 1000 : 0;
     if (seconds >= 86400)
-        swprintf(text, 128, L"%u day(s) %02u:%02u:%02u", (unsigned)(seconds / 86400), (unsigned)(seconds / 3600 % 24),
+    {
+        WCHAR days[32];
+        if (seconds >= 2 * 86400) xp_text(L"netshell.dll", 23070, L" days", days, ARRAYSIZE(days));
+        else xp_text(L"netshell.dll", 23069, L" day", days, ARRAYSIZE(days));
+        swprintf(text, 128, L"%u%ls %02u:%02u:%02u", (unsigned)(seconds / 86400), days, (unsigned)(seconds / 3600 % 24),
                  (unsigned)(seconds / 60 % 60), (unsigned)(seconds % 60));
+    }
     else
         swprintf(text, 128, L"%02u:%02u:%02u", (unsigned)(seconds / 3600), (unsigned)(seconds / 60 % 60),
                  (unsigned)(seconds % 60));
@@ -1008,8 +1110,10 @@ static void net_support_update(void)
     if (line) method = line;
     if (strchr(address, '|')) *strchr(address, '|') = 0;
     if (strchr(address, '/')) { prefix_length = atoi(strchr(address, '/') + 1); *strchr(address, '/') = 0; }
-    SetDlgItemTextW(net_support, 1053, !strcmp(method, "manual") ? L"Manually Configured"
-                                       : *method ? L"Assigned by DHCP" : L"Unknown");
+    if (!strcmp(method, "manual")) xp_text(L"netshell.dll", 2573, L"Manually Configured", wide, 128);
+    else if (*method) xp_text(L"netshell.dll", 2571, L"Assigned by DHCP", wide, 128);
+    else xp_text(L"netshell.dll", 1026, L"Unknown", wide, 128);
+    SetDlgItemTextW(net_support, 1053, wide);
     MultiByteToWideChar(CP_UTF8, 0, *address ? address : "0.0.0.0", -1, wide, 128);
     SetDlgItemTextW(net_support, 1050, wide);
     if (prefix_length)
@@ -1033,7 +1137,12 @@ static INT_PTR CALLBACK net_general_proc(HWND dialog, UINT message, WPARAM wpara
     {
         RECT label, value;
         net_general = dialog;
-        if (net_up <= 0) SetDlgItemTextW(dialog, 1025, L"&Enable");
+        if (net_up <= 0)
+        {
+            WCHAR enable[64];
+            xp_menu_text(L"netshell.dll", 11010, 16, L"En&able", enable, ARRAYSIZE(enable));
+            SetDlgItemTextW(dialog, 1025, enable);
+        }
         /* The signal bars go on the Signal Strength row, in the value column;
          * the Errors row is XP's for dial-up connections only. */
         GetWindowRect(GetDlgItem(dialog, 1043), &label);
@@ -1066,9 +1175,59 @@ static INT_PTR CALLBACK net_general_proc(HWND dialog, UINT message, WPARAM wpara
     return FALSE;
 }
 
+/* netshell's Network Connection Details: the Support page's values, with the
+ * adapter's MAC address. */
+static INT_PTR CALLBACK net_details_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    static const struct { UINT id; const WCHAR *fallback; int control; } rows[] = {
+        { 23143, L"Physical Address", 0 }, { 23145, L"IP Address", 1050 },
+        { 23147, L"Subnet Mask", 1051 }, { 23149, L"Default Gateway", 1052 },
+    };
+    if (message == WM_INITDIALOG)
+    {
+        HWND list = GetDlgItem(dialog, 1070), support = (HWND)lparam;
+        LVCOLUMNW column = {.mask = LVCF_TEXT | LVCF_WIDTH};
+        WCHAR text[128], path[MAX_PATH];
+        char address[64] = "";
+        RECT area;
+        GetClientRect(list, &area);
+        xp_text(L"netshell.dll", 23159, L"Property", text, ARRAYSIZE(text));
+        column.pszText = text;
+        column.cx = area.right / 2;
+        ListView_InsertColumn(list, 0, &column);
+        xp_text(L"netshell.dll", 23160, L"Value", text, ARRAYSIZE(text));
+        column.cx = area.right - area.right / 2 - GetSystemMetrics(SM_CXVSCROLL);
+        ListView_InsertColumn(list, 1, &column);
+        ListView_SetExtendedListViewStyle(list, LVS_EX_FULLROWSELECT);
+        for (int i = 0; i < (int)ARRAYSIZE(rows); i++)
+        {
+            LVITEMW item = {.mask = LVIF_TEXT, .iItem = i, .pszText = text};
+            xp_text(L"netshell.dll", rows[i].id, rows[i].fallback, text, ARRAYSIZE(text));
+            ListView_InsertItem(list, &item);
+            if (rows[i].control) GetDlgItemTextW(support, rows[i].control, text, ARRAYSIZE(text));
+            else
+            {
+                /* XP writes the MAC address as 00-0C-29-12-34-56. */
+                swprintf(path, MAX_PATH, L"Z:\\sys\\class\\net\\%ls\\address", net_name);
+                read_text(path, address, sizeof(address));
+                for (int j = 0; j < (int)sizeof(address); j++)
+                    if (!(text[j] = address[j] == ':' ? L'-' : towupper(address[j]))) break;
+            }
+            ListView_SetItemText(list, i, 1, text);
+        }
+        return TRUE;
+    }
+    if (message == WM_COMMAND && (LOWORD(wparam) == IDOK || LOWORD(wparam) == IDCANCEL))
+    {
+        EndDialog(dialog, 0);
+        return TRUE;
+    }
+    return FALSE;
+}
+
 static INT_PTR CALLBACK net_support_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
 {
-    WCHAR script[256], text[512], value[4][64];
+    WCHAR script[256];
     (void)lparam;
     switch (message)
     {
@@ -1086,12 +1245,7 @@ static INT_PTR CALLBACK net_support_proc(HWND dialog, UINT message, WPARAM wpara
             spawn(script, NULL);
         }
         else if (LOWORD(wparam) == 1062)
-        {
-            for (int i = 0; i < 4; i++) GetDlgItemTextW(dialog, 1050 + i, value[i], 64);
-            swprintf(text, 512, L"Physical Address:\t%ls\nIP Address:\t\t%ls\nSubnet Mask:\t%ls\nDefault Gateway:\t%ls",
-                     net_name, value[0], value[1], value[2]);
-            MessageBoxW(dialog, text, L"Network Connection Details", MB_OK);
-        }
+            DialogBoxParamW(xp_module(L"netshell.dll"), MAKEINTRESOURCEW(1807), dialog, net_details_proc, (LPARAM)dialog);
         return TRUE;
     case WM_DESTROY:
         net_support = NULL;
@@ -1105,7 +1259,7 @@ static void show_network_status(void)
     static HMODULE netshell;
     PROPSHEETPAGEW pages[2] = {{0}};
     PROPSHEETHEADERW header = {0};
-    WCHAR title[96];
+    WCHAR title[128], name[96], close[32];
     if (net_sheet)
     {
         SetForegroundWindow(net_sheet);
@@ -1122,7 +1276,9 @@ static void show_network_status(void)
     pages[0].pfnDlgProc = net_general_proc;
     pages[1].pszTemplate = MAKEINTRESOURCEW(1806);
     pages[1].pfnDlgProc = net_support_proc;
-    swprintf(title, 96, L"%ls Status", net_wireless ? L"Wireless Network Connection" : L"Local Area Connection");
+    if (net_wireless) xp_text(L"xpsp2res.dll", 16022, L"Wireless Network Connection", name, ARRAYSIZE(name));
+    else xp_text(L"netshell.dll", 1811, L"Local Area Connection", name, ARRAYSIZE(name));
+    xp_text(L"netshell.dll", 23041, L"%1 Status", title, ARRAYSIZE(title), name);
     header.dwSize = sizeof(header);
     header.dwFlags = PSH_PROPSHEETPAGE | PSH_MODELESS | PSH_NOAPPLYNOW | PSH_NOCONTEXTHELP;
     header.hInstance = netshell;
@@ -1133,7 +1289,8 @@ static void show_network_status(void)
     if (net_sheet)
     {
         /* XP's status sheet has a single Close button. */
-        SetDlgItemTextW(net_sheet, IDCANCEL, L"&Close");
+        xp_text(L"netshell.dll", 23020, L"&Close", close, ARRAYSIZE(close));
+        SetDlgItemTextW(net_sheet, IDCANCEL, close);
         ShowWindow(GetDlgItem(net_sheet, IDOK), SW_HIDE);
     }
 }
@@ -1152,6 +1309,7 @@ static void flyouts_update(void)
 #define CONNECTIONS_CLASS L"XPNetworkConnections"
 
 static HIMAGELIST connection_images;
+static BOOL connection_pending;
 
 /* nmcli -t escapes separators and backslashes. Decode a field up to ':' without
  * splitting a profile name that itself contains a colon. */
@@ -1187,16 +1345,17 @@ static BOOL active_uuid(const char *uuid, const char active[][40], unsigned coun
     return FALSE;
 }
 
-static const WCHAR *connection_type(const WCHAR *type)
+/* XP's Type column: its virtual private networks, or LAN or High-Speed Internet. */
+static void connection_type(const WCHAR *type, WCHAR *out, int size)
 {
-    if (!wcscmp(type, L"802-11-wireless")) return L"Wireless";
-    if (!wcscmp(type, L"802-3-ethernet")) return L"Ethernet";
-    if (!wcscmp(type, L"vpn")) return L"VPN";
-    if (!wcscmp(type, L"bridge")) return L"Bridge";
-    if (!wcscmp(type, L"bond")) return L"Bond";
-    if (!wcscmp(type, L"team")) return L"Team";
-    if (!wcscmp(type, L"wireguard")) return L"WireGuard";
-    return L"Network";
+    if (!wcscmp(type, L"vpn") || !wcscmp(type, L"wireguard"))
+        xp_text(L"netshell.dll", 1024, L"Virtual Private Network", out, size);
+    else xp_text(L"netshell.dll", 1022, L"LAN or High-Speed Internet", out, size);
+}
+
+static const WCHAR *nmcli_missing(void)
+{
+    return own_text(L"NetworkManager (nmcli) is not available.", L"NetworkManager (nmcli) を利用できません。");
 }
 
 static int selected_connection(void)
@@ -1213,9 +1372,13 @@ static void connections_update_buttons(void)
 {
     int index = selected_connection();
     BOOL selected = index >= 0;
+    WCHAR text[64];
     if (connections_connect)
     {
-        SetWindowTextW(connections_connect, selected && connections[index].active ? L"&Disconnect" : L"&Connect");
+        /* The connection's menu items in XP's Network Connections folder */
+        if (selected && connections[index].active) xp_menu_text(L"netshell.dll", 11022, 3, L"Disc&onnect", text, 64);
+        else xp_menu_text(L"netshell.dll", 11020, 2, L"C&onnect", text, 64);
+        SetWindowTextW(connections_connect, text);
         EnableWindow(connections_connect, selected);
     }
     EnableWindow(GetDlgItem(GetParent(connections_list), CONN_STATUS), selected && connections[index].active);
@@ -1226,7 +1389,11 @@ static void connections_refresh(void)
     char output[16384], active_output[4096], active[CONNECTION_LIMIT][40];
     unsigned active_count = 0;
     char *context, *line;
+    WCHAR selected[40] = L"";
+    int index = selected_connection();
     if (!connections_list) return;
+    /* The refresh keeps the selection. */
+    if (index >= 0) wcscpy(selected, connections[index].uuid);
     connection_count = 0;
     if (!nmcli_checked)
     {
@@ -1237,7 +1404,7 @@ static void connections_refresh(void)
     if (!nmcli_available)
     {
         ListView_DeleteAllItems(connections_list);
-        SetWindowTextW(connections_hint, L"NetworkManager's nmcli tool is not available. Use Settings to manage connections.");
+        SetWindowTextW(connections_hint, nmcli_missing());
         connections_update_buttons();
         return;
     }
@@ -1253,7 +1420,7 @@ static void connections_refresh(void)
     if (!capture(L"nmcli -t --escape yes -f NAME,UUID,TYPE,DEVICE connection show 2>/dev/null", output, sizeof(output)))
     {
         ListView_DeleteAllItems(connections_list);
-        SetWindowTextW(connections_hint, L"NetworkManager is not available. Open Settings to manage network access.");
+        SetWindowTextW(connections_hint, nmcli_missing());
         connections_update_buttons();
         return;
     }
@@ -1266,7 +1433,8 @@ static void connections_refresh(void)
         nmcli_field(&cursor, uuid, sizeof(uuid));
         nmcli_field(&cursor, type, sizeof(type));
         nmcli_field(&cursor, device, sizeof(device));
-        if (!*uuid || !*name) continue;
+        /* NetworkManager's own loopback profile is no network connection. */
+        if (!*uuid || !*name || !strcmp(type, "loopback")) continue;
         connection = &connections[connection_count];
         nmcli_wide(name, connection->name, ARRAYSIZE(connection->name));
         nmcli_wide(uuid, connection->uuid, ARRAYSIZE(connection->uuid));
@@ -1281,37 +1449,42 @@ static void connections_refresh(void)
         NMCONNECTION *connection = &connections[i];
         BOOL wireless = !wcscmp(connection->type, L"802-11-wireless");
         int image = wireless ? (connection->active ? 0 : 1) : (connection->active ? 2 : 3);
-        WCHAR state[32];
+        WCHAR text[64];
         LVITEMW item = {.mask = LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM, .iItem = (int)i,
                         .iImage = image, .lParam = i, .pszText = connection->name};
         int row = ListView_InsertItem(connections_list, &item);
         if (row < 0) continue;
-        ListView_SetItemText(connections_list, row, 1, (WCHAR *)connection_type(connection->type));
+        connection_type(connection->type, text, ARRAYSIZE(text));
+        ListView_SetItemText(connections_list, row, 1, text);
         ListView_SetItemText(connections_list, row, 2, connection->device[0] ? connection->device : L"—");
-        wcscpy(state, connection->active ? L"Connected" : L"Disconnected");
-        ListView_SetItemText(connections_list, row, 3, state);
+        if (connection->active) xp_text(L"netshell.dll", 1042, L"Connected", text, ARRAYSIZE(text));
+        else xp_text(L"netshell.dll", 1040, L"Disconnected", text, ARRAYSIZE(text));
+        ListView_SetItemText(connections_list, row, 3, text);
+        if (!wcscmp(connection->uuid, selected))
+            ListView_SetItemState(connections_list, row, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
     }
-    if (!connection_count)
-        SetWindowTextW(connections_hint, L"No saved connections. Use Settings to add a Wi-Fi or wired connection.");
-    else
-        SetWindowTextW(connections_hint, L"Select a connection to connect or disconnect it through NetworkManager.");
+    if (!connection_pending) SetWindowTextW(connections_hint, L"");
+    connection_pending = FALSE;
     connections_update_buttons();
 }
 
 static void connection_action(void)
 {
     int index = selected_connection();
-    WCHAR script[256], uuid[96];
+    WCHAR script[256], uuid[96], text[64];
     if (index < 0) return;
     shell_quote_w(connections[index].uuid, uuid, ARRAYSIZE(uuid));
     swprintf(script, ARRAYSIZE(script), L"nmcli --wait 15 connection %ls uuid %ls >/dev/null 2>&1",
              connections[index].active ? L"down" : L"up", uuid);
     if (spawn(script, NULL))
     {
-        SetWindowTextW(connections_hint, connections[index].active ? L"Disconnecting..." : L"Connecting...");
+        if (connections[index].active) xp_text(L"netshell.dll", 1043, L"Disconnecting", text, ARRAYSIZE(text));
+        else xp_text(L"netshell.dll", 1041, L"Connecting", text, ARRAYSIZE(text));
+        SetWindowTextW(connections_hint, text);
+        connection_pending = TRUE;
         SetTimer(connections_window, TIMER_CONNECTIONS, 1500, NULL);
     }
-    else SetWindowTextW(connections_hint, L"NetworkManager could not start the requested connection action.");
+    else SetWindowTextW(connections_hint, nmcli_missing());
 }
 
 static void connections_layout(HWND hwnd, int width, int height)
@@ -1322,7 +1495,6 @@ static void connections_layout(HWND hwnd, int width, int height)
     MoveWindow(connections_connect, width - 396, button_y, 90, 26, TRUE);
     MoveWindow(GetDlgItem(hwnd, CONN_STATUS), width - 300, button_y, 90, 26, TRUE);
     MoveWindow(GetDlgItem(hwnd, CONN_SETTINGS), width - 204, button_y, 90, 26, TRUE);
-    MoveWindow(GetDlgItem(hwnd, CONN_REFRESH), 12, button_y, 90, 26, TRUE);
     MoveWindow(GetDlgItem(hwnd, CONN_CLOSE), width - 108, button_y, 90, 26, TRUE);
 }
 
@@ -1334,27 +1506,39 @@ static LRESULT CALLBACK connections_proc(HWND hwnd, UINT message, WPARAM wparam,
     {
         LVCOLUMNW column = {.mask = LVCF_TEXT | LVCF_WIDTH};
         INITCOMMONCONTROLSEX controls = {sizeof(controls), ICC_LISTVIEW_CLASSES};
+        HFONT font = GetStockObject(DEFAULT_GUI_FONT);
+        WCHAR text[64];
         InitCommonControlsEx(&controls);
         connections_list = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
             WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
             12, 12, 540, 240, hwnd, (HMENU)(INT_PTR)1000, GetModuleHandleW(NULL), NULL);
-        connections_hint = CreateWindowW(L"STATIC", L"Reading NetworkManager connections...",
+        connections_hint = CreateWindowW(L"STATIC", L"",
             WS_CHILD | WS_VISIBLE | SS_LEFT, 12, 260, 540, 22, hwnd, NULL, GetModuleHandleW(NULL), NULL);
-        connections_connect = CreateWindowW(L"BUTTON", L"&Connect", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        /* The buttons are the connection's commands in XP's folder menus. */
+        connections_connect = CreateWindowW(L"BUTTON", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
             0, 0, 90, 26, hwnd, (HMENU)(INT_PTR)CONN_CONNECT, GetModuleHandleW(NULL), NULL);
-        CreateWindowW(L"BUTTON", L"&Status", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        xp_menu_text(L"netshell.dll", 11010, 4, L"Stat&us", text, ARRAYSIZE(text));
+        CreateWindowW(L"BUTTON", text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
             0, 0, 90, 26, hwnd, (HMENU)(INT_PTR)CONN_STATUS, GetModuleHandleW(NULL), NULL);
-        CreateWindowW(L"BUTTON", L"&Settings", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        xp_menu_text(L"netshell.dll", 11010, 8, L"P&roperties", text, ARRAYSIZE(text));
+        CreateWindowW(L"BUTTON", text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
             0, 0, 90, 26, hwnd, (HMENU)(INT_PTR)CONN_SETTINGS, GetModuleHandleW(NULL), NULL);
-        CreateWindowW(L"BUTTON", L"&Refresh", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            0, 0, 90, 26, hwnd, (HMENU)(INT_PTR)CONN_REFRESH, GetModuleHandleW(NULL), NULL);
-        CreateWindowW(L"BUTTON", L"Close", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        xp_text(L"netshell.dll", 23020, L"&Close", text, ARRAYSIZE(text));
+        CreateWindowW(L"BUTTON", text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
             0, 0, 90, 26, hwnd, (HMENU)(INT_PTR)CONN_CLOSE, GetModuleHandleW(NULL), NULL);
+        for (HWND child = GetWindow(hwnd, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT))
+            SendMessageW(child, WM_SETFONT, (WPARAM)font, FALSE);
         ListView_SetExtendedListViewStyle(connections_list, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_LABELTIP);
-        column.pszText = L"Name"; column.cx = 220; ListView_InsertColumn(connections_list, 0, &column);
-        column.pszText = L"Type"; column.cx = 95; ListView_InsertColumn(connections_list, 1, &column);
-        column.pszText = L"Device"; column.cx = 90; ListView_InsertColumn(connections_list, 2, &column);
-        column.pszText = L"Status"; column.cx = 100; ListView_InsertColumn(connections_list, 3, &column);
+        /* XP's folder columns */
+        column.pszText = text;
+        xp_text(L"netshell.dll", 1000, L"Name", text, ARRAYSIZE(text));
+        column.cx = 200; ListView_InsertColumn(connections_list, 0, &column);
+        xp_text(L"netshell.dll", 1001, L"Type", text, ARRAYSIZE(text));
+        column.cx = 150; ListView_InsertColumn(connections_list, 1, &column);
+        xp_text(L"netshell.dll", 1003, L"Device Name", text, ARRAYSIZE(text));
+        column.cx = 90; ListView_InsertColumn(connections_list, 2, &column);
+        xp_text(L"netshell.dll", 1002, L"Status", text, ARRAYSIZE(text));
+        column.cx = 90; ListView_InsertColumn(connections_list, 3, &column);
         connection_images = ImageList_Create(16, 16, ILC_COLOR32 | ILC_MASK, 4, 0);
         if (connection_images)
         {
@@ -1405,7 +1589,6 @@ static LRESULT CALLBACK connections_proc(HWND hwnd, UINT message, WPARAM wparam,
             show_network_status();
             return 0;
         case CONN_SETTINGS: run_settings(CMD_NETWORK_SETTINGS); return 0;
-        case CONN_REFRESH: connections_refresh(); return 0;
         case CONN_CLOSE: DestroyWindow(hwnd); return 0;
         }
         break;
@@ -1435,8 +1618,10 @@ static void show_network_connections(void)
         SetForegroundWindow(connections_window);
         return;
     }
+    WCHAR title[64];
     if (!GetClassInfoW(instance, CONNECTIONS_CLASS, &cls) && !RegisterClassW(&cls)) return;
-    connections_window = CreateWindowExW(WS_EX_DLGMODALFRAME, CONNECTIONS_CLASS, L"Network Connections",
+    xp_text(L"netshell.dll", 1060, L"Network Connections", title, ARRAYSIZE(title));
+    connections_window = CreateWindowExW(WS_EX_DLGMODALFRAME, CONNECTIONS_CLASS, title,
         WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 600, 410,
         NULL, NULL, instance, NULL);
     if (connections_window)
@@ -1476,15 +1661,35 @@ static void wireless_layout(HWND hwnd, int width, int height)
     MoveWindow(GetDlgItem(hwnd, WIFI_TASKS), 0, 0, 155, height, TRUE);
     MoveWindow(GetDlgItem(hwnd, 610), 164, 2, width - 174, 23, TRUE);
     MoveWindow(GetDlgItem(hwnd, 611), 164, 36, width - 174, 27, TRUE);
-    MoveWindow(wireless_list, 164, 64, width - 174, height - 100, TRUE);
-    MoveWindow(wireless_hint, 164, height - 28, width - 250, 24, TRUE);
-    MoveWindow(wireless_connect_button, width - 72, height - 29, 64, 22, TRUE);
+    MoveWindow(wireless_list, 164, 64, width - 174, height - 136, TRUE);
+    MoveWindow(wireless_hint, 164, height - 66, width - 260, 60, TRUE);
+    MoveWindow(wireless_connect_button, width - 90, height - 31, 80, 24, TRUE);
+}
+
+static void wireless_hint_text(const WCHAR *file, UINT id, const WCHAR *fallback)
+{
+    WCHAR text[512];
+    xp_text(file, id, fallback, text, ARRAYSIZE(text));
+    SetWindowTextW(wireless_hint, text);
+}
+
+static NMWIRELESS *wireless_selected(void)
+{
+    int row = (int)SendMessageW(wireless_list, LB_GETCURSEL, 0, 0);
+    LRESULT item = row == LB_ERR ? -1 : SendMessageW(wireless_list, LB_GETITEMDATA, row, 0);
+    return item >= 0 && (unsigned)item < wireless_count ? &wireless_networks[item] : NULL;
 }
 
 static void wireless_update_button(void)
 {
     int selected = (int)SendMessageW(wireless_list, LB_GETCURSEL, 0, 0);
-    EnableWindow(wireless_connect_button, selected != LB_ERR && selected < (int)wireless_count);
+    NMWIRELESS *network = wireless_selected();
+    WCHAR text[64];
+    /* XP's button disconnects the network it is connected to. */
+    if (network && network->active) xp_text(L"xpsp2res.dll", 16051, L"&Disconnect", text, ARRAYSIZE(text));
+    else xp_dialog_text(L"xpsp2res.dll", 6999, 2010, L"&Connect", text, ARRAYSIZE(text));
+    SetWindowTextW(wireless_connect_button, text);
+    EnableWindow(wireless_connect_button, network && !wireless_connect_started);
     int count = (int)SendMessageW(wireless_list, LB_GETCOUNT, 0, 0);
     for (int i = 0; i < count; i++)
         SendMessageW(wireless_list, LB_SETITEMHEIGHT, i, i == selected ? 114 : 48);
@@ -1501,6 +1706,7 @@ static void wireless_refresh(void)
     char output[16384], *context, *line;
     WCHAR previous[128] = L"";
     int previous_row = (int)SendMessageW(wireless_list, LB_GETCURSEL, 0, 0), preferred = -1;
+    BOOL listed = wireless_count > 0;
     if (!wireless_list) return;
     if (previous_row != LB_ERR)
     {
@@ -1520,7 +1726,7 @@ static void wireless_refresh(void)
                  output, sizeof(output)))
     {
         SendMessageW(wireless_list, LB_RESETCONTENT, 0, 0);
-        SetWindowTextW(wireless_hint, L"NetworkManager is unavailable. Open Settings to manage network access.");
+        SetWindowTextW(wireless_hint, nmcli_missing());
         wireless_update_button();
         return;
     }
@@ -1590,34 +1796,186 @@ static void wireless_refresh(void)
     {
         if (preferred < 0) preferred = 0;
         SendMessageW(wireless_list, LB_SETCURSEL, preferred, 0);
-        SetWindowTextW(wireless_hint, L"");
+        /* The search's words go once there is a list; a connection's stay. */
+        if (!listed) SetWindowTextW(wireless_hint, L"");
     }
-    else SetWindowTextW(wireless_hint, L"No wireless networks found. Check the adapter and refresh the list.");
+    else if (GetTickCount64() - wireless_opened > 6000)
+        wireless_hint_text(L"xpsp2res.dll", 16102, L"No wireless networks were found in range");
     wireless_update_button();
     InvalidateRect(wireless_list, NULL, TRUE);
 }
 
+/* XP's network key dialog: the key, typed twice. */
+static INT_PTR CALLBACK network_key_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    WCHAR *key = (WCHAR *)GetWindowLongPtrW(dialog, DWLP_USER), confirm[128], text[512], format[512];
+    switch (message)
+    {
+    case WM_INITDIALOG:
+        SetWindowLongPtrW(dialog, DWLP_USER, lparam);
+        GetDlgItemTextW(dialog, 2005, format, ARRAYSIZE(format));
+        insert_text(format, wireless_connect_ssid, text, ARRAYSIZE(text));
+        SetDlgItemTextW(dialog, 2005, text);
+        SendDlgItemMessageW(dialog, 2007, EM_LIMITTEXT, 127, 0);
+        SendDlgItemMessageW(dialog, 2012, EM_LIMITTEXT, 127, 0);
+        SetForegroundWindow(dialog);
+        return TRUE;
+    case WM_COMMAND:
+        if (LOWORD(wparam) == 2007 && HIWORD(wparam) == EN_CHANGE)
+        {
+            /* The confirmation opens once there is a key to confirm. */
+            BOOL typed = GetWindowTextLengthW(GetDlgItem(dialog, 2007)) > 0;
+            EnableWindow(GetDlgItem(dialog, 2011), typed);
+            EnableWindow(GetDlgItem(dialog, 2012), typed);
+        }
+        else if (LOWORD(wparam) == IDCANCEL) EndDialog(dialog, IDCANCEL);
+        else if (LOWORD(wparam) == IDOK)
+        {
+            GetDlgItemTextW(dialog, 2007, key, 128);
+            GetDlgItemTextW(dialog, 2012, confirm, ARRAYSIZE(confirm));
+            if (!*key) return TRUE;
+            if (wcscmp(key, confirm))
+            {
+                xp_text(L"xpsp2res.dll", 16031, L"The passwords entered do not match.", text, ARRAYSIZE(text));
+                GetWindowTextW(dialog, format, ARRAYSIZE(format));
+                MessageBoxW(dialog, text, format, MB_OK | MB_ICONEXCLAMATION);
+                SetDlgItemTextW(dialog, 2012, L"");
+                SetFocus(GetDlgItem(dialog, 2012));
+            }
+            else EndDialog(dialog, IDOK);
+            SecureZeroMemory(confirm, sizeof(confirm));
+        }
+        return TRUE;
+    }
+    return FALSE;
+}
+
+/* KEY, for a script to read, in a new file in the user's own runtime
+ * directory (/run/user/UID, which only they can enter): Wine gives a Linux
+ * program neither its Windows environment nor its standard input, and keeps
+ * XDG_RUNTIME_DIR from Windows programs. */
+static BOOL write_key_file(const WCHAR *key, WCHAR *file, WCHAR *unix_file)
+{
+    char text[512], *uid;
+    DWORD done;
+    HANDLE handle;
+    int size;
+    handle = CreateFileW(L"Z:\\proc\\self\\status", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    if (handle == INVALID_HANDLE_VALUE) return FALSE;
+    ReadFile(handle, text, sizeof(text) - 1, &done, NULL);
+    CloseHandle(handle);
+    text[done] = 0;
+    if (!(uid = strstr(text, "\nUid:"))) return FALSE;
+    swprintf(unix_file, MAX_PATH, L"/run/user/%lu/xptray-key-%lu-%llu", strtoul(uid + 5, NULL, 10),
+             GetCurrentProcessId(), GetTickCount64());
+    swprintf(file, MAX_PATH, L"Z:%ls", unix_file);
+    for (WCHAR *p = file; *p; p++)
+        if (*p == '/') *p = '\\';
+    size = WideCharToMultiByte(CP_UTF8, 0, key, -1, text, sizeof(text) - 1, NULL, NULL);
+    if (size <= 0) return FALSE;
+    text[size - 1] = '\n';
+    handle = CreateFileW(file, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        SecureZeroMemory(text, sizeof(text));
+        return FALSE;
+    }
+    WriteFile(handle, text, size, &done, NULL);
+    CloseHandle(handle);
+    SecureZeroMemory(text, sizeof(text));
+    return done == (DWORD)size;
+}
+
+/* Whether NetworkManager has a saved profile for SSID (with its key). */
+static BOOL wireless_known(const WCHAR *ssid)
+{
+    char output[4096], wanted[512], *context, *line;
+    if (!capture(L"for u in $(nmcli -t -g UUID,TYPE connection show 2>/dev/null | sed -n 's/:802-11-wireless$//p'); "
+                 L"do nmcli --escape no -g 802-11-wireless.ssid connection show uuid \"$u\" 2>/dev/null; done",
+                 output, sizeof(output)))
+        return FALSE;
+    WideCharToMultiByte(CP_UTF8, 0, ssid, -1, wanted, sizeof(wanted), NULL, NULL);
+    for (line = strtok_s(output, "\r\n", &context); line; line = strtok_s(NULL, "\r\n", &context))
+        if (!strcmp(line, wanted)) return TRUE;
+    return FALSE;
+}
+
 static void wireless_connect_selected(void)
 {
-    int row = (int)SendMessageW(wireless_list, LB_GETCURSEL, 0, 0);
-    LRESULT item;
-    WCHAR ssid[512], bssid[128], script[1200];
-    if (row == LB_ERR) return;
-    item = SendMessageW(wireless_list, LB_GETITEMDATA, row, 0);
-    if (item < 0 || (unsigned)item >= wireless_count) return;
-    wcscpy(wireless_connect_ssid, wireless_networks[item].ssid);
-    shell_quote_w(wireless_networks[item].ssid, ssid, ARRAYSIZE(ssid));
-    shell_quote_w(wireless_networks[item].bssid, bssid, ARRAYSIZE(bssid));
-    swprintf(script, ARRAYSIZE(script), L"nmcli --wait 20 device wifi connect %ls bssid %ls >/dev/null 2>&1",
-             ssid, bssid);
-    if (!spawn(script, NULL))
+    NMWIRELESS *network = wireless_selected();
+    WCHAR ssid[512], bssid[128], script[1600], key[128], text[512], title[128];
+    BOOL started;
+    if (!network || wireless_connect_started) return;
+    wcscpy(wireless_connect_ssid, network->ssid);
+    shell_quote_w(network->ssid, ssid, ARRAYSIZE(ssid));
+    shell_quote_w(network->bssid, bssid, ARRAYSIZE(bssid));
+    if (network->active)
     {
-        SetWindowTextW(wireless_hint, L"NetworkManager could not start the connection request.");
+        /* XP asks before it disconnects. */
+        WCHAR format[512];
+        HMODULE module = xp_module(L"xpsp2res.dll");
+        if (!module || !LoadStringW(module, 16075, format, ARRAYSIZE(format)))
+            wcscpy(format, L"Are you sure you wish to disconnect from the network '%s'?");
+        insert_text(format, network->ssid, text, ARRAYSIZE(text));
+        GetWindowTextW(wireless_window, title, ARRAYSIZE(title));
+        if (MessageBoxW(wireless_window, text, title, MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+        swprintf(script, ARRAYSIZE(script), L"nmcli connection down id %ls >/dev/null 2>&1", ssid);
+        spawn(script, NULL);
+        SetTimer(wireless_window, TIMER_WIRELESS, 1500, NULL);
+        return;
+    }
+    if (!network->secured || wireless_known(network->ssid))
+    {
+        swprintf(script, ARRAYSIZE(script), L"nmcli --wait 20 device wifi connect %ls bssid %ls >/dev/null 2>&1",
+                 ssid, bssid);
+        started = spawn(script, NULL);
+    }
+    else if (wcsstr(network->security, L"802.1X"))
+    {
+        /* An enterprise network needs more than a key: NetworkManager's own settings. */
+        run_settings(CMD_NETWORK_SETTINGS);
+        return;
+    }
+    else
+    {
+        /* A new protected network: XP's network key dialog. NetworkManager
+         * gets the key on its standard input, never on a command line, keeps
+         * it in a new profile when it connects, and the profile goes again
+         * when it does not. */
+        WCHAR key_file[MAX_PATH], unix_file[MAX_PATH], quoted_file[MAX_PATH + 8];
+        const WCHAR *method = wcsstr(network->security, L"WPA1") || wcsstr(network->security, L"WPA2")
+                              ? L"wpa-psk" : wcsstr(network->security, L"WPA3") ? L"sae" : L"none";
+        const WCHAR *secret = !wcscmp(method, L"none") ? L"802-11-wireless-security.wep-key0"
+                                                       : L"802-11-wireless-security.psk";
+        if (DialogBoxParamW(xp_module(L"xpsp2res.dll"), MAKEINTRESOURCEW(7200), wireless_window, network_key_proc,
+                            (LPARAM)key) != IDOK)
+            return;
+        started = write_key_file(key, key_file, unix_file);
+        SecureZeroMemory(key, sizeof(key));
+        if (!started) return;
+        shell_quote_w(unix_file, quoted_file, ARRAYSIZE(quoted_file));
+        swprintf(script, ARRAYSIZE(script),
+                 L"f=%ls; IFS= read -r k < \"$f\"; rm -f \"$f\"; "
+                 L"u=$(cat /proc/sys/kernel/random/uuid) && "
+                 L"nmcli connection add type wifi con-name %ls ssid %ls connection.uuid \"$u\" "
+                 L"connection.autoconnect no wifi-sec.key-mgmt %ls%ls >/dev/null 2>&1 && "
+                 L"if printf '%%s:%%s\\n' %ls \"$k\" | "
+                 L"nmcli --wait 20 connection up uuid \"$u\" passwd-file /dev/stdin >/dev/null 2>&1; "
+                 L"then nmcli connection modify uuid \"$u\" connection.autoconnect yes; "
+                 L"else nmcli connection delete uuid \"$u\"; fi >/dev/null 2>&1",
+                 quoted_file, ssid, ssid, method, !wcscmp(method, L"none") ? L" wifi-sec.wep-key-type 1" : L"",
+                 secret);
+        started = spawn(script, NULL);
+        if (!started) DeleteFileW(key_file);
+    }
+    if (!started)
+    {
+        SetWindowTextW(wireless_hint, nmcli_missing());
         return;
     }
     wireless_connect_started = GetTickCount64();
-    SetWindowTextW(wireless_hint, L"Connecting to the selected wireless network...");
-    EnableWindow(wireless_connect_button, FALSE);
+    wireless_hint_text(L"xpsp2res.dll", 16081, L"Connecting...");
+    wireless_update_button();
     SetTimer(wireless_window, TIMER_WIRELESS_CONNECT, 1500, NULL);
 }
 
@@ -1687,9 +2045,8 @@ static int wireless_task_at(POINT point)
     if (point.x < 7 || point.x >= 146) return 0;
     if (point.y >= 34 && point.y < 62) return WIFI_REFRESH;
     if (point.y >= 68 && point.y < 105) return WIFI_SETTINGS;
-    if (point.y >= 141 && point.y < 174) return WIFI_HELP;
+    if (point.y >= 141 && point.y < 174) return WIFI_SETTINGS;
     if (point.y >= 176 && point.y < 210) return WIFI_SETTINGS;
-    if (point.y >= 211 && point.y < 248) return WIFI_SETTINGS;
     return 0;
 }
 
@@ -1703,14 +2060,22 @@ static void wireless_draw_tasks(const DRAWITEMSTRUCT *draw)
     SetBkMode(draw->hDC, TRANSPARENT);
     /* The Luna task-pane colors from XP's shellstyle.dll. */
     wireless_gradient(draw->hDC, draw->rcItem, RGB(123, 162, 231), RGB(99, 117, 214), FALSE);
-    wireless_task_card(draw->hDC, (RECT){7, 8, 146, 105}, L"Network Tasks", heading);
-    wireless_task_card(draw->hDC, (RECT){7, 117, 146, 248}, L"Related Tasks", heading);
+    /* The task pane's words from XP's dialog for this window */
+    static const struct { UINT id; const WCHAR *fallback; } texts[] = {
+        { 7003, L"Network Tasks" }, { 7010, L"Related Tasks" }, { 7004, L"Refresh network list" },
+        { 7019, L"Set up a wireless network for a home or small office" },
+        { 7011, L"Change the order of preferred networks" }, { 7017, L"Change advanced settings" },
+    };
+    WCHAR text[ARRAYSIZE(texts)][128];
+    for (unsigned i = 0; i < ARRAYSIZE(texts); i++)
+        xp_dialog_text(L"xpsp2res.dll", 6999, texts[i].id, texts[i].fallback, text[i], ARRAYSIZE(text[i]));
+    wireless_task_card(draw->hDC, (RECT){7, 8, 146, 105}, text[0], heading);
+    wireless_task_card(draw->hDC, (RECT){7, 117, 146, 213}, text[1], heading);
     SelectObject(draw->hDC, link);
-    wireless_task_link(draw->hDC, 2020, 36, 63, L"Refresh network list");
-    wireless_task_link(draw->hDC, 2003, 70, 102, L"Set up a wireless network\nfor a home or small office");
-    wireless_task_link(draw->hDC, 2024, 143, 173, L"Learn about wireless networking");
-    wireless_task_link(draw->hDC, 2022, 178, 209, L"Change the order of preferred networks");
-    wireless_task_link(draw->hDC, 2023, 213, 244, L"Change advanced settings");
+    wireless_task_link(draw->hDC, 2020, 36, 63, text[2]);
+    wireless_task_link(draw->hDC, 2003, 70, 102, text[3]);
+    wireless_task_link(draw->hDC, 2022, 143, 173, text[4]);
+    wireless_task_link(draw->hDC, 2023, 178, 209, text[5]);
     SelectObject(draw->hDC, old_font);
     DeleteObject(link); DeleteObject(heading);
 }
@@ -1746,17 +2111,30 @@ static void wireless_draw_row(const DRAWITEMSTRUCT *draw)
         if (lock) DrawIconEx(draw->hDC, text.left, text.top - 2, lock, 16, 16, 0, NULL, DI_NORMAL);
         text.left += 18;
     }
-    WCHAR detail[112];
+    WCHAR detail[160], kind[96];
     if (network->secured)
-        swprintf(detail, ARRAYSIZE(detail), L"Security-enabled wireless network (%ls)", network->security);
-    else wcscpy(detail, L"Unsecured wireless network");
+    {
+        xp_text(L"xpsp2res.dll", 16060, L"Security-enabled wireless network", kind, ARRAYSIZE(kind));
+        swprintf(detail, ARRAYSIZE(detail), L"%ls (%ls)", kind, network->security);
+    }
+    else xp_text(L"xpsp2res.dll", 16062, L"Unsecured wireless network", detail, ARRAYSIZE(detail));
     DrawTextW(draw->hDC, detail, -1, &text, DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
     if (selected)
     {
         text = (RECT){rect.left + 50, rect.top + 51, rect.right - 30, rect.bottom - 9};
-        const WCHAR *help = network->active ? L"You are currently connected to this network." :
-            network->secured ? L"This network requires a network key. If you want to connect to this network, click Connect." :
-                               L"This network is not secured. If you want to connect to this network, click Connect.";
+        WCHAR help[512], connect[256];
+        if (network->active)
+            xp_text(L"xpsp2res.dll", 16090, L"You are currently connected to this network.", help, ARRAYSIZE(help));
+        else
+        {
+            if (network->secured)
+                xp_text(L"xpsp2res.dll", 16016, L"This network requires a network key.", help, ARRAYSIZE(help));
+            else xp_text(L"xpsp2res.dll", 16015, L"This network is configured for open access.", help, ARRAYSIZE(help));
+            xp_text(L"xpsp2res.dll", 16089, L"If you want to connect to this network, click Connect.", connect,
+                    ARRAYSIZE(connect));
+            wcsncat(help, L" ", ARRAYSIZE(help) - wcslen(help) - 1);
+            wcsncat(help, connect, ARRAYSIZE(help) - wcslen(help) - 1);
+        }
         DrawTextW(draw->hDC, help, -1, &text, DT_WORDBREAK | DT_NOPREFIX);
     }
     SelectObject(draw->hDC, old_font); DeleteObject(title);
@@ -1775,18 +2153,23 @@ static LRESULT CALLBACK wireless_proc(HWND hwnd, UINT message, WPARAM wparam, LP
         wireless_text_font = CreateFontW(-10, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Tahoma");
         HFONT font = wireless_text_font ? wireless_text_font : (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        WCHAR title[128], text[512];
         CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_OWNERDRAW | SS_NOTIFY,
             0, 0, 150, 400, hwnd, (HMENU)(INT_PTR)WIFI_TASKS, GetModuleHandleW(NULL), NULL);
-        CreateWindowW(L"STATIC", L"Choose a wireless network", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        xp_dialog_text(L"xpsp2res.dll", 6999, 2002, L"Choose a wireless network", title, ARRAYSIZE(title));
+        CreateWindowW(L"STATIC", title, WS_CHILD | WS_VISIBLE | SS_LEFT,
             164, 12, 400, 24, hwnd, (HMENU)(INT_PTR)610, GetModuleHandleW(NULL), NULL);
-        CreateWindowW(L"STATIC", L"Click an item in the list below to connect to a wireless network in range or to get more information.",
+        xp_dialog_text(L"xpsp2res.dll", 6999, 2003, L"Click an item in the list below to connect to a &wireless "
+                       L"network in range or to get more information.", text, ARRAYSIZE(text));
+        CreateWindowW(L"STATIC", text,
             WS_CHILD | WS_VISIBLE | SS_LEFT, 164, 39, 400, 42, hwnd, (HMENU)(INT_PTR)611, GetModuleHandleW(NULL), NULL);
         wireless_list = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_OWNERDRAWVARIABLE | LBS_HASSTRINGS | LBS_NOINTEGRALHEIGHT,
             160, 88, 400, 240, hwnd, (HMENU)(INT_PTR)WIFI_LIST, GetModuleHandleW(NULL), NULL);
-        wireless_hint = CreateWindowW(L"STATIC", L"Reading available wireless networks...",
+        xp_text(L"xpsp2res.dll", 16101, L"Searching for wireless networks in range...", text, ARRAYSIZE(text));
+        wireless_hint = CreateWindowW(L"STATIC", text,
             WS_CHILD | WS_VISIBLE | SS_LEFT, 160, 340, 400, 24, hwnd, NULL, GetModuleHandleW(NULL), NULL);
-        wireless_connect_button = CreateWindowW(L"BUTTON", L"&Connect", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        wireless_connect_button = CreateWindowW(L"BUTTON", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
             460, 370, 92, 26, hwnd, (HMENU)(INT_PTR)WIFI_CONNECT, GetModuleHandleW(NULL), NULL);
         for (int id = 610; id <= 611; id++) SendMessageW(GetDlgItem(hwnd, id), WM_SETFONT, (WPARAM)font, TRUE);
         wireless_title_font = CreateFontW(-14, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
@@ -1799,6 +2182,7 @@ static LRESULT CALLBACK wireless_proc(HWND hwnd, UINT message, WPARAM wparam, LP
         RECT client;
         GetClientRect(hwnd, &client);
         wireless_layout(hwnd, client.right, client.bottom);
+        wireless_opened = GetTickCount64();
         wireless_refresh();
         spawn(L"nmcli device wifi rescan >/dev/null 2>&1", NULL);
         SetTimer(hwnd, TIMER_WIRELESS, 2000, NULL);
@@ -1826,17 +2210,26 @@ static LRESULT CALLBACK wireless_proc(HWND hwnd, UINT message, WPARAM wparam, LP
         }
         else if (wparam == TIMER_WIRELESS_CONNECT)
         {
-            poll_network(TRUE);
-            if (net_ssid[0] && !wcscmp(net_ssid, wireless_connect_ssid))
+            BOOL connected = FALSE;
+            /* Connected once NetworkManager uses the network (a wired
+             * connection may still carry the default route). */
+            wireless_refresh();
+            for (unsigned i = 0; i < wireless_count; i++)
+                if (wireless_networks[i].active && !wcscmp(wireless_networks[i].ssid, wireless_connect_ssid))
+                    connected = TRUE;
+            if (connected)
             {
                 KillTimer(hwnd, TIMER_WIRELESS_CONNECT);
-                SetWindowTextW(wireless_hint, L"Connected to the selected wireless network.");
-                wireless_refresh();
+                wireless_connect_started = 0;
+                wireless_hint_text(L"xpsp2res.dll", 16083, L"Connected!");
+                wireless_update_button();
+                poll_network(TRUE);
             }
-            else if (GetTickCount64() - wireless_connect_started > 25000)
+            else if (GetTickCount64() - wireless_connect_started > 30000)
             {
                 KillTimer(hwnd, TIMER_WIRELESS_CONNECT);
-                SetWindowTextW(wireless_hint, L"Connection did not complete. Check the saved password in Settings.");
+                wireless_connect_started = 0;
+                wireless_hint_text(L"xpsp2res.dll", 16071, L"Windows is unable to connect to the selected network.");
                 wireless_update_button();
             }
         }
@@ -1864,11 +2257,6 @@ static LRESULT CALLBACK wireless_proc(HWND hwnd, UINT message, WPARAM wparam, LP
             SetTimer(hwnd, TIMER_WIRELESS, 2000, NULL);
             return 0;
         case WIFI_SETTINGS: run_settings(CMD_NETWORK_SETTINGS); return 0;
-        case WIFI_HELP:
-            MessageBoxW(hwnd, L"Select a wireless network and click Connect. A padlock marks a secured network. "
-                        L"The signal bars show how strongly your computer receives that network.",
-                        L"Wireless networking", MB_OK | MB_ICONINFORMATION);
-            return 0;
         }
         break;
     case WM_SETCURSOR:
@@ -1896,6 +2284,7 @@ static LRESULT CALLBACK wireless_proc(HWND hwnd, UINT message, WPARAM wparam, LP
         wireless_text_font = NULL;
         wireless_window = wireless_list = wireless_hint = wireless_connect_button = NULL;
         wireless_count = 0;
+        wireless_connect_started = 0;
         return 0;
     }
     return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -1913,9 +2302,11 @@ static void show_wireless_networks(void)
         SetForegroundWindow(wireless_window);
         return;
     }
+    WCHAR title[128];
     if (!GetClassInfoW(instance, WIRELESS_CLASS, &cls) && !RegisterClassW(&cls)) return;
-    wireless_window = CreateWindowExW(WS_EX_DLGMODALFRAME, WIRELESS_CLASS, L"Wireless Network Connection",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 550, 420,
+    xp_dialog_text(L"xpsp2res.dll", 6999, -1, L"Wireless Network Connection", title, ARRAYSIZE(title));
+    wireless_window = CreateWindowExW(WS_EX_DLGMODALFRAME, WIRELESS_CLASS, title,
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, CW_USEDEFAULT, CW_USEDEFAULT, 550, 456,
         NULL, NULL, instance, NULL);
     if (wireless_window)
     {
@@ -1953,34 +2344,41 @@ static void context_menu(UINT id)
     HMENU menu = CreatePopupMenu();
     POINT cursor;
     UINT command;
+    WCHAR text[128];
+    /* The items of XP's own menus for these icons */
     if (id == ID_VOLUME)
     {
-        AppendMenuW(menu, MF_STRING, CMD_MIXER, L"&Open Volume Control");
-        AppendMenuW(menu, MF_STRING, CMD_SOUND, L"&Adjust Audio Properties");
+        xp_text(L"stobject.dll", 256, L"&Open Volume Control", text, ARRAYSIZE(text));
+        AppendMenuW(menu, MF_STRING, CMD_MIXER, text);
+        xp_text(L"stobject.dll", 255, L"&Adjust Audio Properties", text, ARRAYSIZE(text));
+        AppendMenuW(menu, MF_STRING, CMD_SOUND, text);
         SetMenuDefaultItem(menu, CMD_MIXER, FALSE);
     }
     else if (id == ID_NETWORK)
     {
-        AppendMenuW(menu, MF_STRING, CMD_STATUS, L"&Status");
-        AppendMenuW(menu, MF_STRING, CMD_NETWORK, L"&View Available Wireless Networks");
-        AppendMenuW(menu, MF_STRING, CMD_CONNECTIONS, L"Open &Network Connections");
+        xp_menu_text(L"netshell.dll", 15103, 3, L"&Status", text, ARRAYSIZE(text));
+        AppendMenuW(menu, MF_STRING, CMD_STATUS, text);
+        xp_menu_text(L"netshell.dll", 15103, 6, L"&View Available Wireless Networks", text, ARRAYSIZE(text));
+        AppendMenuW(menu, MF_STRING, CMD_NETWORK, text);
+        AppendMenuW(menu, MF_SEPARATOR, 0, NULL);
+        xp_menu_text(L"netshell.dll", 15103, 1, L"&Open Network Connections", text, ARRAYSIZE(text));
+        AppendMenuW(menu, MF_STRING, CMD_CONNECTIONS, text);
         SetMenuDefaultItem(menu, CMD_STATUS, FALSE);
     }
     else
     {
-        AppendMenuW(menu, MF_STRING, CMD_METER, L"Open &Power Meter");
-        AppendMenuW(menu, MF_STRING, CMD_POWER, L"&Adjust Power Properties");
+        xp_text(L"stobject.dll", 153, L"&Open Power Meter", text, ARRAYSIZE(text));
+        AppendMenuW(menu, MF_STRING, CMD_METER, text);
+        xp_text(L"stobject.dll", 152, L"&Adjust Power Properties", text, ARRAYSIZE(text));
+        AppendMenuW(menu, MF_STRING, CMD_POWER, text);
         SetMenuDefaultItem(menu, CMD_METER, FALSE);
     }
-    AppendMenuW(menu, MF_SEPARATOR, 0, NULL);
-    AppendMenuW(menu, MF_STRING, CMD_EXIT, L"E&xit notification icons");
     GetCursorPos(&cursor);
     SetForegroundWindow(window);
     command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, cursor.x, cursor.y, 0, window, NULL);
     PostMessageW(window, WM_NULL, 0, 0);
     DestroyMenu(menu);
-    if (command == CMD_EXIT) DestroyWindow(window);
-    else if (command == CMD_STATUS) show_network_status();
+    if (command == CMD_STATUS) show_network_status();
     else if (command == CMD_METER) show_power_meter();
     else if (command == CMD_CONNECTIONS) show_network_connections();
     else if (command == CMD_NETWORK) show_wireless_networks();
