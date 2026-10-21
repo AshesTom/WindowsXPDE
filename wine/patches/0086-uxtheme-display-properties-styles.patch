@@ -18,9 +18,9 @@ Scope: every Wine application (these were stubs or missing).
 ---
  dlls/uxtheme/msstyles.c   |  35 +++++--
  dlls/uxtheme/msstyles.h   |   1 +
- dlls/uxtheme/system.c     | 240 ++++++++++++++++++++++++++++++++++++++++++++++
+ dlls/uxtheme/system.c     | 257 ++++++++++++++++++++++++++++++++++++++++++++++
  dlls/uxtheme/uxtheme.spec |   7 +-
- 4 files changed, 270 insertions(+), 13 deletions(-)
+ 4 files changed, 287 insertions(+), 13 deletions(-)
 
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
 index 601b3d2..1b469c2 100644
@@ -107,7 +107,7 @@ index e0916bd..264014d 100644
  BOOL MSSTYLES_LookupProperty(LPCWSTR pszPropertyName, int *dwPrimitive, int *dwId);
  BOOL MSSTYLES_LookupEnum(LPCWSTR pszValueName, int dwEnum, int *dwValue);
 diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
-index 4eb7f9b..c498862 100644
+index 4eb7f9b..efaeca3 100644
 --- a/dlls/uxtheme/system.c
 +++ b/dlls/uxtheme/system.c
 @@ -891,6 +891,246 @@ HRESULT WINAPI GetThemeDocumentationProperty(LPCWSTR pszThemeName,
@@ -357,6 +357,37 @@ index 4eb7f9b..c498862 100644
  /**********************************************************************
   *      QueryThemeServices                                 (UXTHEME.1)
   *
+@@ -1032,6 +1272,22 @@ HRESULT WINAPI GetThemeDefaults(LPCWSTR pszThemeFileName, LPWSTR pszColorName,
+  *     Success: S_OK
+  *     Failure: HRESULT error-code
+  */
++/* Wine's own visual style (light.msstyles, a builtin file): XP's Display
++ * Properties in the XP shell's session lists XP's styles only. */
++static BOOL wine_builtin_style(const WCHAR *path)
++{
++    static const char signature[] = "Wine builtin DLL";
++    char header[0x40 + sizeof(signature)];
++    BOOL builtin = FALSE;
++    DWORD read;
++    HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, 0);
++    if (file == INVALID_HANDLE_VALUE) return FALSE;
++    if (ReadFile(file, header, sizeof(header), &read, NULL) && read == sizeof(header))
++        builtin = !memcmp(header + 0x40, signature, sizeof(signature) - 1);
++    CloseHandle(file);
++    return builtin;
++}
++
+ HRESULT WINAPI EnumThemes(LPCWSTR pszThemePath, EnumThemeProc callback,
+                           LPVOID lpData)
+ {
+@@ -1067,6 +1323,7 @@ HRESULT WINAPI EnumThemes(LPCWSTR pszThemePath, EnumThemeProc callback,
+             if(wfd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY
+                && !(wfd.cFileName[0] == '.' && ((wfd.cFileName[1] == '.' && wfd.cFileName[2] == 0) || wfd.cFileName[1] == 0))) {
+                 wsprintfW(szPath, L"%s%s\\%s.msstyles", szDir, wfd.cFileName, wfd.cFileName);
++                if (win4wine_shell() == WIN4WINE_SHELL_XP && wine_builtin_style(szPath)) continue;
+ 
+                 hr = GetThemeDocumentationProperty(szPath, L"displayname", szName, ARRAY_SIZE(szName));
+                 if(SUCCEEDED(hr))
 diff --git a/dlls/uxtheme/uxtheme.spec b/dlls/uxtheme/uxtheme.spec
 index 88e1dfe..7a56efb 100644
 --- a/dlls/uxtheme/uxtheme.spec

@@ -54,7 +54,7 @@ index 9095c57..b1204db 100644
          external_shell_paint_nonclient( hwnd, (HRGN)wparam );
          break;
 diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
-index c498862..500a60e 100644
+index efaeca3..5344272 100644
 --- a/dlls/uxtheme/system.c
 +++ b/dlls/uxtheme/system.c
 @@ -55,6 +55,9 @@ static BOOL bThemeActive = FALSE;

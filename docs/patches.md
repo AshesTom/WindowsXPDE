@@ -152,7 +152,7 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 | 0083 | uxtheme, user32: Luna の枠とテーマの部品を、少ない転送で描く。8・24 bpp のテーマ画像を 32 bpp で持つ、0073 で拡大縮小した色キー付きの部品を窓の DC には AlphaBlend 1 回で描く、大きさだけ変わったときに枠を二度描かない、Luna の caption の下にクラシックの caption を描かない（窓の大きさを変えるときに、枠を描く回数がおよそ 2 倍に。画素は変わりません） | あり |
 | 0084 | uxtheme: DrawThemeParentBackground で、親の背景を子の窓の位置に描く（範囲は切り抜きにだけ使う。XP と同じ。フォルダの窓のツールバーで、状態の変わったボタンだけを描き直すと、無効になった「移動」「コピー」の背景が黒くなった） | なし |
 | 0085 | uxtheme: ClassicGetSystemMetrics、ClassicSystemParametersInfoA/W、ClassicAdjustWindowRectEx、GetThemeSysSize96、GetThemeSysFont96（XP の画面のプロパティの themeui.dll が序数で使う）（AshesTom） | なし |
-| 0086 | uxtheme: OpenThemeDataFromFile（動いていないテーマのファイルのクラス）、SetSystemVisualStyle、DrawNCPreview（画面のプロパティの見本。文字は呼んだ themeui.dll の言語で、タイトルはスタイルのタイトルの文字色）、GetThemeParseErrorInfo。XP の画面のプロパティでスタイルを選んで見て、適用できる（AshesTom） | なし |
+| 0086 | uxtheme: OpenThemeDataFromFile（動いていないテーマのファイルのクラス）、SetSystemVisualStyle、DrawNCPreview（画面のプロパティの見本。文字は呼んだ themeui.dll の言語で、タイトルはスタイルのタイトルの文字色）、GetThemeParseErrorInfo。XP の画面のプロパティでスタイルを選んで見て、適用できる。XP のセッションでは Wine 自身の Light のスタイルを一覧に出さない（AshesTom） | なし |
 | 0087 | uxtheme, user32: 外部シェルで、テーマを変えたときにほかのプロセスもテーマを読み直す（ThemeManager のレジストリの変更を見て、WM_THEMECHANGED で枠を描き直す）。XP の画面のプロパティで適用したスタイルが、タスクバーやフォルダの窓にもすぐ反映される（AshesTom） | あり |
 
 ### Wayland のセッション（0088〜0089）

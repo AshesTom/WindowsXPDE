@@ -29,7 +29,7 @@ with WIN4WINE_EXTERNAL_SHELL.
  3 files changed, 34 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
-index 500a60e..b7b4840 100644
+index 5344272..92779f2 100644
 --- a/dlls/uxtheme/system.c
 +++ b/dlls/uxtheme/system.c
 @@ -859,8 +859,22 @@ HRESULT WINAPI SetWindowTheme(HWND hwnd, LPCWSTR pszSubAppName,
