@@ -17,6 +17,7 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <shellapi.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -525,17 +526,34 @@ static void poll_network(BOOL detail)
 
 /* ---- Icons -------------------------------------------------------------- */
 
-static const WCHAR *signal_words(int signal)
+static HMODULE xp_module(const WCHAR *file);
+
+/* A string of XP's FILE in the user's language, formatted as XP formats it
+ * (FormatMessage inserts: %1!s!, %1!u!), or FALLBACK in the same form. */
+static void xp_text(const WCHAR *file, UINT id, const WCHAR *fallback, WCHAR *out, int size, ...)
 {
-    return signal >= 80 ? L"Excellent" : signal >= 60 ? L"Very good" : signal >= 40 ? L"Good"
-         : signal >= 20 ? L"Low" : L"Very low";
+    WCHAR format[256];
+    HMODULE module = xp_module(file);
+    va_list args;
+    if (!module || !LoadStringW(module, id, format, ARRAYSIZE(format))) lstrcpynW(format, fallback, ARRAYSIZE(format));
+    va_start(args, size);
+    if (!FormatMessageW(FORMAT_MESSAGE_FROM_STRING, format, 0, 0, out, size, &args)) lstrcpynW(out, format, size);
+    va_end(args);
+}
+
+static void signal_words(int signal, WCHAR *out, int size)
+{
+    /* netshell's Very Low (2601) to Excellent (2605). */
+    static const WCHAR *words[] = { L"Very Low", L"Low", L"Good", L"Very Good", L"Excellent" };
+    int level = signal >= 80 ? 4 : signal >= 60 ? 3 : signal >= 40 ? 2 : signal >= 20 ? 1 : 0;
+    xp_text(L"netshell.dll", 2601 + level, words[level], out, size);
 }
 
 static void speed_text(WCHAR *out, size_t size)
 {
     if (net_speed >= 1000) swprintf(out, size, L"%.1f Gbps", net_speed / 1000.0);
     else if (net_speed > 0) swprintf(out, size, L"%d.0 Mbps", net_speed);
-    else wcscpy(out, L"Unknown");
+    else xp_text(L"netshell.dll", 1026, L"Unknown", out, size);
 }
 
 static void show_volume(void)
@@ -546,7 +564,9 @@ static void show_volume(void)
         set_icon(ID_VOLUME, FALSE, NULL, L"", NULL, NULL, 0);
         return;
     }
-    swprintf(tip, 64, muted ? L"Volume: muted" : L"Volume: %d%%", volume);
+    /* XP's tip names the control only (stobject's "Volume", "Volume (muted)"). */
+    if (muted) xp_text(L"stobject.dll", 258, L"Volume (muted)", tip, ARRAYSIZE(tip));
+    else xp_text(L"stobject.dll", 252, L"Volume", tip, ARRAYSIZE(tip));
     set_icon(ID_VOLUME, TRUE, xp_icon(muted || !volume ? 1 : 0), tip, NULL, NULL, 0);
     if (popup && IsWindowVisible(popup) && wanted_volume < 0)
     {
@@ -563,15 +583,22 @@ static void show_power(void)
         set_icon(ID_POWER, FALSE, NULL, L"", NULL, NULL, 0);
         return;
     }
-    if (on_ac && battery >= 99 && !charging) swprintf(tip, 128, L"Fully charged (100%%)");
-    else if (on_ac || charging) swprintf(tip, 128, L"%d%% remaining (charging)", battery);
-    else if (minutes_left > 0 && minutes_left < 60 * 24)
+    /* stobject's tips, as XP's power meter shows them. */
+    if (!on_ac && minutes_left > 0 && minutes_left < 60 * 24)
     {
         if (minutes_left >= 60)
-            swprintf(tip, 128, L"%d hr %d min (%d%%) remaining", minutes_left / 60, minutes_left % 60, battery);
-        else swprintf(tip, 128, L"%d min (%d%%) remaining", minutes_left, battery);
+            xp_text(L"stobject.dll", 162, L"%1!u!:%2!02u! hours (%3!u!%%) remaining", tip, ARRAYSIZE(tip),
+                    minutes_left / 60, minutes_left % 60, battery);
+        else xp_text(L"stobject.dll", 163, L"%1!u! min (%2!u!%%) remaining", tip, ARRAYSIZE(tip),
+                     minutes_left, battery);
     }
-    else swprintf(tip, 128, L"%d%% remaining", battery);
+    else xp_text(L"stobject.dll", 158, L"%1!u!%% remaining", tip, ARRAYSIZE(tip), battery);
+    if (charging)
+    {
+        WCHAR suffix[32];
+        xp_text(L"stobject.dll", 159, L" (charging)", suffix, ARRAYSIZE(suffix));
+        wcsncat(tip, suffix, ARRAYSIZE(tip) - wcslen(tip) - 1);
+    }
     if (!on_ac && !charging && battery <= 10 && !warned_low)
     {
         warned_low = 1;
@@ -586,8 +613,8 @@ static void show_power(void)
 static void show_network(void)
 {
     static int last_up = -2;
-    WCHAR tip[128], speed[32], info[256], title[64];
-    const WCHAR *name;
+    WCHAR tip[128], speed[32], speed_line[64], signal[32], signal_line[64], info[256], title[64], name[64];
+    WCHAR line[128];
     WCHAR directory[MAX_PATH];
     unsigned long long rx, tx;
     int index;
@@ -599,18 +626,27 @@ static void show_network(void)
         last_up = -2;
         return;
     }
-    name = net_wireless ? L"Wireless Network Connection" : L"Local Area Connection";
+    /* The texts are XP's own (netshell.dll, and xpsp2res.dll for wireless). */
+    if (net_wireless) xp_text(L"xpsp2res.dll", 16022, L"Wireless Network Connection", name, ARRAYSIZE(name));
+    else xp_text(L"netshell.dll", 1811, L"Local Area Connection", name, ARRAYSIZE(name));
     speed_text(speed, 32);
+    xp_text(L"netshell.dll", 2202, L"Speed: %1!s!", speed_line, ARRAYSIZE(speed_line), speed);
+    if (net_signal >= 0) signal_words(net_signal, signal, ARRAYSIZE(signal));
+    else xp_text(L"netshell.dll", 1026, L"Unknown", signal, ARRAYSIZE(signal));
+    xp_text(L"xpsp2res.dll", 16008, L"Signal Strength:", line, ARRAYSIZE(line));
+    swprintf(signal_line, ARRAYSIZE(signal_line), L"%ls %ls", line, signal);
     if (!net_up)
     {
         index = net_wireless ? 11 : 8;
-        swprintf(tip, 128, net_wireless ? L"%ls\nNot connected" : L"%ls\nA network cable is unplugged", name);
+        if (net_wireless) xp_text(L"xpsp2res.dll", 144, L"Not connected", line, ARRAYSIZE(line));
+        else xp_text(L"netshell.dll", 2201, L"A network cable is unplugged.", line, ARRAYSIZE(line));
+        swprintf(tip, 128, L"%ls\n%ls", name, line);
         if (last_up == 1)
         {
             balloon = TRUE;
             wcscpy(title, name);
-            wcscpy(info, net_wireless ? L"Wireless network connection is unavailable."
-                                      : L"A network cable is unplugged.");
+            if (net_wireless) xp_text(L"netshell.dll", 2208, L"Wireless connection unavailable", info, ARRAYSIZE(info));
+            else wcscpy(info, line);
         }
     }
     else
@@ -618,11 +654,8 @@ static void show_network(void)
         if (net_wireless)
         {
             index = net_limited ? 12 : 10;
-            if (net_ssid[0])
-                swprintf(tip, 128, L"%ls (%ls)\nSpeed: %ls\nSignal Strength: %ls", name, net_ssid, speed,
-                         signal_words(net_signal));
-            else swprintf(tip, 128, L"%ls\nSignal Strength: %ls", name, net_signal >= 0 ? signal_words(net_signal)
-                                                                                     : L"Unknown");
+            if (net_ssid[0]) swprintf(tip, 128, L"%ls (%ls)\n%ls\n%ls", name, net_ssid, speed_line, signal_line);
+            else swprintf(tip, 128, L"%ls\n%ls", name, signal_line);
         }
         else
         {
@@ -633,17 +666,25 @@ static void show_network(void)
             index = net_limited ? 9 : 4 + (rx_last && tx > tx_last ? 1 : 0) + (rx_last && rx > rx_last ? 2 : 0);
             rx_last = rx;
             tx_last = tx;
-            swprintf(tip, 128, L"%ls\nSpeed: %ls", name, speed);
+            swprintf(tip, 128, L"%ls\n%ls", name, speed_line);
         }
-        if (net_limited) wcsncat(tip, L"\nLimited or no connectivity", 127 - wcslen(tip));
+        if (net_limited)
+        {
+            xp_text(L"xpsp2res.dll", 142, L"Limited or no connectivity", line, ARRAYSIZE(line));
+            wcsncat(tip, L"\n", 127 - wcslen(tip));
+            wcsncat(tip, line, 127 - wcslen(tip));
+        }
         if (last_up == 0)
         {
             balloon = TRUE;
-            swprintf(title, 64, L"%ls is now connected", name);
+            xp_text(L"netshell.dll", 2223, L"%1 is now connected", title, ARRAYSIZE(title), name);
             if (net_wireless && net_ssid[0])
-                swprintf(info, 256, L"Connected to: %ls\nSpeed: %ls\nSignal Strength: %ls", net_ssid, speed,
-                         signal_words(net_signal));
-            else swprintf(info, 256, L"Speed: %ls", speed);
+            {
+                xp_text(L"netshell.dll", 2234, L"Connected to: %1!s!\r\nSignal Strength: %2!s!", line,
+                        ARRAYSIZE(line), net_ssid, signal);
+                swprintf(info, 256, L"%ls\n%ls", line, speed_line);
+            }
+            else wcscpy(info, speed_line);
         }
     }
     last_up = net_up;
@@ -653,8 +694,6 @@ static void show_network(void)
 /* XP SP2's Security Center alert (wscntfy.exe): Linux has no antivirus XP
  * would recognize, so, as on a fresh XP, the red shield says the computer
  * might be at risk, with its balloon once after logon. Texts from xpsp2res.dll. */
-static HMODULE xp_module(const WCHAR *file);
-
 static void xp_string(UINT id, WCHAR *out, int size, const WCHAR *fallback)
 {
     HMODULE module = xp_module(L"xpsp2res.dll");
@@ -713,9 +752,21 @@ static void run_settings(UINT command);
 
 static HMODULE xp_module(const WCHAR *file)
 {
+    /* Loaded once each: the tips read their strings every second. */
+    static struct { const WCHAR *file; HMODULE module; } loaded[8];
+    static unsigned count;
     WCHAR path[MAX_PATH];
+    HMODULE module;
+    for (unsigned i = 0; i < count; i++)
+        if (!wcscmp(loaded[i].file, file)) return loaded[i].module;
     swprintf(path, MAX_PATH, L"C:\\xp\\tray\\%ls", file);
-    return LoadLibraryExW(path, NULL, LOAD_LIBRARY_AS_DATAFILE);
+    module = LoadLibraryExW(path, NULL, LOAD_LIBRARY_AS_DATAFILE);
+    if (module && count < ARRAYSIZE(loaded))
+    {
+        loaded[count].file = file;
+        loaded[count++].module = module;
+    }
+    return module;
 }
 
 static void set_volume(int value)
