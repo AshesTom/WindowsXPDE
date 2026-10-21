@@ -278,6 +278,10 @@ if __name__ == '__main__':
     if args.wine:
         prepare(prefix, args.wine.resolve(strict=True))
     stage(prefix, args.wine.resolve(strict=True) if args.wine else None)
+    # XP Explorer's additions (prefix/extras.py): IE6, Display Properties, DirectUser...
+    import extras
+    if extras.state(prefix):
+        extras.stage(prefix)
     stage_media(prefix, args.wine.resolve(strict=True) if args.wine else None)
     stage_quick_launch(prefix)
     if args.wine:

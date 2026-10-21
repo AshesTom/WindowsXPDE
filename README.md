@@ -39,6 +39,14 @@ Windows 7 の ISO があれば、**Windows 7 のシェル**（Windows 7 ベー�
 - **Linux アプリとの統合**: Linux のウィンドウに XP の枠が付き、タスクバー、Alt+Tab、最小化・最大化が XP と同じように動きます。
   Linux のアプリは「すべてのプログラム」に並びます。
 - **通知領域**: Linux のトレイアイコン（StatusNotifierItem と XEmbed）が XP の通知領域に出ます。
+  XP 自身のネットワーク・バッテリー・音量のアイコンと、そのフライアウト（音量、電源メーター、ワイヤレス ネットワーク接続の状態）も
+  出ます。NetworkManager と PipeWire / PulseAudio の状態から作ります（XP Explorer から。[xp-explorer/](xp-explorer/README.md)）。
+- **XP Explorer からの追加**: フォルダの左のタスク ペイン、画面のプロパティ、画像の縮小版とプレビュー、XP のサウンド、
+  ネットワーク接続、Internet Explorer 6、Windows Media Player 9、スタートメニューの左の列（インターネット、電子メール、
+  よく使うプログラム）。どれもお手元の ISO のファイルで動きます（`prefix/extras.py`）。
+- **キーボードの配列**: 最初は Linux のシステムの配列（`localectl`）です。コントロール パネルの「地域と言語のオプション」→
+  「言語」→「詳細」（XP 自身のもの）で入力言語を足したり既定を変えたりすると、セッションの配列（Wayland では labwc、
+  X11 では setxkbmap）がすぐに従います。2 つ以上なら XP と同じ左 Alt+Shift で切り替わります（`session/keyboard.py`）。
 - **日本語入力**: fcitx5 + Mozc です。Ctrl+Space（または全角/半角）で切り替えます。GTK、Qt、Wine のアプリで使えます。
 - **日本語版と英語版の XP**: どちらの ISO でも動きます。言語は ISO から自動で判断し、字体（英語版は Tahoma など）、
   ロケール、ようこそ画面をその XP に合わせます（英語版では日本語入力は設定しません）。

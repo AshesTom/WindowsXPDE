@@ -144,6 +144,23 @@ else
     fi
 fi
 step() { printf '\n=== %s\n' "$*"; }
+# Japanese input (session.json "input_method": "fcitx5"), only for a Japanese
+# shell: the packages also start fcitx5 in the other desktops of the machine
+# (its autostart entry), where its own layout (us) replaces the desktop's.
+install_input_method() {
+    if [[ $distro == arch ]]; then
+        mapfile -t missing < <(pacman -T fcitx5 fcitx5-mozc fcitx5-gtk fcitx5-qt fcitx5-configtool || true)
+        ((${#missing[@]} == 0)) || sudo pacman -S --needed --noconfirm "${missing[@]}"
+    else
+        missing=()
+        for package in fcitx5 fcitx5-mozc fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 \
+                fcitx5-frontend-qt5 fcitx5-frontend-qt6 fcitx5-config-qt; do
+            dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing+=("$package")
+        done
+        ((${#missing[@]} == 0)) ||
+            sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+    fi
+}
 mkdir -p "$local"
 
 # The same packages on Arch Linux (pacman). Arch's display manager is the
@@ -161,10 +178,8 @@ arch_packages() {
         # extraction, prefix creation (xvfb-run is in xorg-server-xvfb)
         cabextract xorg-server-xvfb xorg-xauth
         # the session: X, the WM and tray bridge, recovery terminal, root cursor
-        xorg-server xorg-xsetroot xterm python python-xlib
+        xorg-server xorg-xsetroot xorg-setxkbmap xterm python python-xlib
         python-gobject glib2 gdk-pixbuf2 librsvg
-        # Japanese input (session.json "input_method": "fcitx5"); locale-gen is glibc's
-        fcitx5 fcitx5-mozc fcitx5-gtk fcitx5-qt fcitx5-configtool
     )
     # 7z: 7zip, unless p7zip (which conflicts with it) already gives one
     command -v 7z >/dev/null || packages+=(7zip)
@@ -214,11 +229,9 @@ else
         # extraction, prefix creation
         cabextract p7zip-full xvfb xauth
         # the session: X, the WM and tray bridge, recovery terminal, root cursor
-        xserver-xorg x11-xserver-utils xterm python3 python3-xlib
+        xserver-xorg x11-xserver-utils x11-xkb-utils xterm python3 python3-xlib
         python3-gi gir1.2-glib-2.0 gir1.2-gdkpixbuf-2.0 librsvg2-common
-        # Japanese input (session.json "input_method": "fcitx5")
-        locales fcitx5 fcitx5-mozc fcitx5-frontend-gtk3 fcitx5-frontend-gtk4
-        fcitx5-frontend-qt5 fcitx5-frontend-qt6 fcitx5-config-qt
+        locales
     )
     if [[ $wayland == yes ]]; then
         packages+=(
@@ -266,6 +279,7 @@ fi
 make_locale() {
     locale=ja_JP.UTF-8
     [[ $lang == ja ]] || locale=en_US.UTF-8
+    [[ $lang != ja ]] || install_input_method
     step "Locale $locale"
     if ! locale -a | grep -qix "${locale%.UTF-8}.utf8"; then
         sudo sed -i "s/^# *\\($locale UTF-8\\)/\\1/" /etc/locale.gen
@@ -329,6 +343,13 @@ if [[ $shell == xp ]]; then
         mkdir -p "$local/tmp"
         TMPDIR=$local/tmp python3 "$root/extract/extract.py" "$media" "$assets"
     fi
+    # Files that XP Explorer's additions brought, for an extraction made before them.
+    read -r -a added <<< "$(python3 "$root/extract/extract.py" --missing "$assets")"
+    if ((${#added[@]})); then
+        printf 'Adding %s to the extraction\n' "${added[*]}"
+        mkdir -p "$local/tmp"
+        TMPDIR=$local/tmp python3 "$root/extract/extract.py" "${added[@]/#/--only=}" "$media" "$assets"
+    fi
     lang=$(python3 "$root/extract/media.py" --warn "$assets")
     printf 'Windows XP in %s\n' "$([[ $lang == ja ]] && echo Japanese || echo English)"
     make_locale
@@ -368,6 +389,27 @@ if [[ $shell == xp ]]; then
             { tail -20 "$local/prefix.log" >&2; printf 'Setting the font smoothing failed; see .local/prefix.log\n' >&2; exit 1; }
         WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
         printf 'Font smoothing: %s\n' "$smoothing"
+    fi
+    # XP Explorer's additions (prefix/extras.py): the notification area's
+    # network, battery and volume icons, the folder task pane, Display
+    # Properties, XP's sounds, IE6, Windows Media Player, the Start menu's
+    # left column and Regional and Language Options, whose input languages
+    # start as the system's keyboard layout. Again when they change or after
+    # a Wine build.
+    if ! python3 "$root/prefix/extras.py" "$prefix" --check "$wine"; then
+        printf 'Adding the XP Explorer additions (log: .local/prefix.log)\n'
+        WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -k 2>/dev/null || true
+        xvfb-run -a -s '-screen 0 1280x800x24' bash -c '
+            python3 "$1/prefix/extras.py" "$2" --wine "$3" &&
+            python3 "$1/session/linux_apps.py" "$2" --wine "$3" &&
+            python3 "$1/xp-explorer/scripts/pins.py" "$2" --wine "$3"' _ "$root" "$prefix" "$wine" \
+            >> "$local/prefix.log" 2>&1 ||
+            { tail -20 "$local/prefix.log" >&2; printf 'The XP Explorer additions failed; see .local/prefix.log\n' >&2; exit 1; }
+        WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -k 2>/dev/null || true
+        WINEPREFIX=$prefix "$(dirname "$wine")/wineserver" -w 2>/dev/null || true
+        printf 'Added\n'
+    else
+        printf 'XP Explorer additions: up to date\n'
     fi
 elif [[ $shell == win7 ]]; then
     step 'Windows 7 files'

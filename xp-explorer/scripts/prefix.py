@@ -379,10 +379,11 @@ def set_dos_attributes(path, attributes):
         pass
 
 
-def xp_defaults(assets, prefix, wine):
+def xp_defaults(assets, prefix, wine, folders=True):
     """XP's own defaults for the shell, from the user's files: its sounds
     (Windows\\Media and HIVEDEF.INF's sound scheme), HIVESFT.INF's Explorer
-    settings, shimgvw.dll's image handlers and XP's folder icons."""
+    settings, shimgvw.dll's image handlers and XP's folder icons (FOLDERS:
+    win4wine's session marks its own folders, never the user's Linux ones)."""
     import xpreg
     media = assets / 'media'
     if media.is_dir():
@@ -470,7 +471,7 @@ def xp_defaults(assets, prefix, wine):
     # a desktop.ini (hidden, system) in a folder marked system. An existing
     # desktop.ini is left alone.
     home = prefix / f'drive_c/users/{USER}'
-    for folder, (name, icon_file, icon_index) in FOLDER_INIS.items():
+    for folder, (name, icon_file, icon_index) in FOLDER_INIS.items() if folders else ():
         path = (home / folder).resolve()
         if not path.is_dir():
             continue
