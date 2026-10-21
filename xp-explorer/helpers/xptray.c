@@ -353,12 +353,13 @@ static BOOL capture(const WCHAR *script, char *buffer, DWORD size)
 
 static void poll_volume(void)
 {
-    char out[256], *p;
-    if (!capture(L"if command -v wpctl >/dev/null; then wpctl get-volume @DEFAULT_AUDIO_SINK@; "
+    char out[1024], *p;
+    /* Their warnings (PipeWire's about RTKit) would come before the volume. */
+    if (!capture(L"if command -v wpctl >/dev/null; then wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null; "
                  L"elif command -v pactl >/dev/null; then "
-                 L"pactl get-sink-volume @DEFAULT_SINK@ | awk '/Volume/{gsub(\"%\",\"\",$5); "
+                 L"pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | awk '/Volume/{gsub(\"%\",\"\",$5); "
                  L"printf \"Volume: %.2f\", $5/100; exit}'; "
-                 L"pactl get-sink-mute @DEFAULT_SINK@ | grep -q yes && echo ' [MUTED]'; fi",
+                 L"pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | grep -q yes && echo ' [MUTED]'; fi",
                  out, sizeof(out)) || !(p = strstr(out, "Volume:")))
     {
         volume = -1;
@@ -823,7 +824,16 @@ static void show_popup(void)
 {
     static HMODULE sndvol;
     if (popup) return;
-    if (!sndvol) sndvol = xp_module(L"sndvol32.exe");
+    if (!sndvol)
+    {
+        /* The dialog names sndvol32's own window class, which sndvol32 registers
+         * when it runs: a dialog class here, global so the template finds it. */
+        WNDCLASSW tray_volume = {.style = CS_GLOBALCLASS, .lpfnWndProc = DefDlgProcW,
+                                 .cbWndExtra = DLGWINDOWEXTRA, .hInstance = GetModuleHandleW(NULL),
+                                 .hCursor = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW), .lpszClassName = L"Tray Volume"};
+        RegisterClassW(&tray_volume);
+        sndvol = xp_module(L"sndvol32.exe");
+    }
     if (sndvol) popup = CreateDialogParamW(sndvol, MAKEINTRESOURCEW(106), NULL, volume_proc, 0);
 }
 
