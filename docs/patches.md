@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 132 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 133 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -249,7 +249,8 @@ XP と ReactOS のシェルのための変更のうち、Windows 7 のシェル�
 
 | 番号 | 内容 | opt-in |
 |---|---|---|
-| 0132 | win32u: ほかのプロセスの窓の SetWindowPlacement（窓のスレッドに送って設定させる）。XP と Windows 7 の「デスクトップの表示」（タスクバー、クイック起動、Win+D）が、最小化した窓を 2 回目に元に戻す（実機で確認） | あり |
+| 0132 | win32u: ほかのプロセスの窓の SetWindowPlacement（窓のスレッドに送って設定させる）。XP と Windows 7 の「デスクトップの表示」（タスクバー、右端のボタン、クイック起動、Win+D）が、最小化した窓を 2 回目に元に戻す。呼んだ側のプロセスが前面なら、戻した窓を前面にする（Windows では呼んだ側が前面の権利で戻す。Wayland のセッションでスタート ボタンが前面に残っていた）（実機で確認） | あり |
+| 0133 | comdlg32: Windows 7 のシェルのセッションの項目ダイアログ（IFileDialog）を Windows 7 の形に。上の段（戻る・進む、パンくずのアドレス、更新、検索）を新しい部品（navbar7.c）がテーマの部品と explorerframe.dll の画像・文字列で描く。640x478、メッセージ用のフォント、詳細・プレビュー ペインなし、サイズ グリップ、フォルダーの選択では「フォルダー:」「フォルダーの選択」。検索はフォルダー内の名前での絞り込み（Windows 7 は索引を検索する） | あり（`WIN4WINE_SHELL=win7`） |
 
 ## 並び順の考え方
 
