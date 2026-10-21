@@ -260,6 +260,8 @@ static BOOL exists(const WCHAR *path)
     return GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
 }
 
+static void shell_quote_w(const WCHAR *source, WCHAR *target, size_t capacity);
+
 /* Wine runs a Unix executable named in CreateProcess natively (as
  * linux-launch.c does); env drops the Wine debug channels. */
 static BOOL spawn(const WCHAR *script, HANDLE unused)
@@ -981,12 +983,14 @@ static void net_status_update(void)
 static void net_support_update(void)
 {
     char out[1024], *line, *address = "", *gateway = "", *method = "";
-    WCHAR script[512], wide[128];
+    WCHAR script[512], wide[128], name[80];
     unsigned prefix_length = 0;
     if (!net_support) return;
+    /* Every name goes into the shell quoted. */
+    shell_quote_w(net_name, name, ARRAYSIZE(name));
     swprintf(script, 512, L"nmcli -t -g IP4.ADDRESS,IP4.GATEWAY device show %ls 2>/dev/null | head -2; "
              L"c=$(nmcli -g GENERAL.CONNECTION device show %ls 2>/dev/null); "
-             L"[ -n \"$c\" ] && nmcli -g ipv4.method connection show \"$c\" 2>/dev/null", net_name, net_name);
+             L"[ -n \"$c\" ] && nmcli -g ipv4.method connection show \"$c\" 2>/dev/null", name, name);
     capture(script, out, sizeof(out));
     line = strtok(out, "\n");
     if (line) { address = line; line = strtok(NULL, "\n"); }
@@ -1038,7 +1042,9 @@ static INT_PTR CALLBACK net_general_proc(HWND dialog, UINT message, WPARAM wpara
         else if (LOWORD(wparam) == 1025)
         {
             /* Disable or enable, as XP's button does, through NetworkManager. */
-            swprintf(script, 256, net_up > 0 ? L"nmcli device disconnect %ls" : L"nmcli device connect %ls", net_name);
+            WCHAR name[80];
+            shell_quote_w(net_name, name, ARRAYSIZE(name));
+            swprintf(script, 256, net_up > 0 ? L"nmcli device disconnect %ls" : L"nmcli device connect %ls", name);
             spawn(script, NULL);
             PropSheet_PressButton(net_sheet, PSBTN_CANCEL);
         }
@@ -1064,7 +1070,9 @@ static INT_PTR CALLBACK net_support_proc(HWND dialog, UINT message, WPARAM wpara
         if (LOWORD(wparam) == 1056)
         {
             /* Repair: NetworkManager reapplies the connection. */
-            swprintf(script, 256, L"nmcli device reapply %ls || nmcli device connect %ls", net_name, net_name);
+            WCHAR name[80];
+            shell_quote_w(net_name, name, ARRAYSIZE(name));
+            swprintf(script, 256, L"nmcli device reapply %ls || nmcli device connect %ls", name, name);
             spawn(script, NULL);
         }
         else if (LOWORD(wparam) == 1062)
@@ -1283,10 +1291,11 @@ static void connections_refresh(void)
 static void connection_action(void)
 {
     int index = selected_connection();
-    WCHAR script[256];
+    WCHAR script[256], uuid[96];
     if (index < 0) return;
+    shell_quote_w(connections[index].uuid, uuid, ARRAYSIZE(uuid));
     swprintf(script, ARRAYSIZE(script), L"nmcli --wait 15 connection %ls uuid %ls >/dev/null 2>&1",
-             connections[index].active ? L"down" : L"up", connections[index].uuid);
+             connections[index].active ? L"down" : L"up", uuid);
     if (spawn(script, NULL))
     {
         SetWindowTextW(connections_hint, connections[index].active ? L"Disconnecting..." : L"Connecting...");
