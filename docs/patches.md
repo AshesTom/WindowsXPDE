@@ -263,7 +263,7 @@ XP と ReactOS のシェルのための変更のうち、Windows 7 のシェル�
 | 0146 | uxtheme: IsThemeActiveByPolicy（序数 73。グループ ポリシーの SetVisualStyle があるか）。XP の画面のプロパティで「ウィンドウとボタン」を選べる（AshesTom） | なし |
 | 0147 | uxtheme, win32u: タイトルバーのアイコンは小さいアイコンを先に使う（XP と同じく、そのプログラムの 16x16 の絵。大きいアイコンを縮めない）。大きいアイコンから作る小さいアイコンはリソースの 16x16 から（LR_COPYFROMRESOURCE。Wine 全体）（AshesTom） | 一部あり |
 | 0148 | user32: 画面のプロパティ（rundll32 の desk.cpl と themeui.dll）のように、XP の comctl32 を実行ファイルの横から読んだプロセスでも、外部シェルのテーマ付きのボタンなどを使う（AshesTom） | あり |
-| 0149 | ntdll: XP のセッションで、実行ファイルの横に comctl32.dll があるときは comctl32 の SxS のリダイレクトを使わず、その XP の Common Controls 6 だけを使う（画面のプロパティのボタンがクラシックになっていた。ReactOS のシェルは 0143）（AshesTom） | あり（XP のセッション） |
+| 0149 | ntdll: XP のセッションで、実行ファイルの横に XP の comctl32.dll（native。システムのディレクトリは除く）があるときは comctl32 の SxS のリダイレクトを使わず、その XP の Common Controls 6 だけを使う（画面のプロパティのボタンがクラシックになっていた。ReactOS のシェルは 0143）（AshesTom） | あり（XP のセッション） |
 | 0150 | user32: XP のセッションで、XP の comctl32 を横に置いたプロセスは、コモン コントロールのクラス名を版つきにしない（Internet Explorer 6 のメニュー バー、ツール バー、アドレス バー、ステータス バーが作られなかった）（AshesTom） | あり（XP のセッション） |
 
 ## 並び順の考え方
