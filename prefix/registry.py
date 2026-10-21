@@ -3,7 +3,7 @@ import os
 import pwd
 import struct
 
-VERSION = 26
+VERSION = 27
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 # The classic fonts of a new prefix (prefix/theme-settings.c classic-initialize).
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\XPClassic'
@@ -208,6 +208,15 @@ def install(run, exists, language='ja'):
     # has a separate name so Wine's explorer.exe can remain the desktop manager.
     run('reg', 'add', r'HKCR\CLSID\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\DefaultIcon',
         '/ve', '/t', 'REG_SZ', '/d', r'C:\xp\xp-explorer.exe,0', '/f')
+    # The Recycle Bin's two icons, as XP's shell32 registers them (its icons
+    # 31 and 32): Display Properties' Themes sample and Desktop Items read
+    # them; Wine's registration has only the current one. The user's own key,
+    # which the shell writes the current icon to, comes first and hides the
+    # class's, so it gets them too.
+    for key in (r'HKCR\CLSID', r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID'):
+        for name, index in (('Empty', 31), ('Full', 32)):
+            run('reg', 'add', key + r'\{645FF040-5081-101B-9F08-00AA002F954E}\DefaultIcon', '/v', name,
+                '/t', 'REG_EXPAND_SZ', '/d', rf'%SystemRoot%\System32\shell32.dll,{index}', '/f')
     # Publicly documented Pin to Start Menu handler; users choose their own pins.
     for file_type in ('exefile', 'lnkfile'):
         run('reg', 'add', 'HKCR\\' + file_type + '\\shellex\\ContextMenuHandlers\\StartMenuPin',

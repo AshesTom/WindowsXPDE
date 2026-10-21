@@ -232,6 +232,13 @@ def registry():
         r.add('HKCR\\CLSID\\' + clsid, 'LocalizedString', name, 'REG_EXPAND_SZ')
         r.add('HKCR\\CLSID\\' + clsid, 'InfoTip', tip, 'REG_EXPAND_SZ')
     r.add(r'HKCR\CLSID\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\DefaultIcon', None, r'C:\xp\xp-explorer.exe,0')
+    # The Recycle Bin's two icons (XP's shell32 icons 31 and 32), read by
+    # Display Properties' Themes sample and Desktop Items, also in the
+    # user's key, which hides the class's once the shell writes it.
+    for key in (r'HKCR\CLSID', cu + r'Explorer\CLSID'):
+        for name, index in (('Empty', 31), ('Full', 32)):
+            r.add(key + r'\{645FF040-5081-101B-9F08-00AA002F954E}\DefaultIcon', name,
+                  rf'%SystemRoot%\System32\shell32.dll,{index}', 'REG_EXPAND_SZ')
     r.add(r'HKCR\CLSID\{450D8FBA-AD25-11D0-98A8-0800361B1103}\DefaultIcon', None,
           r'%SystemRoot%\system32\mydocs.dll,0', 'REG_EXPAND_SZ')
     for file_type in ('exefile', 'lnkfile'):
