@@ -45,7 +45,8 @@ COLORS = 596
 
 
 def strings(dll):
-    """The string table of a PE file: {ID: text}."""
+    """The string table of a PE file: {ID: text}, in the file's own language
+    where it has English beside it (XP's service pack files do)."""
     data = Path(dll).read_bytes()
     pe = struct.unpack_from('<I', data, 0x3c)[0]
     count, optional = struct.unpack_from('<H12xH', data, pe + 6)
@@ -72,15 +73,15 @@ def strings(dll):
         if kind != 6 or not target & 0x80000000:
             continue
         for block, target2 in entries(base + (target & 0x7fffffff)):
-            for _, target3 in entries(base + (target2 & 0x7fffffff)):
-                rva, size = struct.unpack_from('<II', data, base + target3)
+            languages = dict(entries(base + (target2 & 0x7fffffff)))
+            for language in sorted(languages, key=lambda language: language == 0x409)[:1]:
+                rva, size = struct.unpack_from('<II', data, base + languages[language])
                 at, end = offset(rva), offset(rva) + size
                 for k in range(16):
                     length = struct.unpack_from('<H', data, at)[0]
                     if length:
                         result[(block - 1) * 16 + k] = data[at + 2:at + 2 + 2 * length].decode('utf-16le')
                     at += 2 + 2 * length
-                break
     return result
 
 

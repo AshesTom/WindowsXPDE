@@ -84,6 +84,25 @@ RENAMED = {'classic.the': 'Windows Classic.theme'}
 ADDED_GROUPS = ('cpl', 'tray', 'ie', 'wmp', 'inf', 'shell', 'media', 'duser', 'intl', 'themes')
 
 
+def setup_sources(paths):
+    """{installed name: name on the medium} for the files that TXTSETUP.SIF
+    installs under another name (Japanese XP's xpsp2res.dll is SPRT0411.DLL)."""
+    sif = next((p for p in paths if p.name.lower() == 'txtsetup.sif'), None)
+    if not sif:
+        return {}
+    sources, section = {}, None
+    for raw in sif.read_text(encoding='latin-1').splitlines():
+        line = raw.split(';', 1)[0].strip()
+        if line.startswith('['):
+            section = line.strip('[]').lower()
+        elif section and section.startswith('sourcedisksfiles') and '=' in line:
+            name, value = (part.strip().lower() for part in line.split('=', 1))
+            fields = [f.strip() for f in value.split(',')]
+            if len(fields) > 10 and fields[10] and fields[10] != name:
+                sources.setdefault(fields[10], name)
+    return sources
+
+
 def media_files(paths):
     """XP's sounds: what LAYOUT.INF installs into %windir%\\Media (directory 26),
     with the names setup gives them ("Windows XP Start.wav")."""
@@ -114,7 +133,7 @@ def missing_groups(output):
     """The ADDED_GROUPS an extraction made before them lacks."""
     def has(path):
         return (output / path).exists()
-    checks = {'cpl': 'cpl/desk.cpl', 'tray': 'tray/stobject.dll', 'ie': 'ie/iexplore.exe',
+    checks = {'cpl': 'cpl/desk.cpl', 'tray': 'tray/xpsp2res.dll', 'ie': 'ie/iexplore.exe',
               'wmp': 'wmp/wmplayer.exe', 'inf': 'inf/hivedef.inf', 'shell': 'shell/shimgvw.dll',
               'media': 'media', 'duser': 'system32/duser.dll', 'intl': 'intl/input.dll',
               'themes': 'themes/Windows Classic.theme'}
@@ -138,6 +157,7 @@ def extract(source, output, only=None):
         paths = sorted(p for p in media.rglob('*') if p.is_file())
         output.mkdir(parents=True, exist_ok=bool(only))
         manifest = []
+        sources = setup_sources(paths)
         def copy(files):
             for name, group in files.items():
                 copy_one(name, group)
@@ -145,6 +165,10 @@ def extract(source, output, only=None):
             stem, extension = name.rsplit('.', 1)
             compressed = stem + '.' + extension[:2] + '_'
             matches = [p for p in paths if p.name.lower() in (name, compressed)]
+            if not matches and name in sources:
+                # The medium names it otherwise; it lands under NAME all the same.
+                RENAMED.setdefault(sources[name], name)
+                return copy_one(sources[name], group)
             # System32 controls v5 must not accidentally be replaced with SxS v6.
             matches.sort(key=lambda p: (any(s.lower() in ('winsxs', 'asms') for s in p.parts), len(p.parts)))
             if not matches:
