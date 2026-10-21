@@ -187,7 +187,7 @@ static BOOL link_target(const WCHAR *link, WCHAR *target)
  * that ITEM contains. */
 static BOOL in_list(const WCHAR *name, const WCHAR *fallback, const WCHAR *item, BOOL substring)
 {
-    WCHAR list[2048], lower_item[MAX_PATH], *entry, *context = NULL;
+    WCHAR list[2048], lower_item[MAX_PATH], *entry, *next;
     DWORD size = sizeof(list);
     if (!name || RegGetValueW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileAssociation",
                               name, RRF_RT_REG_SZ, NULL, list, &size) || !*list)
@@ -195,8 +195,12 @@ static BOOL in_list(const WCHAR *name, const WCHAR *fallback, const WCHAR *item,
     wcscpy(lower_item, item);
     CharLowerW(lower_item);
     CharLowerW(list);
-    for (entry = wcstok(list, L";", &context); entry; entry = wcstok(NULL, L";", &context))
+    /* Split by hand: wcstok takes two or three arguments depending on the C runtime. */
+    for (entry = list; entry; entry = next)
+    {
+        if ((next = wcschr(entry, ';'))) *next++ = 0;
         if (*entry && (substring ? wcsstr(lower_item, entry) != NULL : !wcscmp(lower_item, entry))) return TRUE;
+    }
     return FALSE;
 }
 

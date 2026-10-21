@@ -308,7 +308,7 @@ def stage(prefix):
     windows = prefix / 'drive_c/windows'
     if (system / 'rundll32.exe').is_file() and not (windows / 'rundll32.exe').is_file():
         shutil.copyfile(system / 'rundll32.exe', windows / 'rundll32.exe')
-    # ... and with XP's common controls 6 beside it, which Wine patch 0016 lets
+    # ... and with XP's common controls 6 beside it, which Wine patch 0149 lets
     # shell processes load from their own folder: Luna tabs and buttons.
     xp_controls = prefix / 'drive_c/xp/comctl32.dll'
     if xp_controls.is_file() and (prefix / '.patched-wine').is_file():
@@ -401,13 +401,13 @@ def xp_defaults(assets, prefix, wine, folders=True):
              xp_registrations(assets)]
     inf = assets / 'inf'
     if (inf / 'hivedef.inf').is_file():
-        hivedef = (inf / 'hivedef.inf').read_text(encoding='latin-1')
+        hivedef = xpreg.read_inf(inf / 'hivedef.inf')
         # Not "User Shell Folders": the user's folders are their Linux ones.
         texts.append(xpreg.hive_entries(hivedef, 'HKCU', ('AppEvents', r'Control Panel\Sound',
                                                            EXPLORER.replace('SOFTWARE', 'Software')),
                                         (EXPLORER.replace('SOFTWARE', 'Software') + r'\User Shell Folders',)))
     if (inf / 'hivesft.inf').is_file():
-        hivesft = (inf / 'hivesft.inf').read_text(encoding='latin-1')
+        hivesft = xpreg.read_inf(inf / 'hivesft.inf')
         # Controls Folder\Desk: with its page handler, XP's Display Properties
         # applies visual styles and color schemes (themeui's ApplyPressed).
         texts.append(xpreg.hive_entries(hivesft, 'HKLM', (EXPLORER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Shell Extensions',
@@ -440,7 +440,7 @@ def xp_defaults(assets, prefix, wine, folders=True):
               UNIX_ROOT, '1', 'REG_DWORD')
     texts.append(r.text())
     # XP's system icons (IDI_APPLICATION and the message box icons) are read
-    # from XP's user32.dll as data (win4wine patch 0124), under a name that is
+    # from XP's user32.dll as data (win4wine patch 0141), under a name that is
     # not taken for the loaded user32.
     user32 = assets / 'resources/user32.dll'
     if user32.is_file():
@@ -568,7 +568,7 @@ def install_wmp(assets, prefix, wine, env):
     r.add(preferences, 'AcceptedPrivacyStatement', '1', 'REG_DWORD')
     r.add(preferences, 'FirstTime', '1', 'REG_DWORD')
     texts = [r.text()]
-    inf = (source / 'wmp.inf').read_text(encoding='latin-1')
+    inf = xpreg.read_inf(source / 'wmp.inf')
     folder = r'%ProgramFiles%\Windows Media Player'
     # wmp.inf's system32 files are beside wmplayer.exe here.
     dirs = {'11': folder, '16422': '%ProgramFiles%', '49001': '%ProgramFiles%', '49301': folder,
@@ -689,7 +689,7 @@ def create(assets, prefix, wine):
             themes = windows / 'Resources/Themes'
         shutil.copytree(assets / 'themes', themes, dirs_exist_ok=True)
     # XP's common controls 6 (SP3's 6.0.2600.5512): XP's taskbar and toolbars need it.
-    # With win4wine's Wine (patch 0016) XP Explorer takes it from beside itself and
+    # With win4wine's Wine (patch 0149) XP Explorer takes it from beside itself and
     # the assembly goes in winsxs as win4wine does; with a stock Wine, XP's v6
     # replaces comctl32 in syswow64 for XP Explorer (stage() drops Wine's x86 v6).
     for manifest in (assets / 'sxs').rglob('controls.man'):

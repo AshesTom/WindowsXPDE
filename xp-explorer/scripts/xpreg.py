@@ -15,6 +15,15 @@ import sys
 from pathlib import Path
 
 
+def read_inf(path):
+    """An INF's text: Unicode (UTF-16 with its byte order mark, as Japanese XP's
+    are) or ANSI (English XP's; Latin-1 keeps every byte)."""
+    data = Path(path).read_bytes()
+    if data[:2] in (b'\xff\xfe', b'\xfe\xff'):
+        return data.decode('utf-16')
+    return data.decode('latin-1')
+
+
 def reginst(path):
     """The REGINST resource of a PE file, as text."""
     data = Path(path).read_bytes()

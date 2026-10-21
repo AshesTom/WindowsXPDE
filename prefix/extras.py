@@ -103,7 +103,7 @@ def keyboard_layouts(assets):
     files."""
     import xpreg
     intl = assets / 'intl'
-    texts = [xpreg.hive_entries((intl / 'hivesys.inf').read_text(encoding='latin-1'), 'HKLM', (LAYOUTS_KEY,))]
+    texts = [xpreg.hive_entries(xpreg.read_inf(intl / 'hivesys.inf'), 'HKLM', (LAYOUTS_KEY,))]
     raw = (intl / 'intl.inf').read_bytes()
     text = raw.decode('utf-16') if raw[:2] in (b'\xff\xfe', b'\xfe\xff') else raw.decode('latin-1')
     # Its strings and the sections that add the layouts of each language
@@ -162,7 +162,7 @@ def copy_files(assets, prefix):
         (windows / 'inf').mkdir(exist_ok=True)
         shutil.copyfile(assets / 'intl/intl.inf', windows / 'inf/intl.inf')
     # Ours, so that XP Explorer's stage() keeps the common controls 6 assembly
-    # in winsxs and puts XP's comctl32 beside rundll32 (Wine patch 0130).
+    # in winsxs and puts XP's comctl32 beside rundll32 (Wine patch 0149).
     (prefix / '.patched-wine').write_text('1\n')
 
 

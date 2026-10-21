@@ -274,7 +274,7 @@ class Session:
 
     def keyboard(self):
         """The session's keyboard layout from XP's input languages (Wine patch
-        0141), or the Linux system's while the prefix has none."""
+        0043), or the Linux system's while the prefix has none."""
         if self.shell['marker'] != 'xp-shell.json':
             return
         with (self.state / 'keyboard.log').open('ab') as log:
