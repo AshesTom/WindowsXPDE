@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 131 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 133 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -179,7 +179,7 @@ Windows 7 の explorer と shell32 などが使う、Wine に無かった関数�
 | 0091 | ntdll: MUI ファイルからリソースを探す。RT_MUI を持つ（言語に依存しない）モジュールで見つからないリソースを、`<フォルダ>\<UI の言語>\<ファイル名>.mui`（無ければ en-US）から探す。データファイルとして読み込んだものも同じ（32bit のプロセスが sysnative から読んだ 64bit の DLL も、その横の MUI ファイルを使う）。Windows 7 のシェルの DLL を、リソースを書き込まずにメディアのまま使うため | なし |
 | 0092 | server: HKCU\Software を 32bit と 64bit で共有する（Windows と同じ。Classes の下だけが分かれる）。64bit のソフト（Windows 7 の explorer）が HKCU\Software\Wow6432Node を作ると、32bit のプログラムから利用者の設定（Wine の X11 の設定、テーマ）が見えなくなっていた | なし |
 | 0093 | comdlg32: ファイルを開く・保存するダイアログ（XP の形）で、ファイルの一覧に Wine のダイアログの字体を設定したあと描き直す。一覧が先に別の字体（アイコンの名前の字体）の行の高さで描かれ、高さの違う prefix（Windows 7 のメイリオ）では、クリックした行の下のファイルが選ばれていた | なし |
-| 0094 | comdlg32: Vista の形のダイアログ（IFileDialog）で、既定の操作（ダブルクリック・Enter）が来たフォルダを開き、結果を絶対の ID リストから作る（SHCreateShellItemArrayFromIDLists）。Windows 7 の shell32 の中では（Windows 7 のシェルの「ファイル名を指定して実行」の「参照」）、フォルダに入れず、選んだファイルがデスクトップのものとして返っていた | なし |
+| 0094 | comdlg32: Vista の形のダイアログ（IFileDialog）で、既定の操作（ダブルクリック・Enter）が来たフォルダを開き、結果を絶対の ID リストから作る（SHCreateShellItemArrayFromIDLists）。Windows 7 の shell32 の中では（Windows 7 のシェルの「ファイル名を指定して実行」の「参照」）、フォルダに入れず、選んだファイルがデスクトップのものとして返っていた。入力した名前の環境変数を展開し（`%APPDATA%\...`）、ある項目の ID リストはパスから解析して作る（Windows 7 の shell32 は単純な ID リストをファイルのものにするので、フォルダの選択（タスクバーの「新規ツール バー」）が入力したフォルダを断っていた） | なし |
 | 0095 | comdlg32: ファイルのダイアログ（古い形）で、作ったビューを UIActivate して表示する（Windows の shell32 のビューは隠れた状態で作られる。Windows 7 の shell32 で一覧が空だった） | なし |
 | 0096 | shell32: ほかのシェルの登録だけが名指すものを省く。デスクトップの名前空間の拡張は、サーバーの DLL があり、shell32 の（またはサーバーの無い）ものはこの shell32 が作れるクラスのときだけ並べる（Windows 7 のライブラリやコントロール パネルが、開けない英語の名前で並んでいた）。デスクトップ、コンピューター、ドキュメント、ごみ箱は、LocalizedString が読めなければ shell32 自身の訳した名前にする | なし |
 | 0097 | comctl32: ほかの comctl32 のイメージ リストを IImageList で描く（HIMAGELIST はリストの IUnknown。Windows 7 の shell32 のシステムのイメージ リストのアイコンが、Wine の部品に出なかった） | なし |
@@ -244,6 +244,13 @@ XP と ReactOS のシェルのための変更のうち、Windows 7 のシェル�
 | 0129 | user32: XP のシステム アイコン（IDI_APPLICATION など）を XP の user32.dll（prefix がデータとして `C:\xp\res\user32-xp.dll` に置く）から読み、縮小は画素を拾う | あり（XP のセッション） |
 | 0130 | user32: XP のメッセージ ボックスの配置（画素で決めてダイアログ単位に丸める。実機の 30 通りと一致）と、DrawFocusRect の市松模様（DC の文字色と背景色との XOR） | あり（XP のセッション） |
 | 0131 | ntdll: ReactOS のシェル（ros-explorer.exe）が横の `C:\ros\comctl32.dll`（ReactOS の Common Controls 6）を使う（0115 と同じ仕組み）。ほかのプログラムは Wine のアセンブリのまま（以前は置き換えていて、32bit のアプリのボタンなどが作られなかった） | あり（`WIN4WINE_SHELL=reactos`） |
+
+### シェルの機能（0132〜）
+
+| 番号 | 内容 | opt-in |
+|---|---|---|
+| 0132 | win32u: ほかのプロセスの窓の SetWindowPlacement（窓のスレッドに送って設定させる）。XP と Windows 7 の「デスクトップの表示」（タスクバー、右端のボタン、クイック起動、Win+D）が、最小化した窓を 2 回目に元に戻す。呼んだ側のプロセスが前面なら、戻した窓を前面にする（Windows では呼んだ側が前面の権利で戻す。Wayland のセッションでスタート ボタンが前面に残っていた）（実機で確認） | あり |
+| 0133 | comdlg32: Windows 7 のシェルのセッションの項目ダイアログ（IFileDialog）を Windows 7 の形に。上の段（戻る・進む、パンくずのアドレス、更新、検索）を新しい部品（navbar7.c）がテーマの部品と explorerframe.dll の画像・文字列で描く。640x478、メッセージ用のフォント、詳細・プレビュー ペインなし、サイズ グリップ、フォルダーの選択では「フォルダー:」「フォルダーの選択」。検索はフォルダー内の名前での絞り込み（Windows 7 は索引を検索する） | あり（`WIN4WINE_SHELL=win7`） |
 
 ## 並び順の考え方
 

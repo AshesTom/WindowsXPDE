@@ -129,3 +129,5 @@
 0129-user32-external-xp-system-icons.patch
 0130-user32-external-xp-message-boxes.patch
 0131-ntdll-external-reactos-comctl32.patch
+0132-win32u-external-other-process-placement.patch
+0133-comdlg32-external-win7-item-dialog.patch

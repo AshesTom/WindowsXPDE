@@ -244,6 +244,29 @@ def stage_folders(prefix, wine):
         subprocess.run([server, '-w'], env=env, check=False, timeout=15)
 
 
+# Show Desktop in XP's Quick Launch: the names of XP's setup (shell.inf's
+# ShowDesktop string of the Japanese and the English media) and the command
+# file's documented format. Its icon is XP Explorer's, whose fourth icon is
+# Show Desktop's; "explorer.exe" would be Wine's own explorer.
+SHOW_DESKTOP = {'ja': 'デスクトップの表示.scf', 'en': 'Show Desktop.scf'}
+SHOW_DESKTOP_COMMAND = ('[Shell]', 'Command=2', r'IconFile=C:\xp\xp-explorer.exe,3',
+                        '[Taskbar]', 'Command=ToggleDesktop')
+
+def stage_quick_launch(prefix):
+    """XP's Quick Launch folder, with Show Desktop in it, as XP's setup makes it.
+
+    Without the folder XP's taskbar cannot create the Quick Launch toolbar.
+    Show Desktop is put only into a folder made here, so that a user's own
+    choice of items stays."""
+    user = pwd.getpwuid(os.getuid()).pw_name
+    folder = prefix / f'drive_c/users/{user}/AppData/Roaming/Microsoft/Internet Explorer/Quick Launch'
+    if folder.exists() or folder.is_symlink():
+        return
+    folder.mkdir(parents=True)
+    (folder / SHOW_DESKTOP[language(prefix)]).write_text('\r\n'.join(SHOW_DESKTOP_COMMAND) + '\r\n',
+                                                         encoding='ascii', newline='')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('prefix', type=Path)
@@ -256,5 +279,6 @@ if __name__ == '__main__':
         prepare(prefix, args.wine.resolve(strict=True))
     stage(prefix, args.wine.resolve(strict=True) if args.wine else None)
     stage_media(prefix, args.wine.resolve(strict=True) if args.wine else None)
+    stage_quick_launch(prefix)
     if args.wine:
         stage_folders(prefix, args.wine.resolve(strict=True))

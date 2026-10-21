@@ -248,6 +248,18 @@ class Prefix:
             self.theme(theme)
 
 
+def quick_launch(dest):
+    """The Quick Launch folder, as ReactOS's setup makes it (media/inf/shortcuts.inf).
+
+    Without it the taskbar's Toolbars menu cannot create the Quick Launch
+    toolbar ("Cannot create toolbar"). ReactOS 0.4.16's explorer does not keep
+    its toolbars: the toolbar is added again in each session."""
+    user = pwd.getpwuid(os.getuid()).pw_name
+    folder = dest / f'drive_c/users/{user}/AppData/Roaming/Microsoft/Internet Explorer/Quick Launch'
+    if not folder.exists() and not folder.is_symlink():
+        folder.mkdir(parents=True)
+
+
 def copy_themes(assets, dest):
     """ReactOS's visual styles from the extracted files, where Windows keeps themes."""
     for directory, _, _ in THEMES.values():
@@ -283,6 +295,7 @@ def create(assets, dest, home, wine, lang, theme='classic'):
     # Wine has a Marlett of its own; ReactOS's has the glyphs its menus use.
     shutil.copyfile(assets / 'fonts/Marlett.ttf', fonts / 'ros-marlett.ttf')
     copy_themes(assets, dest)
+    quick_launch(dest)
     wallpaper = dest / 'drive_c/windows/Web/Wallpaper'
     wallpaper.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(assets / 'wallpaper/Nebula.bmp', wallpaper / 'Nebula.bmp')
@@ -350,6 +363,7 @@ def stage(dest, wine=None):
     wine_current = inf.is_file() and current == str(int(inf.stat().st_mtime))
     applied = version.read_text().split() if version.is_file() else []
     lang = config.get('lang', 'en')
+    quick_launch(dest)
     if wine_current and applied == [str(VERSION), current] and locale_current(dest, lang):
         # Nothing changed, but a first wineboot or an update may have replaced files.
         prefix.place_files()

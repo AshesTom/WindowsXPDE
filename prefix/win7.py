@@ -325,6 +325,7 @@ def create(assets, dest, home, wine):
         prefix.run(str(ROOT / '.local/bridge/wallpaper-convert.exe'), windows_path(wallpaper),
                    windows_path(themes / 'TranscodedWallpaper.bmp'))
         start_menu(prefix, assets, user)
+        quick_launch(prefix, assets, user)
         (dest / 'dosdevices/h:').symlink_to(home)
         prefix.run('regedit', '/s', windows_path(assets / 'registry.reg'), timeout=600)
         prefix.wow64_registry(assets)
@@ -460,6 +461,30 @@ def start_menu(prefix, assets, user):
             prefix.run('attrib', '+s', path, check=False)
             prefix.run('attrib', '+h', path + '\\desktop.ini', check=False)
             prefix.run('attrib', '+s', path + '\\desktop.ini', check=False)
+
+
+def quick_launch(prefix, assets, user):
+    """The default user's Quick Launch items (Show Desktop, Window Switcher), once.
+
+    Windows 7 copies them into a new profile; its taskbar shows the folder as
+    a toolbar when the user adds it (Toolbars, New toolbar). Items the user
+    removed later are not put back."""
+    source = assets / 'quicklaunch'
+    marker = prefix.path / '.w7-quick-launch'
+    if marker.exists() or not source.is_dir():
+        return
+    folder = prefix.path / f'drive_c/users/{user}/AppData/Roaming/Microsoft/Internet Explorer/Quick Launch'
+    folder.mkdir(parents=True, exist_ok=True)
+    for item in sorted(source.iterdir()):
+        if not (folder / item.name).exists():
+            shutil.copyfile(item, folder / item.name)
+    if (folder / 'desktop.ini').is_file():
+        # Its localized names, as start_menu() marks the Start menu's folders.
+        path = 'C:\\' + str(folder.relative_to(prefix.path / 'drive_c')).replace('/', '\\')
+        prefix.run('attrib', '+s', path, check=False)
+        prefix.run('attrib', '+h', path + '\\desktop.ini', check=False)
+        prefix.run('attrib', '+s', path + '\\desktop.ini', check=False)
+    marker.write_text('1\n')
 
 
 def mark_folders(prefix, user):
@@ -599,6 +624,12 @@ def stage(dest, wine=None):
         system_icons(dest, Path(config['assets']))
         notepad_strings(dest, Path(config['assets']))
         copy_fonts(dest, Path(config['assets']))
+        if not (dest / '.w7-quick-launch').exists() and (Path(config['assets']) / 'quicklaunch').is_dir():
+            # Prefixes made before the default Quick Launch items
+            try:
+                quick_launch(prefix, Path(config['assets']), pwd.getpwuid(os.getuid()).pw_name)
+            finally:
+                prefix.stop()
         if shell_only_files(prefix, Path(config['assets'])):
             # Wine's shell, which the session fell back to, cleared the
             # profile folders' attributes: their localized names were lost.

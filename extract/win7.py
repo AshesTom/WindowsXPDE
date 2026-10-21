@@ -25,7 +25,7 @@ import media  # noqa: E402
 RT_GROUP_ICON = 14
 
 # Bump when the extracted files change; setup.sh then extracts again.
-EXTRACT_VERSION = 5
+EXTRACT_VERSION = 6
 # The image's language -> our language (the session's and the prefix's).
 LANGUAGES = {'ja-JP': 'ja', 'en-US': 'en'}
 # Windows 7's shell and the DLLs it uses from Windows 7 (prefix/win7.py says which
@@ -59,6 +59,9 @@ FONTS = {'ja': r'(segoeui\w*\.ttf|tahoma\w*\.ttf|micross\.ttf|meiryo\w*\.ttc|msg
 # The localized names of the Start menu's folders.
 START_MENU = ('Start Menu', 'Start Menu/Programs', 'Start Menu/Programs/Startup',
               'Start Menu/Programs/Administrative Tools')
+# The default user's Quick Launch folder: Show Desktop, Window Switcher and
+# their localized names.
+QUICK_LAUNCH = ('Shows Desktop.lnk', 'Window Switcher.lnk', 'desktop.ini')
 
 
 def run(*args, **kwargs):
@@ -157,6 +160,9 @@ def select(paths, lang_dir, lang):
     for folder in START_MENU:
         want(f'ProgramData/Microsoft/Windows/{folder}/desktop.ini', f'startmenu/{folder}/desktop.ini',
              required=False)
+    for name in QUICK_LAUNCH:
+        want(f'Users/Default/AppData/Roaming/Microsoft/Internet Explorer/Quick Launch/{name}',
+             f'quicklaunch/{name}', required=False)
     # Component manifests, for the registry (not kept).
     # The 32-bit view of a component is in a manifest of its own: wow64_ for
     # components with 64-bit counterparts, x86_ for the others.
