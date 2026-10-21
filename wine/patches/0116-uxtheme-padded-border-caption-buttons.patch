@@ -183,10 +183,10 @@ index 078cf64..99caa0c 100644
  
  extern HRESULT WINAPI WICCreateImagingFactory_Proxy(UINT version, IWICImagingFactory **factory);
 diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
-index 045c455..5278853 100644
+index b7b4840..068144a 100644
 --- a/dlls/uxtheme/system.c
 +++ b/dlls/uxtheme/system.c
-@@ -489,8 +489,24 @@ static void UXTHEME_SaveSystemMetrics(struct system_metrics *metrics, BOOL send_
+@@ -505,8 +505,24 @@ static void UXTHEME_SaveSystemMetrics(struct system_metrics *metrics, BOOL send_
  
      old_context = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE);
  

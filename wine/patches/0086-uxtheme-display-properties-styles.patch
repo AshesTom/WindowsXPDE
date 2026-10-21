@@ -18,9 +18,9 @@ Scope: every Wine application (these were stubs or missing).
 ---
  dlls/uxtheme/msstyles.c   |  35 +++++--
  dlls/uxtheme/msstyles.h   |   1 +
- dlls/uxtheme/system.c     | 233 ++++++++++++++++++++++++++++++++++++++++++++++
+ dlls/uxtheme/system.c     | 240 ++++++++++++++++++++++++++++++++++++++++++++++
  dlls/uxtheme/uxtheme.spec |   7 +-
- 4 files changed, 263 insertions(+), 13 deletions(-)
+ 4 files changed, 270 insertions(+), 13 deletions(-)
 
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
 index 601b3d2..1b469c2 100644
@@ -107,10 +107,10 @@ index e0916bd..264014d 100644
  BOOL MSSTYLES_LookupProperty(LPCWSTR pszPropertyName, int *dwPrimitive, int *dwId);
  BOOL MSSTYLES_LookupEnum(LPCWSTR pszValueName, int dwEnum, int *dwValue);
 diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
-index 4eb7f9b..e3d4af8 100644
+index 4eb7f9b..c498862 100644
 --- a/dlls/uxtheme/system.c
 +++ b/dlls/uxtheme/system.c
-@@ -891,6 +891,239 @@ HRESULT WINAPI GetThemeDocumentationProperty(LPCWSTR pszThemeName,
+@@ -891,6 +891,246 @@ HRESULT WINAPI GetThemeDocumentationProperty(LPCWSTR pszThemeName,
   *      Undocumented functions
   */
  
@@ -122,10 +122,17 @@ index 4eb7f9b..e3d4af8 100644
 + */
 +HTHEME WINAPI OpenThemeDataFromFile(HTHEMEFILE file, HWND hwnd, LPCWSTR classlist, DWORD flags)
 +{
++    UINT dpi = hwnd ? GetDpiForWindow(hwnd) : GetDpiForSystem();
++    HTHEME theme;
++
 +    TRACE("(%p,%p,%s,%#lx)\n", file, hwnd, debugstr_w(classlist), flags);
-+    if (!file || !classlist) return NULL;
-+    return MSSTYLES_OpenThemeClassFromFile((PTHEME_FILE)file, NULL, classlist,
-+                                           hwnd ? GetDpiForWindow(hwnd) : GetDpiForSystem());
++    if (!file) return NULL;
++    if (classlist) return MSSTYLES_OpenThemeClassFromFile((PTHEME_FILE)file, NULL, classlist, dpi);
++    /* No class: the style's global properties. XP's Display Properties opens
++     * them so to check a style it switches to from the classic look. */
++    if (!(theme = MSSTYLES_OpenThemeClassFromFile((PTHEME_FILE)file, NULL, L"globals", dpi)))
++        theme = MSSTYLES_OpenThemeClassFromFile((PTHEME_FILE)file, NULL, L"WINDOW", dpi);
++    return theme;
 +}
 +
 +/***********************************************************************
