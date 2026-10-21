@@ -16,11 +16,11 @@ and BUTTON classes, or classic frames; GetThemeParseErrorInfo reports no
 details instead of aborting.
 Scope: every Wine application (these were stubs or missing).
 ---
- dlls/uxtheme/msstyles.c   |  35 +++++---
+ dlls/uxtheme/msstyles.c   |  35 +++++--
  dlls/uxtheme/msstyles.h   |   1 +
- dlls/uxtheme/system.c     | 219 ++++++++++++++++++++++++++++++++++++++++++++++
+ dlls/uxtheme/system.c     | 233 ++++++++++++++++++++++++++++++++++++++++++++++
  dlls/uxtheme/uxtheme.spec |   7 +-
- 4 files changed, 249 insertions(+), 13 deletions(-)
+ 4 files changed, 263 insertions(+), 13 deletions(-)
 
 diff --git a/dlls/uxtheme/msstyles.c b/dlls/uxtheme/msstyles.c
 index 601b3d2..1b469c2 100644
@@ -107,10 +107,10 @@ index e0916bd..264014d 100644
  BOOL MSSTYLES_LookupProperty(LPCWSTR pszPropertyName, int *dwPrimitive, int *dwId);
  BOOL MSSTYLES_LookupEnum(LPCWSTR pszValueName, int dwEnum, int *dwValue);
 diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
-index 4eb7f9b..9107154 100644
+index 4eb7f9b..e3d4af8 100644
 --- a/dlls/uxtheme/system.c
 +++ b/dlls/uxtheme/system.c
-@@ -891,6 +891,225 @@ HRESULT WINAPI GetThemeDocumentationProperty(LPCWSTR pszThemeName,
+@@ -891,6 +891,239 @@ HRESULT WINAPI GetThemeDocumentationProperty(LPCWSTR pszThemeName,
   *      Undocumented functions
   */
  
@@ -244,8 +244,12 @@ index 4eb7f9b..9107154 100644
 +    }
 +    SetBkMode(hdc, TRANSPARENT);
 +    if (theme)
++    {
++        /* The caption part has no text color of its own: the style's caption text colors. */
++        SetTextColor(hdc, GetThemeSysColor(theme, active ? COLOR_CAPTIONTEXT : COLOR_INACTIVECAPTIONTEXT));
 +        DrawThemeText(theme, hdc, WP_CAPTION, active ? CS_ACTIVE : CS_INACTIVE, title, -1,
 +                      DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS, 0, &text);
++    }
 +    else
 +    {
 +        SetTextColor(hdc, GetSysColor(active ? COLOR_CAPTIONTEXT : COLOR_INACTIVECAPTIONTEXT));
@@ -261,6 +265,15 @@ index 4eb7f9b..9107154 100644
 +    brush = CreateSolidBrush(theme ? GetThemeSysColor(theme, client_color) : GetSysColor(client_color));
 +    FillRect(hdc, client, brush);
 +    DeleteObject(brush);
++}
++
++/* The sample's texts are the ones themeui.dll, its caller, has for its classic
++ * sample (XP's string IDs), so they are in the language of XP's Display Properties. */
++static const WCHAR *preview_text(UINT id, const WCHAR *fallback, WCHAR *buffer, int size)
++{
++    HMODULE themeui = GetModuleHandleW(L"themeui.dll");
++    if (themeui && LoadStringW(themeui, id, buffer, size) > 0) return buffer;
++    return fallback;
 +}
 +
 +/***********************************************************************
@@ -279,6 +292,7 @@ index 4eb7f9b..9107154 100644
 +    int width, height, saved;
 +    LOGFONTW font;
 +    HFONT hfont = NULL, old_font = NULL;
++    WCHAR text[64];
 +
 +    TRACE("(%p,%#lx,%s,%s,%s,%s,%p,%p)\n", hdc, flags, wine_dbgstr_rect(preview), debugstr_w(file),
 +          debugstr_w(color), debugstr_w(size), metrics, colors);
@@ -295,9 +309,9 @@ index 4eb7f9b..9107154 100644
 +
 +    /* Inactive window, then the active one over it. */
 +    SetRect(&rect, preview->left, preview->top, preview->right - width / 12, preview->bottom - height / 6);
-+    preview_window(hdc, window, &rect, L"Inactive Window", FALSE, FALSE, COLOR_WINDOW, &client);
++    preview_window(hdc, window, &rect, preview_text(1451, L"Inactive Window", text, ARRAY_SIZE(text)), FALSE, FALSE, COLOR_WINDOW, &client);
 +    SetRect(&rect, preview->left + width / 24, preview->top + height / 6, preview->right, preview->bottom);
-+    preview_window(hdc, window, &rect, L"Active Window", TRUE, FALSE, COLOR_WINDOW, &client);
++    preview_window(hdc, window, &rect, preview_text(1450, L"Active Window", text, ARRAY_SIZE(text)), TRUE, FALSE, COLOR_WINDOW, &client);
 +
 +    if ((window && SUCCEEDED(GetThemeSysFont(window, TMT_MSGBOXFONT, &font)))
 +        || SystemParametersInfoW(SPI_GETICONTITLELOGFONT, sizeof(font), &font, 0))
@@ -308,18 +322,18 @@ index 4eb7f9b..9107154 100644
 +    SetBkMode(hdc, TRANSPARENT);
 +    SetTextColor(hdc, window ? GetThemeSysColor(window, COLOR_WINDOWTEXT) : GetSysColor(COLOR_WINDOWTEXT));
 +    InflateRect(&client, -6, -4);
-+    DrawTextW(hdc, L"Window Text", -1, &client, DT_LEFT | DT_TOP | DT_SINGLELINE);
++    DrawTextW(hdc, preview_text(1460, L"Window Text", text, ARRAY_SIZE(text)), -1, &client, DT_LEFT | DT_TOP | DT_SINGLELINE);
 +
 +    /* Message box with its OK button, in the middle. */
 +    SetRect(&rect, preview->left + width / 2 - width / 4, preview->top + height / 2,
 +            preview->left + width / 2 + width / 4, preview->top + height / 2 + height / 3);
-+    preview_window(hdc, window, &rect, L"Message Box", TRUE, TRUE, COLOR_BTNFACE, &client);
++    preview_window(hdc, window, &rect, preview_text(1457, L"Message Box", text, ARRAY_SIZE(text)), TRUE, TRUE, COLOR_BTNFACE, &client);
 +    SetRect(&rect, (client.left + client.right) / 2 - 38, (client.top + client.bottom) / 2 - 12,
 +            (client.left + client.right) / 2 + 38, (client.top + client.bottom) / 2 + 11);
 +    if (button) DrawThemeBackground(button, hdc, BP_PUSHBUTTON, PBS_DEFAULTED, &rect, NULL);
 +    else DrawFrameControl(hdc, &rect, DFC_BUTTON, DFCS_BUTTONPUSH);
 +    SetTextColor(hdc, window ? GetThemeSysColor(window, COLOR_BTNTEXT) : GetSysColor(COLOR_BTNTEXT));
-+    DrawTextW(hdc, L"OK", -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
++    DrawTextW(hdc, preview_text(1458, L"OK", text, ARRAY_SIZE(text)), -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 +
 +    if (hfont)
 +    {

@@ -183,7 +183,7 @@ index 078cf64..99caa0c 100644
  
  extern HRESULT WINAPI WICCreateImagingFactory_Proxy(UINT version, IWICImagingFactory **factory);
 diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
-index 6316213..7a4b99e 100644
+index 045c455..5278853 100644
 --- a/dlls/uxtheme/system.c
 +++ b/dlls/uxtheme/system.c
 @@ -489,8 +489,24 @@ static void UXTHEME_SaveSystemMetrics(struct system_metrics *metrics, BOOL send_

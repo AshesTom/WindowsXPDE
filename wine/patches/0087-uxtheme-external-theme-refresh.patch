@@ -54,7 +54,7 @@ index 9095c57..b1204db 100644
          external_shell_paint_nonclient( hwnd, (HRGN)wparam );
          break;
 diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
-index 9107154..3a03fe2 100644
+index e3d4af8..45be3e4 100644
 --- a/dlls/uxtheme/system.c
 +++ b/dlls/uxtheme/system.c
 @@ -55,6 +55,9 @@ static BOOL bThemeActive = FALSE;
@@ -214,7 +214,7 @@ index 9107154..3a03fe2 100644
      TRACE("(%p,%s, %lx)\n", hwnd, debugstr_w(pszClassList), flags);
  
      if(!pszClassList)
-@@ -1196,6 +1290,7 @@ HRESULT WINAPI ApplyTheme(HTHEMEFILE hThemeFile, char *unknown, HWND hWnd)
+@@ -1210,6 +1304,7 @@ HRESULT WINAPI ApplyTheme(HTHEMEFILE hThemeFile, char *unknown, HWND hWnd)
      HRESULT hr;
      TRACE("(%p,%s,%p)\n", hThemeFile, unknown, hWnd);
      hr = UXTHEME_SetActiveTheme(hThemeFile);

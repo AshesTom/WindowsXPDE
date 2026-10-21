@@ -18,10 +18,10 @@ Scope: callers of uxtheme ordinal 73; BufferedPaintClear keeps its name.
  2 files changed, 24 insertions(+)
 
 diff --git a/dlls/uxtheme/system.c b/dlls/uxtheme/system.c
-index 7a4b99e..0371410 100644
+index 5278853..5e5f016 100644
 --- a/dlls/uxtheme/system.c
 +++ b/dlls/uxtheme/system.c
-@@ -1234,6 +1234,29 @@ HRESULT WINAPI DrawNCPreview(HDC hdc, DWORD flags, RECT *preview, LPCWSTR file,
+@@ -1248,6 +1248,29 @@ HRESULT WINAPI DrawNCPreview(HDC hdc, DWORD flags, RECT *preview, LPCWSTR file,
      return S_OK;
  }
  
