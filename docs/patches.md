@@ -153,7 +153,7 @@ prefix の補助ツールがこの変数を設定します。同じ Wine で普�
 | 0084 | uxtheme: DrawThemeParentBackground で、親の背景を子の窓の位置に描く（範囲は切り抜きにだけ使う。XP と同じ。フォルダの窓のツールバーで、状態の変わったボタンだけを描き直すと、無効になった「移動」「コピー」の背景が黒くなった） | なし |
 | 0085 | uxtheme: ClassicGetSystemMetrics、ClassicSystemParametersInfoA/W、ClassicAdjustWindowRectEx、GetThemeSysSize96、GetThemeSysFont96（XP の画面のプロパティの themeui.dll が序数で使う）（AshesTom） | なし |
 | 0086 | uxtheme: OpenThemeDataFromFile（動いていないテーマのファイルのクラス）、SetSystemVisualStyle、DrawNCPreview（画面のプロパティの見本。文字は呼んだ themeui.dll の言語で、タイトルはスタイルのタイトルの文字色）、GetThemeParseErrorInfo。XP の画面のプロパティでスタイルを選んで見て、適用できる。XP のセッションでは Wine 自身の Light のスタイルを一覧に出さない（AshesTom） | なし |
-| 0087 | uxtheme, user32: 外部シェルで、テーマを変えたときにほかのプロセスもテーマを読み直す（ThemeManager のレジストリの変更を見て、WM_THEMECHANGED で枠を描き直す）。XP の画面のプロパティで適用したスタイルが、タスクバーやフォルダの窓にもすぐ反映される（AshesTom） | あり |
+| 0087 | uxtheme, user32: 外部シェルで、テーマを変えたときにほかのプロセスもテーマを読み直す（ThemeManager のレジストリの変更を見て、WM_THEMECHANGED で枠を描き直す）。XP の画面のプロパティで適用したスタイルが、タスクバーやフォルダの窓にもすぐ反映される。新しいスタイルを読んだのが WM_THEMECHANGED の後なら、そのプロセスの窓にもう一度送る（クラシックから戻したときのスタートボタンの幅）（AshesTom） | あり |
 
 ### Wayland のセッション（0088〜0089）
 
