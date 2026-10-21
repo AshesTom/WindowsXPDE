@@ -3,8 +3,8 @@ Subject: [PATCH] uxtheme, user32: paint Luna frames and theme parts with fewer b
 
 Purpose: let the XP shell's windows (Luna) and the bridge's frames resize
 smoothly, also in virtual machines without a GPU.
-Wine before (with 0061-0061): each step of a resize painted the frame
-twice: on WM_NCPAINT, then all of it again when 0062 updated the caption
+Wine before (with 0062-0062): each step of a resize painted the frame
+twice: on WM_NCPAINT, then all of it again when 0063 updated the caption
 region on WM_WINDOWPOSCHANGED. DefWindowProc drew the classic caption, with
 themed buttons, under the Luna caption that covered it right after. Every
 blit of an 8- or 24-bpp theme image converted it to the screen's 32 bpp,
@@ -15,7 +15,7 @@ Change:
 - Theme images of fewer than 32 bpp are kept as 32-bpp copies holding the
   bytes that converting them for a 32-bpp target gives (fourth byte zero);
   their default transparent colour is found before.
-- For a window's DC on a 32-bpp screen without a mapping, 0065's resized
+- For a window's DC on a 32-bpp screen without a mapping, 0066's resized
   colour-keyed parts are drawn with AlphaBlend from a copy whose key pixels
   have alpha 0 and the others 255, which leaves the same pixels as
   TransparentBlt there.

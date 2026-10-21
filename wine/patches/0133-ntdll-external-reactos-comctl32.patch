@@ -12,7 +12,7 @@ user controls: their buttons, edit controls, list boxes and combo boxes
 were not created.
 Change: in the ReactOS shell session (WIN4WINE_SHELL=reactos),
 ros-explorer.exe takes C:\ros\comctl32.dll, beside it, where its manifest's
-SxS redirection leads to Wine's assembly, as 0115 does for Windows 7's
+SxS redirection leads to Wine's assembly, as 0116 does for Windows 7's
 shell; prefix/reactos.py places ReactOS's file there and keeps Wine's in
 the assembly.
 Evidence: xpcmp.exe in the ReactOS session shows all its controls; the

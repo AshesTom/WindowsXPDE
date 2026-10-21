@@ -1,4 +1,4 @@
-/* The menu bar height (iMenuHeight) that XP keeps under a visual style (patch 0074).
+/* The menu bar height (iMenuHeight) that XP keeps under a visual style (patch 0075).
  * Usage: menu-height [COM1|FILE]. Prints the current metrics, then with the flat menu
  * setting toggled, then the smallest height SPI_SETNONCLIENTMETRICS keeps for some menu
  * fonts. Every change is made without saving and is undone before the end. */

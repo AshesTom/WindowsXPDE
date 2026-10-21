@@ -14,7 +14,7 @@ and the caption is empty.
 Wine before: the function was a stub (E_NOTIMPL), and the frame showed
 the window text and its icon.
 Change: the options are kept in a window property and the frame is
-redrawn; the external shell's themed frame (0061) leaves out the text
+redrawn; the external shell's themed frame (0062) leaves out the text
 with WTNCA_NODRAWCAPTION and the icon with WTNCA_NODRAWICON. uxtheme.h
 gets WTA_OPTIONS and the WTNCA_* flags.
 Evidence: Windows 7 SP1 x64 explorer.exe calls it with 8 bytes for its

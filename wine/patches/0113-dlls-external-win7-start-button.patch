@@ -18,7 +18,7 @@ and shadow.
 Wine before: without a compositing manager, UpdateLayeredWindow copied
 the image over black and only left out the pixels with alpha 0, so the
 partly transparent pixels showed as a dark, jagged fringe. The button is
-the XP shell's Start button class (0058), which also painted its own
+the XP shell's Start button class (0059), which also painted its own
 image on WM_PAINT and on state changes, over explorer's. When the window
 grew, three things showed black under a shifted button for a frame or
 more: the window manager applied the new size after Wine had drawn the
@@ -144,7 +144,7 @@ index 38fe9dd..9d34962 100644
  
  W32KAPI void window_surface_set_layered( struct window_surface *surface, COLORREF color_key, UINT alpha_bits, UINT alpha_mask )
 diff --git a/dlls/win32u/win32u_private.h b/dlls/win32u/win32u_private.h
-index 528f1d9..e868f81 100644
+index f68c0ce..99474bc 100644
 --- a/dlls/win32u/win32u_private.h
 +++ b/dlls/win32u/win32u_private.h
 @@ -267,6 +267,8 @@ extern HWND get_hwnd_message_parent(void);
@@ -157,7 +157,7 @@ index 528f1d9..e868f81 100644
  extern HWND is_current_process_window( HWND hwnd );
  extern HWND is_current_thread_window( HWND hwnd );
 diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
-index 7c55d5b..0d0c69f 100644
+index 64f57d6..b7710ba 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
 @@ -2646,6 +2646,226 @@ BOOL WINAPI NtUserSetLayeredWindowAttributes( HWND hwnd, COLORREF key, BYTE alph
