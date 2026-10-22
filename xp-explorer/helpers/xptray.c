@@ -130,9 +130,17 @@ static WCHAR wireless_connect_ssid[128];
 static int volume = -1, muted;
 static int wanted_volume = -1;
 static int battery = -1, charging, on_ac, minutes_left = -1, warned_low;
-static WCHAR net_name[32];
-static int net_up = -1, net_wireless, net_limited, net_signal = -1, net_speed;
-static WCHAR net_ssid[64];
+/* A network interface's state: the tray's (the interface with the default
+ * route) and the status sheet's (the one it was opened for). */
+typedef struct
+{
+    WCHAR name[32];
+    int up, wireless, limited, signal, speed;
+    WCHAR ssid[64];
+} NETSTATE;
+static NETSTATE net = {.up = -1, .signal = -1}, sheet = {.up = -1, .signal = -1};
+/* When each interface came up, for the sheet's Duration. */
+static struct { WCHAR name[32]; ULONGLONG since; } net_times[16];
 static unsigned long long rx_last, tx_last;
 
 /* XP icons, by resource ID in the files extracted from the user's ISO. */
@@ -410,43 +418,156 @@ static void poll_power(void)
     if (!on_ac && !charging && power > 0) minutes_left = (int)(energy * 60 / power);
 }
 
-/* The interface that carries the default route, else the first wireless or
- * wired adapter; virtual interfaces (no device link) are left out. */
+/* The whole routing table: read_text keeps only a first line. */
+static void read_routes(char *route, DWORD size)
+{
+    HANDLE file = CreateFileW(L"Z:\\proc\\net\\route", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    DWORD done = 0;
+    route[0] = 0;
+    if (file == INVALID_HANDLE_VALUE) return;
+    ReadFile(file, route, size - 1, &done, NULL);
+    CloseHandle(file);
+    route[done] = 0;
+}
+
+/* Whether NAME has a route in ROUTE, or with DEFAULT_ONLY the default route. */
+static BOOL has_route(const char *route, const WCHAR *name, BOOL default_only)
+{
+    char narrow[32], needle[48];
+    WideCharToMultiByte(CP_UTF8, 0, name, -1, narrow, sizeof(narrow), NULL, NULL);
+    snprintf(needle, sizeof(needle), default_only ? "\n%s\t00000000\t" : "\n%s\t", narrow);
+    return strstr(route, needle) != NULL;
+}
+
+/* An interface is up on "up", or on "unknown" with a carrier (WireGuard and
+ * other tunnels). */
+static BOOL interface_up(const WCHAR *directory)
+{
+    WCHAR path[MAX_PATH];
+    char text[64];
+    swprintf(path, MAX_PATH, L"%ls\\operstate", directory);
+    if (!read_text(path, text, sizeof(text))) return FALSE;
+    if (!strcmp(text, "up")) return TRUE;
+    return !strcmp(text, "unknown") && read_number(directory, L"carrier", 0) == 1;
+}
+
+/* When interface NAME came up, as first seen by the poll. */
+static ULONGLONG *net_time(const WCHAR *name)
+{
+    int free_slot = -1;
+    for (int i = 0; i < (int)ARRAYSIZE(net_times); i++)
+    {
+        if (!wcscmp(net_times[i].name, name)) return &net_times[i].since;
+        if (free_slot < 0 && !net_times[i].name[0]) free_slot = i;
+    }
+    if (free_slot < 0) return NULL;
+    wcsncpy(net_times[free_slot].name, name, 31);
+    net_times[free_slot].since = 0;
+    return &net_times[free_slot].since;
+}
+
+/* STATE for the interface in its name: up, wireless, limited (no address, or
+ * no default route when no interface has one), speed, and with DETAIL the
+ * SSID and signal of a wireless one. */
+static void poll_interface(NETSTATE *state, const char *route, BOOL detail)
+{
+    WCHAR directory[MAX_PATH], path[MAX_PATH];
+    char text[4096], *line;
+    swprintf(directory, MAX_PATH, L"Z:\\sys\\class\\net\\%ls", state->name);
+    if (!exists(directory))
+    {
+        state->up = -1;
+        return;
+    }
+    swprintf(path, MAX_PATH, L"%ls\\wireless", directory);
+    state->wireless = exists(path);
+    state->up = interface_up(directory);
+    state->limited = state->up && !has_route(route, state->name, TRUE)
+                     && (!strstr(route, "\t00000000\t") || !has_route(route, state->name, FALSE));
+    /* Wired links report their speed in sysfs; nmcli gives a wireless one below. */
+    if (!state->wireless || !state->up) state->speed = (int)read_number(directory, L"speed", 0);
+    if (!state->wireless || !state->up)
+    {
+        state->ssid[0] = 0;
+        state->signal = -1;
+        return;
+    }
+    if (!detail) return;
+    /* nmcli: "yes:SSID:SIGNAL:RATE" for the interface's active network; no rescan. */
+    {
+        WCHAR script[256], name[80];
+        shell_quote_w(state->name, name, ARRAYSIZE(name));
+        swprintf(script, ARRAYSIZE(script),
+                 L"nmcli -t -f ACTIVE,SSID,SIGNAL,RATE dev wifi list --rescan no ifname %ls 2>/dev/null | grep '^yes:'", name);
+        if (capture(script, text, sizeof(text)) && !strncmp(text, "yes:", 4))
+        {
+            char ssid[128], *out = ssid, *p = text + 4;
+            while (*p && *p != ':' && out < ssid + sizeof(ssid) - 1)
+            {
+                if (*p == '\\' && p[1]) p++;
+                *out++ = *p++;
+            }
+            *out = 0;
+            MultiByteToWideChar(CP_UTF8, 0, ssid, -1, state->ssid, 64);
+            if (*p == ':') state->signal = atoi(++p);
+            if ((p = strchr(p, ':'))) state->speed = atoi(p + 1);
+            return;
+        }
+    }
+    /* Without NetworkManager: the link quality of /proc/net/wireless (out of 70). */
+    {
+        HANDLE file = CreateFileW(L"Z:\\proc\\net\\wireless", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+        DWORD done = 0;
+        char name[32];
+        state->signal = -1;
+        state->ssid[0] = 0;
+        if (file == INVALID_HANDLE_VALUE) return;
+        ReadFile(file, text, sizeof(text) - 1, &done, NULL);
+        CloseHandle(file);
+        text[done] = 0;
+        WideCharToMultiByte(CP_UTF8, 0, state->name, -1, name, sizeof(name), NULL, NULL);
+        for (line = strtok(text, "\n"); line; line = strtok(NULL, "\n"))
+        {
+            while (*line == ' ') line++;
+            if (!strncmp(line, name, strlen(name)) && line[strlen(name)] == ':')
+            {
+                float quality;
+                if (sscanf(line + strlen(name) + 1, "%*s %f", &quality) == 1) state->signal = (int)(quality * 100 / 70);
+            }
+        }
+    }
+}
+
+/* The tray's interface: the one that carries the default route, else the
+ * first wireless or wired adapter; virtual interfaces (no device link) are
+ * left out. The poll also notes when each interface came up. */
 static void poll_network(BOOL detail)
 {
     WIN32_FIND_DATAW found;
     HANDLE search;
-    char route[8192], text[64], *line;
+    char route[8192];
     WCHAR best[32] = L"", path[MAX_PATH], directory[MAX_PATH];
     int best_rank = 0;
 
-    /* The whole routing table: read_text keeps only a first line. */
-    {
-        HANDLE file = CreateFileW(L"Z:\\proc\\net\\route", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
-        DWORD done = 0;
-        route[0] = 0;
-        if (file != INVALID_HANDLE_VALUE)
-        {
-            ReadFile(file, route, sizeof(route) - 1, &done, NULL);
-            CloseHandle(file);
-            route[done] = 0;
-        }
-    }
+    read_routes(route, sizeof(route));
     search = FindFirstFileW(L"Z:\\sys\\class\\net\\*", &found);
     if (search != INVALID_HANDLE_VALUE)
     {
         do
         {
-            char name[32], needle[48];
+            ULONGLONG *since;
             int rank;
             if (found.cFileName[0] == '.') continue;
             swprintf(directory, MAX_PATH, L"Z:\\sys\\class\\net\\%ls", found.cFileName);
+            if ((since = net_time(found.cFileName)))
+            {
+                if (!interface_up(directory)) *since = 0;
+                else if (!*since) *since = GetTickCount64();
+            }
             swprintf(path, MAX_PATH, L"%ls\\device", directory);
             if (!exists(path)) continue;
-            WideCharToMultiByte(CP_UTF8, 0, found.cFileName, -1, name, sizeof(name), NULL, NULL);
-            snprintf(needle, sizeof(needle), "\n%s\t00000000\t", name);
             swprintf(path, MAX_PATH, L"%ls\\wireless", directory);
-            rank = strstr(route, needle) ? 3 : exists(path) ? 2 : 1;
+            rank = has_route(route, found.cFileName, TRUE) ? 3 : exists(path) ? 2 : 1;
             if (rank > best_rank)
             {
                 best_rank = rank;
@@ -457,66 +578,19 @@ static void poll_network(BOOL detail)
     }
     if (!best_rank)
     {
-        net_up = -1;
+        net.up = -1;
         return;
     }
-    if (wcscmp(best, net_name))
+    if (wcscmp(best, net.name))
     {
-        wcscpy(net_name, best);
+        wcscpy(net.name, best);
         rx_last = tx_last = 0;
     }
-    swprintf(directory, MAX_PATH, L"Z:\\sys\\class\\net\\%ls", best);
-    swprintf(path, MAX_PATH, L"%ls\\wireless", directory);
-    net_wireless = exists(path);
-    swprintf(path, MAX_PATH, L"%ls\\operstate", directory);
-    net_up = read_text(path, text, sizeof(text)) && !strcmp(text, "up");
-    net_limited = net_up && best_rank < 3;
-    /* Wired links report their speed in sysfs; nmcli gives a wireless one below. */
-    if (!net_wireless || !net_up) net_speed = (int)read_number(directory, L"speed", 0);
-    if (!net_wireless || !net_up)
+    poll_interface(&net, route, detail);
+    if (sheet.name[0])
     {
-        net_ssid[0] = 0;
-        net_signal = -1;
-        return;
-    }
-    if (!detail) return;
-    /* nmcli: "yes:SSID:SIGNAL:RATE" for the active network; no rescan. */
-    if (capture(L"nmcli -t -f ACTIVE,SSID,SIGNAL,RATE dev wifi list --rescan no 2>/dev/null | grep '^yes:'",
-                route, sizeof(route)) && !strncmp(route, "yes:", 4))
-    {
-        char ssid[128], *out = ssid, *p = route + 4;
-        while (*p && *p != ':' && out < ssid + sizeof(ssid) - 1)
-        {
-            if (*p == '\\' && p[1]) p++;
-            *out++ = *p++;
-        }
-        *out = 0;
-        MultiByteToWideChar(CP_UTF8, 0, ssid, -1, net_ssid, 64);
-        if (*p == ':') net_signal = atoi(++p);
-        if ((p = strchr(p, ':'))) net_speed = atoi(p + 1);
-        return;
-    }
-    /* Without NetworkManager: the link quality of /proc/net/wireless (out of 70). */
-    {
-        HANDLE file = CreateFileW(L"Z:\\proc\\net\\wireless", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
-        DWORD done = 0;
-        char name[32];
-        net_signal = -1;
-        net_ssid[0] = 0;
-        if (file == INVALID_HANDLE_VALUE) return;
-        ReadFile(file, route, sizeof(route) - 1, &done, NULL);
-        CloseHandle(file);
-        route[done] = 0;
-        WideCharToMultiByte(CP_UTF8, 0, best, -1, name, sizeof(name), NULL, NULL);
-        for (line = strtok(route, "\n"); line; line = strtok(NULL, "\n"))
-        {
-            while (*line == ' ') line++;
-            if (!strncmp(line, name, strlen(name)) && line[strlen(name)] == ':')
-            {
-                float quality;
-                if (sscanf(line + strlen(name) + 1, "%*s %f", &quality) == 1) net_signal = (int)(quality * 100 / 70);
-            }
-        }
+        if (!wcscmp(sheet.name, net.name) && detail) sheet = net;
+        else poll_interface(&sheet, route, detail);
     }
 }
 
@@ -637,10 +711,10 @@ static void signal_words(int signal, WCHAR *out, int size)
     xp_text(L"netshell.dll", 2601 + level, words[level], out, size);
 }
 
-static void speed_text(WCHAR *out, size_t size)
+static void speed_text(int speed, WCHAR *out, size_t size)
 {
-    if (net_speed >= 1000) swprintf(out, size, L"%.1f Gbps", net_speed / 1000.0);
-    else if (net_speed > 0) swprintf(out, size, L"%d.0 Mbps", net_speed);
+    if (speed >= 1000) swprintf(out, size, L"%.1f Gbps", speed / 1000.0);
+    else if (speed > 0) swprintf(out, size, L"%d.0 Mbps", speed);
     else xp_text(L"netshell.dll", 1026, L"Unknown", out, size);
 }
 
@@ -709,55 +783,55 @@ static void show_network(void)
     int index;
     BOOL balloon = FALSE;
 
-    if (net_up < 0)
+    if (net.up < 0)
     {
         set_icon(ID_NETWORK, FALSE, NULL, L"", NULL, NULL, 0);
         last_up = -2;
         return;
     }
     /* The texts are XP's own (netshell.dll, and xpsp2res.dll for wireless). */
-    if (net_wireless) xp_text(L"xpsp2res.dll", 16022, L"Wireless Network Connection", name, ARRAYSIZE(name));
+    if (net.wireless) xp_text(L"xpsp2res.dll", 16022, L"Wireless Network Connection", name, ARRAYSIZE(name));
     else xp_text(L"netshell.dll", 1811, L"Local Area Connection", name, ARRAYSIZE(name));
-    speed_text(speed, 32);
+    speed_text(net.speed, speed, 32);
     xp_text(L"netshell.dll", 2202, L"Speed: %1!s!", speed_line, ARRAYSIZE(speed_line), speed);
-    if (net_signal >= 0) signal_words(net_signal, signal, ARRAYSIZE(signal));
+    if (net.signal >= 0) signal_words(net.signal, signal, ARRAYSIZE(signal));
     else xp_text(L"netshell.dll", 1026, L"Unknown", signal, ARRAYSIZE(signal));
     xp_text(L"xpsp2res.dll", 16008, L"Signal Strength:", line, ARRAYSIZE(line));
     swprintf(signal_line, ARRAYSIZE(signal_line), L"%ls %ls", line, signal);
-    if (!net_up)
+    if (!net.up)
     {
-        index = net_wireless ? 11 : 8;
-        if (net_wireless) xp_text(L"xpsp2res.dll", 144, L"Not connected", line, ARRAYSIZE(line));
+        index = net.wireless ? 11 : 8;
+        if (net.wireless) xp_text(L"xpsp2res.dll", 144, L"Not connected", line, ARRAYSIZE(line));
         else xp_text(L"netshell.dll", 2201, L"A network cable is unplugged.", line, ARRAYSIZE(line));
         swprintf(tip, 128, L"%ls\n%ls", name, line);
         if (last_up == 1)
         {
             balloon = TRUE;
             wcscpy(title, name);
-            if (net_wireless) xp_text(L"netshell.dll", 2208, L"Wireless connection unavailable", info, ARRAYSIZE(info));
+            if (net.wireless) xp_text(L"netshell.dll", 2208, L"Wireless connection unavailable", info, ARRAYSIZE(info));
             else wcscpy(info, line);
         }
     }
     else
     {
-        if (net_wireless)
+        if (net.wireless)
         {
-            index = net_limited ? 12 : 10;
-            if (net_ssid[0]) swprintf(tip, 128, L"%ls (%ls)\n%ls\n%ls", name, net_ssid, speed_line, signal_line);
+            index = net.limited ? 12 : 10;
+            if (net.ssid[0]) swprintf(tip, 128, L"%ls (%ls)\n%ls\n%ls", name, net.ssid, speed_line, signal_line);
             else swprintf(tip, 128, L"%ls\n%ls", name, signal_line);
         }
         else
         {
             /* XP lights the two screens for sending and receiving. */
-            swprintf(directory, MAX_PATH, L"Z:\\sys\\class\\net\\%ls\\statistics", net_name);
+            swprintf(directory, MAX_PATH, L"Z:\\sys\\class\\net\\%ls\\statistics", net.name);
             rx = read_number(directory, L"rx_bytes", 0);
             tx = read_number(directory, L"tx_bytes", 0);
-            index = net_limited ? 9 : 4 + (rx_last && tx > tx_last ? 1 : 0) + (rx_last && rx > rx_last ? 2 : 0);
+            index = net.limited ? 9 : 4 + (rx_last && tx > tx_last ? 1 : 0) + (rx_last && rx > rx_last ? 2 : 0);
             rx_last = rx;
             tx_last = tx;
             swprintf(tip, 128, L"%ls\n%ls", name, speed_line);
         }
-        if (net_limited)
+        if (net.limited)
         {
             xp_text(L"xpsp2res.dll", 142, L"Limited or no connectivity", line, ARRAYSIZE(line));
             wcsncat(tip, L"\n", 127 - wcslen(tip));
@@ -767,16 +841,16 @@ static void show_network(void)
         {
             balloon = TRUE;
             xp_text(L"netshell.dll", 2223, L"%1 is now connected", title, ARRAYSIZE(title), name);
-            if (net_wireless && net_ssid[0])
+            if (net.wireless && net.ssid[0])
             {
                 xp_text(L"netshell.dll", 2234, L"Connected to: %1!s!\r\nSignal Strength: %2!s!", line,
-                        ARRAYSIZE(line), net_ssid, signal);
+                        ARRAYSIZE(line), net.ssid, signal);
                 swprintf(info, 256, L"%ls\n%ls", line, speed_line);
             }
             else wcscpy(info, speed_line);
         }
     }
-    last_up = net_up;
+    last_up = net.up;
     set_icon(ID_NETWORK, TRUE, xp_icon(index), tip, balloon ? title : NULL, balloon ? info : NULL, NIIF_INFO);
 }
 
@@ -787,8 +861,8 @@ static void poll(void)
     show_power();
     /* nmcli for the SSID only every 10 seconds, or when the link changes. */
     poll_network(FALSE);
-    if (net_up != last_up || tick % 10 == 0) poll_network(TRUE);
-    last_up = net_up;
+    if (net.up != last_up || tick % 10 == 0) poll_network(TRUE);
+    last_up = net.up;
     show_network();
     if (tick % 2 == 0 || volume < 0)
     {
@@ -1013,7 +1087,6 @@ static void show_power_meter(void)
 
 /* "<connection> Status": netshell's General and Support pages. */
 static HWND net_sheet, net_general, net_support;
-static ULONGLONG net_since;
 
 static void thousands(unsigned long long value, WCHAR *out, size_t size)
 {
@@ -1052,14 +1125,14 @@ static HBITMAP signal_bitmap(int signal)
 static void net_status_update(void)
 {
     WCHAR text[128], directory[MAX_PATH];
-    ULONGLONG seconds;
+    ULONGLONG seconds, *since = net_time(sheet.name);
     HBITMAP old;
     if (!net_general) return;
-    if (net_up <= 0) xp_text(L"netshell.dll", 23010, L"Disconnected", text, 128);
-    else if (net_limited) xp_text(L"xpsp2res.dll", 142, L"Limited or no connectivity", text, 128);
+    if (sheet.up <= 0) xp_text(L"netshell.dll", 23010, L"Disconnected", text, 128);
+    else if (sheet.limited) xp_text(L"xpsp2res.dll", 142, L"Limited or no connectivity", text, 128);
     else xp_text(L"netshell.dll", 23012, L"Connected", text, 128);
     SetDlgItemTextW(net_general, 1007, text);
-    seconds = net_up > 0 && net_since ? (GetTickCount64() - net_since) / 1000 : 0;
+    seconds = sheet.up > 0 && since && *since ? (GetTickCount64() - *since) / 1000 : 0;
     if (seconds >= 86400)
     {
         WCHAR days[32];
@@ -1072,15 +1145,15 @@ static void net_status_update(void)
         swprintf(text, 128, L"%02u:%02u:%02u", (unsigned)(seconds / 3600), (unsigned)(seconds / 60 % 60),
                  (unsigned)(seconds % 60));
     SetDlgItemTextW(net_general, 1008, text);
-    if (net_up > 0) speed_text(text, 128);
+    if (sheet.up > 0) speed_text(sheet.speed, text, 128);
     else wcscpy(text, L"0 bps");
     SetDlgItemTextW(net_general, 1009, text);
-    ShowWindow(GetDlgItem(net_general, 1043), net_wireless ? SW_SHOW : SW_HIDE);
-    ShowWindow(GetDlgItem(net_general, 1044), net_wireless ? SW_SHOW : SW_HIDE);
-    if (net_wireless && (old = (HBITMAP)SendDlgItemMessageW(net_general, 1044, STM_SETIMAGE, IMAGE_BITMAP,
-                                                          (LPARAM)signal_bitmap(net_up > 0 ? net_signal : 0))))
+    ShowWindow(GetDlgItem(net_general, 1043), sheet.wireless ? SW_SHOW : SW_HIDE);
+    ShowWindow(GetDlgItem(net_general, 1044), sheet.wireless ? SW_SHOW : SW_HIDE);
+    if (sheet.wireless && (old = (HBITMAP)SendDlgItemMessageW(net_general, 1044, STM_SETIMAGE, IMAGE_BITMAP,
+                                                          (LPARAM)signal_bitmap(sheet.up > 0 ? sheet.signal : 0))))
         DeleteObject(old);
-    swprintf(directory, MAX_PATH, L"Z:\\sys\\class\\net\\%ls\\statistics", net_name);
+    swprintf(directory, MAX_PATH, L"Z:\\sys\\class\\net\\%ls\\statistics", sheet.name);
     thousands(read_number(directory, L"tx_bytes", 0), text, 128);
     SetDlgItemTextW(net_general, 1003, text);
     thousands(read_number(directory, L"rx_bytes", 0), text, 128);
@@ -1099,7 +1172,7 @@ static void net_support_update(void)
     unsigned prefix_length = 0;
     if (!net_support) return;
     /* Every name goes into the shell quoted. */
-    shell_quote_w(net_name, name, ARRAYSIZE(name));
+    shell_quote_w(sheet.name, name, ARRAYSIZE(name));
     swprintf(script, 512, L"nmcli -t -g IP4.ADDRESS,IP4.GATEWAY device show %ls 2>/dev/null | head -2; "
              L"c=$(nmcli -g GENERAL.CONNECTION device show %ls 2>/dev/null); "
              L"[ -n \"$c\" ] && nmcli -g ipv4.method connection show \"$c\" 2>/dev/null", name, name);
@@ -1137,7 +1210,7 @@ static INT_PTR CALLBACK net_general_proc(HWND dialog, UINT message, WPARAM wpara
     {
         RECT label, value;
         net_general = dialog;
-        if (net_up <= 0)
+        if (sheet.up <= 0)
         {
             WCHAR enable[64];
             xp_menu_text(L"netshell.dll", 11010, 16, L"En&able", enable, ARRAYSIZE(enable));
@@ -1162,8 +1235,8 @@ static INT_PTR CALLBACK net_general_proc(HWND dialog, UINT message, WPARAM wpara
         {
             /* Disable or enable, as XP's button does, through NetworkManager. */
             WCHAR name[80];
-            shell_quote_w(net_name, name, ARRAYSIZE(name));
-            swprintf(script, 256, net_up > 0 ? L"nmcli device disconnect %ls" : L"nmcli device connect %ls", name);
+            shell_quote_w(sheet.name, name, ARRAYSIZE(name));
+            swprintf(script, 256, sheet.up > 0 ? L"nmcli device disconnect %ls" : L"nmcli device connect %ls", name);
             spawn(script, NULL);
             PropSheet_PressButton(net_sheet, PSBTN_CANCEL);
         }
@@ -1208,7 +1281,7 @@ static INT_PTR CALLBACK net_details_proc(HWND dialog, UINT message, WPARAM wpara
             else
             {
                 /* XP writes the MAC address as 00-0C-29-12-34-56. */
-                swprintf(path, MAX_PATH, L"Z:\\sys\\class\\net\\%ls\\address", net_name);
+                swprintf(path, MAX_PATH, L"Z:\\sys\\class\\net\\%ls\\address", sheet.name);
                 read_text(path, address, sizeof(address));
                 for (int j = 0; j < (int)sizeof(address); j++)
                     if (!(text[j] = address[j] == ':' ? L'-' : towupper(address[j]))) break;
@@ -1240,7 +1313,7 @@ static INT_PTR CALLBACK net_support_proc(HWND dialog, UINT message, WPARAM wpara
         {
             /* Repair: NetworkManager reapplies the connection. */
             WCHAR name[80];
-            shell_quote_w(net_name, name, ARRAYSIZE(name));
+            shell_quote_w(sheet.name, name, ARRAYSIZE(name));
             swprintf(script, 256, L"nmcli device reapply %ls || nmcli device connect %ls", name, name);
             spawn(script, NULL);
         }
@@ -1254,19 +1327,36 @@ static INT_PTR CALLBACK net_support_proc(HWND dialog, UINT message, WPARAM wpara
     return FALSE;
 }
 
-static void show_network_status(void)
+/* The status of interface DEVICE, titled with LABEL (a connection's name), or
+ * without one with XP's name for a LAN or wireless connection. */
+static void show_network_status(const WCHAR *device, const WCHAR *label)
 {
     static HMODULE netshell;
     PROPSHEETPAGEW pages[2] = {{0}};
     PROPSHEETHEADERW header = {0};
     WCHAR title[128], name[96], close[32];
-    if (net_sheet)
+    char route[8192];
+    if (!device || !device[0]) return;
+    if (net_sheet && !wcscmp(sheet.name, device))
     {
         SetForegroundWindow(net_sheet);
         return;
     }
+    if (net_sheet)
+    {
+        DestroyWindow(net_sheet);
+        net_sheet = NULL;
+    }
     if (!netshell) netshell = xp_module(L"netshell.dll");
-    if (!netshell || net_up < 0) return;
+    if (!netshell) return;
+    lstrcpynW(sheet.name, device, ARRAYSIZE(sheet.name));
+    read_routes(route, sizeof(route));
+    poll_interface(&sheet, route, TRUE);
+    if (sheet.up < 0)
+    {
+        sheet.name[0] = 0;
+        return;
+    }
     for (int i = 0; i < 2; i++)
     {
         pages[i].dwSize = sizeof(pages[i]);
@@ -1276,7 +1366,8 @@ static void show_network_status(void)
     pages[0].pfnDlgProc = net_general_proc;
     pages[1].pszTemplate = MAKEINTRESOURCEW(1806);
     pages[1].pfnDlgProc = net_support_proc;
-    if (net_wireless) xp_text(L"xpsp2res.dll", 16022, L"Wireless Network Connection", name, ARRAYSIZE(name));
+    if (label && label[0]) lstrcpynW(name, label, ARRAYSIZE(name));
+    else if (sheet.wireless) xp_text(L"xpsp2res.dll", 16022, L"Wireless Network Connection", name, ARRAYSIZE(name));
     else xp_text(L"netshell.dll", 1811, L"Local Area Connection", name, ARRAYSIZE(name));
     xp_text(L"netshell.dll", 23041, L"%1 Status", title, ARRAYSIZE(title), name);
     header.dwSize = sizeof(header);
@@ -1297,9 +1388,6 @@ static void show_network_status(void)
 
 static void flyouts_update(void)
 {
-    static int last_up = -2;
-    if (net_up > 0 && last_up <= 0) net_since = GetTickCount64();
-    last_up = net_up;
     power_meter_update();
     net_status_update();
 }
@@ -1565,10 +1653,7 @@ static LRESULT CALLBACK connections_proc(HWND hwnd, UINT message, WPARAM wparam,
         {
             int index = selected_connection();
             if (index >= 0 && connections[index].active)
-            {
-                poll_network(TRUE);
-                show_network_status();
-            }
+                show_network_status(connections[index].device, connections[index].name);
             else connection_action();
         }
         return 0;
@@ -1585,9 +1670,11 @@ static LRESULT CALLBACK connections_proc(HWND hwnd, UINT message, WPARAM wparam,
         {
         case CONN_CONNECT: connection_action(); return 0;
         case CONN_STATUS:
-            poll_network(TRUE);
-            show_network_status();
+        {
+            int index = selected_connection();
+            if (index >= 0) show_network_status(connections[index].device, connections[index].name);
             return 0;
+        }
         case CONN_SETTINGS: run_settings(CMD_NETWORK_SETTINGS); return 0;
         case CONN_CLOSE: DestroyWindow(hwnd); return 0;
         }
@@ -2378,7 +2465,7 @@ static void context_menu(UINT id)
     command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, cursor.x, cursor.y, 0, window, NULL);
     PostMessageW(window, WM_NULL, 0, 0);
     DestroyMenu(menu);
-    if (command == CMD_STATUS) show_network_status();
+    if (command == CMD_STATUS) show_network_status(net.up >= 0 ? net.name : NULL, NULL);
     else if (command == CMD_METER) show_power_meter();
     else if (command == CMD_CONNECTIONS) show_network_connections();
     else if (command == CMD_NETWORK) show_wireless_networks();
@@ -2500,6 +2587,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, WCHAR *command_line,
             {
                 DestroyWindow(net_sheet);
                 net_sheet = NULL;
+                sheet.name[0] = 0;
             }
             continue;
         }
