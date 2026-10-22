@@ -695,6 +695,9 @@ def install_wmp(assets, prefix, wine, env):
         target.mkdir(parents=True, exist_ok=True)
         for path in source.iterdir():
             shutil.copyfile(path, target / path.name)
+        # Made by earlier versions, whose unexpanded paths the player took
+        # for a folder of its own.
+        shutil.rmtree(target / '%ProgramFiles%', ignore_errors=True)
     r = Reg()
     natives = [p.stem for p in source.glob('*.dll')]
     r.add(r'HKCU\Software\Wine\DllOverrides', 'wmplayer.exe', 'native')
@@ -702,16 +705,20 @@ def install_wmp(assets, prefix, wine, env):
         for dll in natives:
             r.add(rf'HKCU\Software\Wine\AppDefaults\{program}\DllOverrides', dll,
                   'native,builtin' if program == 'regsvr32.exe' else 'native')
-    # No first-run wizard: XP set this up on the first logon.
+    # wmp.inf's PerUserStub sets AcceptedPrivacyStatement to 0 below: as on
+    # XP, the first start shows the player's privacy and file types wizard.
     preferences = r'HKCU\Software\Microsoft\MediaPlayer\Preferences'
-    r.add(preferences, 'AcceptedPrivacyStatement', '1', 'REG_DWORD')
     r.add(preferences, 'FirstTime', '1', 'REG_DWORD')
     texts = [r.text()]
     inf = xpreg.read_inf(source / 'wmp.inf')
-    folder = r'%ProgramFiles%\Windows Media Player'
+    # XP's setup writes these folders expanded: most of wmp.inf's values are
+    # REG_SZ, and wmplayer.exe and setup_wm.exe use them as they are (the
+    # current directory from App Paths, then setup_wm.exe found in it; the
+    # player started again after the first run's wizard).
+    folder = r'C:\Program Files\Windows Media Player'
     # wmp.inf's system32 files are beside wmplayer.exe here.
-    dirs = {'11': folder, '16422': '%ProgramFiles%', '49001': '%ProgramFiles%', '49301': folder,
-            '24': 'C:', '10': '%SystemRoot%'}
+    dirs = {'11': folder, '16422': r'C:\Program Files', '49001': r'C:\Program Files', '49301': folder,
+            '24': 'C:', '10': r'C:\windows'}
     runonce = (r'Software\Microsoft\Windows\CurrentVersion\RunOnce',)
     for root in ('HKLM', 'HKCR', 'HKCU'):
         texts.append(xpreg.hive_entries(inf, root, ('',), runonce, extra=dirs, install=('InstallWMP7', 'PerUserStub')))
