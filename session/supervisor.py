@@ -373,7 +373,8 @@ class Session:
             time.sleep(0.05)
 
     def tell_welcome(self, word):
-        """Change the line of the log-off screen ('saving', 'shutdown')."""
+        """Change the Welcome screen's line: 'applying' and 'welcome' while
+        the session starts, 'saving' and 'shutdown' while it ends."""
         if self.welcome and self.welcome.poll() is None:
             try:
                 self.welcome.stdin.write(word.encode() + b'\n')
@@ -460,8 +461,11 @@ class Session:
     def stop_wine(self):
         server = Path(self.wine).with_name('wineserver')
         for env in self.wine_envs:
-            subprocess.run([str(server), '-k'], env=env, timeout=10, check=False)
-            subprocess.run([str(server), '-w'], env=env, timeout=10, check=False)
+            for flag in ('-k', '-w'):
+                try:
+                    subprocess.run([str(server), flag], env=env, timeout=10, check=False)
+                except subprocess.TimeoutExpired:
+                    print(f'wineserver {flag} timed out', file=sys.stderr)
 
     def configure_outputs(self):
         """Wayland: the outputs' scale and place (wlr-randr), and Win32's primary monitor.
@@ -520,7 +524,14 @@ class Session:
         im_restarts = deque()
         # Install only the shell family in this dedicated prefix. Runtime overrides select them.
         script, *command = self.shell['stage']
+        # "Loading your personal settings..." while the prefix is brought up
+        # to date (a new Wine build updates it first), then "Applying..."
+        # while the session sets its keyboard and Start menu, as XP's
+        # Welcome screen goes through them before the shell starts.
+        self.status('starting', step='prefix')
         subprocess.run(['python3', str(ROOT / script), *command, str(self.prefix), '--wine', self.wine], check=True)
+        self.tell_welcome('applying')
+        self.status('starting', step='settings')
         self.keyboard()
         if self.linux_menu:
             self.start_linux_menu()
@@ -528,6 +539,7 @@ class Session:
             self.update_recent_programs()
             self.stop_wine()
             self.start_startmenu_view()
+        self.tell_welcome('welcome')
         crashes = deque()
         attempt = 0
         while not self.stopping:

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Show XP's Welcome screen while the XP shell starts, or its log-off screen while the session ends.
 
-The session supervisor runs this. 'logon' shows XP's big "welcome" until
-it is terminated; 'logoff' shows
-"Logging off..." and changes its line for each word read from stdin
-('logoff', 'saving', 'shutdown'). It exits with status 2 when the Welcome
+The session supervisor runs this. 'logon' shows the user's picture with
+"Loading your personal settings...", as XP does after a logon, and follows
+the words read from stdin: 'applying' ("Applying your personal settings...")
+and 'welcome' (XP's big "welcome" alone, while the shell starts), until it is
+terminated. 'logoff' shows "Logging off..." and changes its line for each
+word read ('logoff', 'saving', 'shutdown'). It exits with status 2 when the Welcome
 screen's files are not set up (greeter/install.sh), so the session goes on
 without it. The window stays above the windows mapped after it.
 """
@@ -18,7 +20,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-STATUS = {'logon': 1679, 'logoff': 1691, 'saving': 1687, 'shutdown': 1684}
+STATUS = {'loading': 1682, 'applying': 1679, 'logoff': 1691, 'saving': 1687, 'shutdown': 1684}
 
 
 def user_picture(name, home):
@@ -51,10 +53,11 @@ def main():
     picture = user_picture(entry.pw_name, entry.pw_dir) or welcome.default_picture(config, assets)
     screen = welcome.Screen(assets, [welcome.User(entry.pw_name, full_name or None, picture)], dpi=args.dpi)
     if args.mode == 'logon':
-        screen.mode = 'welcome'
+        screen.mode, screen.selected = 'logon', 0
+        screen.status = assets.string('winlogon', STATUS['loading'])
     else:
         screen.mode = 'status'
-    screen.status = assets.string('winlogon', STATUS[args.mode])
+        screen.status = assets.string('winlogon', STATUS['logoff'])
 
     d = display.Display()
     root = d.screen().root
@@ -82,7 +85,7 @@ def main():
             xdraw.set_root_background(d, screen.render(width, height))
         sys.exit(0)
     signal.signal(signal.SIGTERM, finish)
-    words = sys.stdin.fileno() if args.mode == 'logoff' else None
+    words = sys.stdin.fileno()
     while True:
         fds = [d.fileno()] + ([words] if words is not None else [])
         ready, _, _ = select.select(fds, [], [], None if not d.pending_events() else 0)
@@ -91,7 +94,10 @@ def main():
             if not line:
                 words = None  # The supervisor is gone; stay until the X server ends.
             for word in line:
-                if word in STATUS:
+                if word == 'welcome' and args.mode == 'logon':
+                    screen.mode = 'welcome'
+                    show()
+                elif word in STATUS:
                     screen.status = assets.string('winlogon', STATUS[word])
                     show()
         while d.pending_events():
