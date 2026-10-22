@@ -153,3 +153,12 @@
 0153-uxtheme-xp-display-properties-samples.patch
 0154-shcore-sh-reg-set-path.patch
 0155-user32-external-wallpaper-reload.patch
+0156-svchost-service-globals.patch
+0157-rpcrt4-negotiate-principal-name.patch
+0158-userenv-keep-session-variables.patch
+0159-ole32-external-shell-view-reposition.patch
+0160-uxtheme-xp-link-colour.patch
+0161-comctl32-syslink-hotlight.patch
+0162-win32u-external-initial-ui-state.patch
+0163-button-hide-access-keys.patch
+0164-win32u-external-foreign-child-flush.patch

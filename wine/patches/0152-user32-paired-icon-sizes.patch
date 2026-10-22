@@ -10,14 +10,24 @@ the group closest to each size; XP's shell32 fills its image lists so.
 Wine before: it looked up both images, but made both icons from the big
 one's data, scaling it down for the small icon (PE files, and .ico and NE
 files alike).
-Change: each icon is made from the image looked up for its own size.
+Change: each icon is made from the image looked up for its own size, and
+both sizes of the last group are made when the count is cut to the groups
+(a program with one icon got only its big icon).
 Scope: callers that ask two sizes at once (ExtractIconEx asks them apart).
----
 ---
 diff --git a/dlls/user32/exticon.c b/dlls/user32/exticon.c
 --- a/dlls/user32/exticon.c
 +++ b/dlls/user32/exticon.c
-@@ -386,11 +386,10 @@
+@@ -371,6 +371,8 @@
+ 	        pIconId[i] = LookupIconIdFromDirectoryEx(pCIDir, TRUE, cx1, cy1, flags);
+                 if (cx2 && cy2) pIconId[++i] = LookupIconIdFromDirectoryEx(pCIDir, TRUE,  cx2, cy2, flags);
+ 	      }
++	      /* Both sizes of the last group too, when the count was cut to the groups. */
++	      nIcons = i;
+               if (lpiID)	/* *.ico file, deallocate heap pointer*/
+ 	        HeapFree(GetProcessHeap(), 0, pCIDir);
+ 
+@@ -386,11 +388,10 @@
  
  	        if (pCIDir)
                  {
@@ -32,7 +42,16 @@ diff --git a/dlls/user32/exticon.c b/dlls/user32/exticon.c
                  }
  	        else
  	          RetPtr[icon] = 0;
-@@ -504,6 +503,9 @@
+@@ -494,6 +495,8 @@
+ 	    pIconId[i] = LookupIconIdFromDirectoryEx(igdata, TRUE, cx1, cy1, flags);
+             if (cx2 && cy2) pIconId[++i] = LookupIconIdFromDirectoryEx(igdata, TRUE, cx2, cy2, flags);
+ 	  }
++	  /* Both sizes of the last group too, when the count was cut to the groups. */
++	  nIcons = i;
+ 
+ 	  if (!(iconresdir=find_entry_by_id(rootresdir,LOWORD(RT_ICON),rootresdir)))
+ 	  {
+@@ -504,6 +507,9 @@
  	  for (i=0; i<nIcons; i++)
  	  {
  	    const IMAGE_RESOURCE_DIRECTORY *xresdir;
@@ -42,7 +61,7 @@ diff --git a/dlls/user32/exticon.c b/dlls/user32/exticon.c
  	    xresdir = find_entry_by_id(iconresdir, LOWORD(pIconId[i]), rootresdir);
              if( !xresdir )
              {
-@@ -521,9 +523,8 @@
+@@ -521,9 +527,8 @@
  	      RetPtr[i]=0;
  	      continue;
  	    }
