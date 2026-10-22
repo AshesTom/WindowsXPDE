@@ -99,7 +99,7 @@ class Manager:
                      '_NET_CLIENT_LIST_STACKING', '_NET_ACTIVE_WINDOW', '_NET_WORKAREA',
                      '_NET_NUMBER_OF_DESKTOPS', '_NET_CURRENT_DESKTOP', '_NET_WM_STATE',
                      '_NET_WM_STATE_HIDDEN', '_NET_WM_STATE_MAXIMIZED_VERT', '_NET_WM_STATE_MAXIMIZED_HORZ',
-                     '_NET_WM_STATE_ABOVE',
+                     '_NET_WM_STATE_ABOVE', '_NET_WM_STATE_FULLSCREEN',
                      '_NET_WM_WINDOW_TYPE', '_NET_WM_WINDOW_TYPE_DESKTOP', '_NET_WM_WINDOW_TYPE_DOCK',
                      '_NET_WM_ICON', '_NET_FRAME_EXTENTS', '_NET_CLOSE_WINDOW', '_NET_WM_STRUT', '_NET_WM_STRUT_PARTIAL']
         self.setprop(self.root, '_NET_SUPPORTED', Xatom.ATOM, [self.atom(a) for a in supported])
@@ -211,7 +211,9 @@ class Manager:
                 w.unmap()
             return
         client['hidden'] = False
-        if client['kind'] == 'normal' and client['owner'] and not client['hwnd'] and not client.get('placed'):
+        if client['kind'] == 'normal' and not client['hwnd'] and self.fullscreen(client):
+            self.fill_screen(client)
+        elif client['kind'] == 'normal' and client['owner'] and not client['hwnd'] and not client.get('placed'):
             # An owned Linux window has no frame; keep it inside the work area
             # (GTK's file chooser asks for a fixed size, larger than small screens),
             # centred on its owner unless it placed itself (GTK 4 does not).
@@ -264,6 +266,8 @@ class Manager:
             except error.XError:
                 names = None
             c['class'] = (names[1] if names and len(names) > 1 else '').replace('\t', ' ').replace('\n', ' ')[:100]
+        if atom in (None, self.atom('_NET_WM_STATE')):
+            c['states'] = set(self.prop(w, '_NET_WM_STATE'))
         if atom in (None, self.atom('WM_TRANSIENT_FOR')):
             try:
                 owner = w.get_wm_transient_for()
@@ -525,6 +529,12 @@ class Manager:
         for c in self.clients.values():
             if c['kind'] == 'dock' and not c['hidden']:
                 c['w'].configure(stack_mode=X.Above)
+        # As on XP, the active full-screen window (a video, a game, a screen
+        # capture's selection) covers the taskbar; another one uncovers it.
+        active = self.clients.get(self.active)
+        if active and active['kind'] == 'normal' and not active['hidden'] and self.fullscreen(active):
+            active['w'].configure(stack_mode=X.Above)
+            self.raise_owned(self.active)
         # Win32 topmost windows (EWMH above), such as XP's dimmed shut down
         # screen, cover the topmost taskbar; keep their transients above them.
         above = self.atom('_NET_WM_STATE_ABOVE')
@@ -675,6 +685,33 @@ class Manager:
         self.setprop(w, '_NET_WM_STATE', Xatom.ATOM, list(states))
         self.focus(w)
 
+    def fullscreen(self, c):
+        return self.atom('_NET_WM_STATE_FULLSCREEN') in c.get('states', ())
+
+    def fill_screen(self, c):
+        """Give a full-screen native client the whole screen, over the taskbar."""
+        if c.get('windowed') is None:
+            c['windowed'] = c['geometry'][:4]
+        g = self.root.get_geometry()
+        if c['geometry'][:4] != (0, 0, g.width, g.height) or c['geometry'][4]:
+            self.configure(c, x=0, y=0, width=g.width, height=g.height, border_width=0)
+
+    def set_fullscreen(self, c, on):
+        """_NET_WM_STATE_FULLSCREEN, added or removed by the client.
+
+        Wine sizes its own windows; a native client gets the screen, then
+        its earlier rectangle back, inside its frame again."""
+        if c['kind'] != 'normal':
+            return
+        if not c['hwnd']:
+            if on:
+                self.fill_screen(c)
+            elif c.get('windowed'):
+                x, y, width, height = c.pop('windowed')
+                self.configure(c, x=x, y=y, width=width, height=height)
+                c['extents'] = None  # the next bridge pass frames it again
+        self.restack()
+
     def positioned(self, c):
         try:
             hints = c['w'].get_wm_normal_hints()
@@ -731,6 +768,13 @@ class Manager:
             if native and native['kind'] == 'normal' and not native['hwnd']:
                 frames[i] = native_id
                 metrics = extents.get(native_id)
+                if self.fullscreen(native):
+                    # A full-screen window has no frame (XP draws none around
+                    # one); its taskbar button stays.
+                    metrics = None
+                    if native['extents'] != [0, 0, 0, 0]:
+                        native['extents'] = [0, 0, 0, 0]
+                        self.setprop(native['w'], '_NET_FRAME_EXTENTS', Xatom.CARDINAL, native['extents'])
                 if metrics:
                     left, right, top, bottom, maximized = metrics
                     if not native['framed']:
@@ -763,7 +807,7 @@ class Manager:
                             self.configure(native, x=wanted[0], y=wanted[1], width=wanted[2], height=wanted[3])
                 if native['geometry'][4]:
                     self.configure(native, border_width=0)
-                if native['hidden'] or not ready.get(native_id, True):
+                if native['hidden'] or not ready.get(native_id, True) or self.fullscreen(native):
                     c['w'].unmap()
                 else:
                     c['w'].map()
@@ -802,7 +846,8 @@ class Manager:
         client moves first: where it already covers the frame's client
         area, the frame's move exposes nothing that Wine must paint."""
         native = self.clients.get(self.frames[frame_id])
-        if not native or native['hidden'] or native['restore'] is not None or not native['extents']:
+        if not native or native['hidden'] or native['restore'] is not None or not native['extents'] or \
+                self.fullscreen(native):
             return
         left, right, top, bottom = native['extents']
         x, y, width, height, _ = self.clients[frame_id]['geometry']
@@ -823,7 +868,8 @@ class Manager:
         takes the frame's new position from the X server as from any WM."""
         native = self.clients[native_id]
         frame = next((self.clients.get(f) for f, n in self.frames.items() if n == native_id), None)
-        if not frame or native['hidden'] or native['restore'] is not None or not native['extents']:
+        if not frame or native['hidden'] or native['restore'] is not None or not native['extents'] or \
+                self.fullscreen(native):
             return
         left, right, top, bottom = native['extents']
         x, y, width, height, _ = native['geometry']
@@ -1086,6 +1132,9 @@ class Manager:
                     else:
                         states.discard(atom)
                 self.setprop(e.window, '_NET_WM_STATE', Xatom.ATOM, list(states))
+                self.clients[e.window.id]['states'] = states
+                if self.atom('_NET_WM_STATE_FULLSCREEN') in values[1:3]:
+                    self.set_fullscreen(self.clients[e.window.id], self.atom('_NET_WM_STATE_FULLSCREEN') in states)
                 if self.atom('_NET_WM_STATE_ABOVE') in values[1:3]:
                     self.restack()
                 maximize_atoms = {self.atom('_NET_WM_STATE_MAXIMIZED_VERT'), self.atom('_NET_WM_STATE_MAXIMIZED_HORZ')}

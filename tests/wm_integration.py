@@ -114,7 +114,32 @@ try:
     wait(lambda: prop(first, 'WM_STATE')[:1] == [3], 'single window stays minimized')
     time.sleep(.3)
     assert first.get_attributes().map_state != X.IsViewable
-    print('PASS: workarea, native snapshot, Alt+Tab, shell keys, desktop focus, minimize, restore, activation, close')
+    # A full-screen client (Spectacle's selection, a video) gets the whole
+    # screen over the taskbar, and its rectangle back when it leaves it.
+    full = root.create_window(100, 100, 400, 300, 0, X.CopyFromParent, X.InputOutput, X.CopyFromParent,
+                              background_pixel=0x204060)
+    windows.append(full)
+    full.set_wm_name('native full screen')
+    full.change_property(atom('_NET_WM_STATE'), Xatom.ATOM, 32, [atom('_NET_WM_STATE_FULLSCREEN')])
+    full.map()
+    d.flush()
+    def geometry(w):
+        r = w.get_geometry()
+        return r.x, r.y, r.width, r.height
+    wait(lambda: geometry(full) == (0, 0, g.width, g.height), 'full screen geometry')
+    wait(lambda: prop(root, '_NET_ACTIVE_WINDOW') == [full.id], 'full screen window active')
+    def above_dock():
+        order = [w.id for w in root.query_tree().children]
+        return order.index(full.id) > order.index(dock.id)
+    wait(above_dock, 'active full screen window covers the taskbar')
+    root.send_event(protocol.event.ClientMessage(window=full, client_type=atom('_NET_WM_STATE'),
+                    data=(32, [0, atom('_NET_WM_STATE_FULLSCREEN'), 0, 1, 0])),
+                    event_mask=X.SubstructureRedirectMask | X.SubstructureNotifyMask)
+    d.flush()
+    wait(lambda: geometry(full) == (100, 100, 400, 300), 'windowed geometry back')
+    wait(lambda: not above_dock(), 'taskbar above the windowed client')
+    print('PASS: workarea, native snapshot, Alt+Tab, shell keys, desktop focus, minimize, restore, activation, close, '
+          'full screen')
 finally:
     for w in windows:
         try:
