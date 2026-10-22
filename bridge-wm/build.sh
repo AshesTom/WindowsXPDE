@@ -2,9 +2,20 @@
 set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 mkdir -p "$root/.local/bridge"
+# A target newer than this script and every file it is built from is kept:
+# every session start runs this script.
+fresh() {
+    local target=$1 file
+    shift
+    [[ -e $target && $target -nt ${BASH_SOURCE[0]} ]] || return 1
+    for file in "$@"; do
+        [[ ! -f $file || $target -nt $file ]] || return 1
+    done
+}
 compile() {
     local target=$1
     shift
+    fresh "$target" "$@" && return 0
     local temporary
     temporary=$(mktemp "$target.XXXXXX")
     if "${MINGW_CC:-i686-w64-mingw32-gcc}" -std=c11 -Wall -Wextra -Werror -O2 -municode \
@@ -34,10 +45,12 @@ compile "$root/.local/bridge/keyboard-watch.exe" "$root/session/keyboard-watch.c
 # notification area's network, battery and volume icons, Start menu pin
 # management, and the stand-in iexplore.exe that opens the Linux browser.
 helpers=$root/xp-explorer/helpers
-i686-w64-mingw32-windres -I "$helpers" "$helpers/xptray.rc" -O coff -o "$root/.local/bridge/xptray.res"
-compile "$root/.local/bridge/xptray.exe" -std=gnu11 "$helpers/xptray.c" "$root/.local/bridge/xptray.res" \
-    -mwindows -lcomctl32 -lgdi32 -luser32 -lkernel32
-rm -f "$root/.local/bridge/xptray.res"
+if ! fresh "$root/.local/bridge/xptray.exe" "$helpers/xptray.c" "$helpers/xptray.rc" "$helpers/xptray.manifest"; then
+    i686-w64-mingw32-windres -I "$helpers" "$helpers/xptray.rc" -O coff -o "$root/.local/bridge/xptray.res"
+    compile "$root/.local/bridge/xptray.exe" -std=gnu11 "$helpers/xptray.c" "$root/.local/bridge/xptray.res" \
+        -mwindows -lcomctl32 -lgdi32 -luser32 -lkernel32
+    rm -f "$root/.local/bridge/xptray.res"
+fi
 # XP's Volume Control (sndvol32) on the Linux sound server, for xptray.exe.
 compile "$root/.local/bridge/xpmix.dll" -std=gnu11 -shared "$helpers/xpmix.c" "$helpers/xpmix.def" -lwinmm
 # XP's Security Center service (wscsvc.dll) loads these from beside it: its

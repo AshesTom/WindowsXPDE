@@ -252,17 +252,25 @@ class Session:
         The first pass ends before the shell starts, so that its Start menu
         has them from the beginning. A failure only leaves the menu as it was."""
         menu = [sys.executable, str(ROOT / 'session/linux_apps.py'), str(self.prefix), '--wine', self.wine]
+        output = b''
         with (self.state / 'linux-apps.log').open('ab') as log:
             log.write(f'\n--- sync {time.time()} ---\n'.encode())
             log.flush()
             try:
-                subprocess.run(menu, env=self.env, stdout=log, stderr=subprocess.STDOUT, timeout=180, check=False)
-            except subprocess.TimeoutExpired:
+                output = subprocess.run(menu, env=self.env, stdout=subprocess.PIPE, stderr=log, timeout=180,
+                                        check=False).stdout
+            except subprocess.TimeoutExpired as e:
+                output = e.stdout or b'written'
                 print('Linux menu sync timed out; see linux-apps.log', file=sys.stderr)
-        self.update_recent_programs()
+            log.write(output)
         # Wine's desktop process keeps the environment of the program that
-        # started it; let the shell start it with the session's own.
-        self.stop_wine()
+        # started it. The sync runs Wine, with overrides of its own, only to
+        # write shortcuts ("written"); the Start menu helper and the shell
+        # then start it again with the session's environment. Otherwise
+        # the helper starts it and the shell joins it, one Wine start less.
+        if b'written' in output:
+            self.stop_wine()
+        self.update_recent_programs()
         self.start_startmenu_view()
         self.spawn([*menu, '--watch'], 'linux-apps')
 
@@ -317,6 +325,7 @@ class Session:
                                stderr=subprocess.STDOUT, timeout=60, check=False)
             except subprocess.TimeoutExpired:
                 print('startmenu.exe recent timed out', file=sys.stderr)
+                self.stop_wine()
 
     def start_startmenu_view(self):
         """Render recent programs with XP's regular-weight menu text under Wine."""
@@ -537,7 +546,6 @@ class Session:
             self.start_linux_menu()
         else:
             self.update_recent_programs()
-            self.stop_wine()
             self.start_startmenu_view()
         self.tell_welcome('welcome')
         crashes = deque()
