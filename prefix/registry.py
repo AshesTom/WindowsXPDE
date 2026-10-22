@@ -3,7 +3,7 @@ import os
 import pwd
 import struct
 
-VERSION = 27
+VERSION = 28
 FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\JapaneseXPLuna'
 # The classic fonts of a new prefix (prefix/theme-settings.c classic-initialize).
 CLASSIC_FONT_PROFILE = r'HKCU\Software\Win4Wine\ThemeProfiles\XPClassic'
@@ -165,12 +165,12 @@ def install(run, exists, language='ja'):
         run('reg', 'add', r'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon',
             '/v', 'LogonType', '/t', 'REG_DWORD', '/d', '1', '/f')
         run('reg', 'add', marker, '/v', 'LogonType', '/t', 'REG_DWORD', '/d', '1', '/f')
-    # XP's default visual effects, UserPreferencesMask read on the reference
-    # machine: drop shadows under menus and tooltips, hot tracking and the
-    # fades. Seed once and keep the user's later choice.
+    # XP's default visual effects (HIVEDEF.INF): drop shadows under menus and
+    # tooltips, hot tracking and the fades, and the underlined access keys
+    # hidden until Alt is pressed (KeyboardCues off). Seed once and keep the user's later choice.
     if not exists(marker, 'UserPreferences'):
         run('reg', 'add', r'HKCU\Control Panel\Desktop', '/v', 'UserPreferencesMask',
-            '/t', 'REG_BINARY', '/d', 'be3e0780', '/f')
+            '/t', 'REG_BINARY', '/d', '9e3e0780', '/f')
         run('reg', 'add', marker, '/v', 'UserPreferences', '/t', 'REG_DWORD', '/d', '1', '/f')
     # Japanese XP's console font. XP leaves HKCU\Console's values empty and
     # draws 8x18 cells (GetConsoleFontSize on the reference machine) with the
@@ -206,6 +206,11 @@ def install(run, exists, language='ja'):
     # Native My Computer defaults to explorer.exe's first icon. Our XP Explorer
     # has a separate name so Wine's explorer.exe can remain the desktop manager.
     run('reg', 'add', r'HKCR\CLSID\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\DefaultIcon',
+        '/ve', '/t', 'REG_SZ', '/d', r'C:\xp\xp-explorer.exe,0', '/f')
+    # XP's shell32 also writes the user's own My Computer icon, which comes
+    # first: %SystemRoot%\explorer.exe, Wine's, an application's icon.
+    run('reg', 'add', r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID'
+        r'\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\DefaultIcon',
         '/ve', '/t', 'REG_SZ', '/d', r'C:\xp\xp-explorer.exe,0', '/f')
     # The Recycle Bin's two icons, as XP's shell32 registers them (its icons
     # 31 and 32): Display Properties' Themes sample and Desktop Items read

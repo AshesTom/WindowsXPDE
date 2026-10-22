@@ -259,10 +259,11 @@ class Session:
                 subprocess.run(menu, env=self.env, stdout=log, stderr=subprocess.STDOUT, timeout=180, check=False)
             except subprocess.TimeoutExpired:
                 print('Linux menu sync timed out; see linux-apps.log', file=sys.stderr)
-        self.pin_recent()
+        self.update_recent_programs()
         # Wine's desktop process keeps the environment of the program that
         # started it; let the shell start it with the session's own.
         self.stop_wine()
+        self.start_startmenu_view()
         self.spawn([*menu, '--watch'], 'linux-apps')
 
     def play_sound(self, event):
@@ -305,12 +306,8 @@ class Session:
         if self.shell['marker'] == 'xp-shell.json' and watch.is_file():
             self.spawn([self.wine, str(watch), str(ROOT / 'session/keyboard.py')], 'keyboard')
 
-    def pin_recent(self):
-        """Pin the most used programs in the Start menu's left column.
-
-        XP's own list of them stays empty under Wine; XP Explorer's
-        startmenu.exe (prefix/extras.py) counts them from XP's usage data
-        before the shell starts, as XP Explorer's xpstart.exe does."""
+    def update_recent_programs(self):
+        """Build XP's usage-ranked recent program list for the Start menu."""
         helper = self.prefix / 'drive_c/xp/bin/startmenu.exe'
         if self.shell['marker'] != 'xp-shell.json' or not helper.is_file():
             return
@@ -320,6 +317,12 @@ class Session:
                                stderr=subprocess.STDOUT, timeout=60, check=False)
             except subprocess.TimeoutExpired:
                 print('startmenu.exe recent timed out', file=sys.stderr)
+
+    def start_startmenu_view(self):
+        """Render recent programs with XP's regular-weight menu text under Wine."""
+        helper = self.prefix / 'drive_c/xp/bin/startmenu-view.exe'
+        if self.shell['marker'] == 'xp-shell.json' and helper.is_file():
+            self.spawn([self.wine, r'C:\xp\bin\startmenu-view.exe'], 'startmenu-view')
 
     def status(self, state, **extra):
         record = dict(state=state, time=time.time(), **extra)
@@ -522,8 +525,9 @@ class Session:
         if self.linux_menu:
             self.start_linux_menu()
         else:
-            self.pin_recent()
+            self.update_recent_programs()
             self.stop_wine()
+            self.start_startmenu_view()
         crashes = deque()
         attempt = 0
         while not self.stopping:

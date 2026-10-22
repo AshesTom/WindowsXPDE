@@ -62,6 +62,13 @@ FILES = {
                      'agtctl15.tlb'), 'srchasst/msagent'),
     **dict.fromkeys(('agt0409.dll', 'agt0411.dll'), 'srchasst/msagent/intl'),
     **dict.fromkeys(('msxml3.dll', 'msxml3r.dll', 'oleacc.dll', 'oleaccrc.dll'), 'srchasst/system'),
+    # XP's Security Center: its service, the notification area's alerts and
+    # the Control Panel item (prefix/extras.py).
+    **dict.fromkeys(('wscsvc.dll', 'wscntfy.exe', 'wscui.cpl'), 'wsc'),
+    # The programs of XP's default Start menu (MSN, Tour Windows XP, the Files
+    # and Settings Transfer Wizard) and the icons of Set Program Access and
+    # Defaults (prefix/extras.py).
+    **dict.fromkeys(('msnsusii.exe', 'tourstart.exe', 'migwiz.exe', 'moricons.dll'), 'programs'),
     # XP's registry defaults (sounds, Explorer settings), read by prefix/extras.py.
     **dict.fromkeys(('hivedef.inf', 'hivesft.inf'), 'inf'),
     # Image thumbnails and previews in folder windows (and Windows Picture and Fax Viewer).
@@ -98,7 +105,7 @@ LANGUAGE_FILES = {
 RENAMED = {'classic.the': 'Windows Classic.theme'}
 # Groups a later version added; setup.sh adds them to an earlier extraction (--only).
 ADDED_GROUPS = ('cpl', 'tray', 'ie', 'wmp', 'inf', 'shell', 'media', 'duser', 'intl', 'themes', 'srchasst',
-                'wallpaper')
+                'wallpaper', 'wsc', 'programs')
 
 
 def setup_sources(paths):
@@ -218,7 +225,8 @@ def missing_groups(output):
               'wmp': 'wmp/wmplayer.exe', 'inf': 'inf/hivedef.inf', 'shell': 'shell/shimgvw.dll',
               'media': 'media', 'duser': 'system32/duser.dll', 'intl': 'intl/input.dll',
               'themes': 'themes/Windows Classic.theme', 'srchasst': 'srchasst/srchui.dll',
-              'wallpaper': 'wallpaper'}
+              'wallpaper': 'wallpaper', 'wsc': 'wsc/wscsvc.dll',
+              'programs': 'programs/tourstart.exe'}
     return [group for group in ADDED_GROUPS if not has(checks[group])]
 
 

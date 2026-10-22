@@ -57,14 +57,12 @@ into `.local/`, which Git ignores.
 ## What it adds to win4wine
 
 - **A full left column in the Start menu.** Internet and E-mail are your Linux web browser and mail client
-  (`scripts/pins.py`). Below them come your most used programs: XP Explorer leaves its own list of them empty
-  under Wine, so `startmenu.exe recent` (`helpers/startmenu.c`, run by `xpstart.exe` at each logon) counts them
-  from XP's own usage data as XP does, per program rather than per shortcut, leaving out helpers such as
-  Notepad, set-up programs and your own pins, and keeps the first six pinned. Until programs have been used,
-  your file manager, terminal, text editor and System Settings fill the list. They are pins, not XP's list, so
-  there is no separator line above them and the list changes at the next logon rather than at once. Each Linux
-  application starts through a launcher of its own (`C:\xp\linux-apps\apps\<desktop file ID>.exe`, a hard
-  link), since XP counts the uses of a program by the executable its shortcut runs. To pin programs of your own,
+  (`scripts/pins.py`). The session fills XP's usage-ranked recent programs below them; under Wine, a small view
+  (`helpers/startmenu-view.c`) draws this lower section inside explorer's list as XP does: the visual style's
+  separator, regular text, the highlight colour of the colour scheme, one highlight across both lists (Wine patch
+  0164 puts it on the screen at once). Program tracking is enabled and the list shows six entries. Each Linux application
+  starts through a launcher of its own (`C:\xp\linux-apps\apps\<desktop file ID>.exe`, a hard link), since XP
+  counts the uses of a program by the executable its shortcut runs. To pin programs of your own,
   list desktop file IDs (one per line, such as `org.kde.dolphin.desktop`) in `pins.txt`, then run
   `./xp.sh pins`. The right column has XP's full set (My Network Places, Help and Support, Search, Run), and the
   menu keeps the height of that column.
@@ -149,8 +147,6 @@ into `.local/`, which Git ignores.
 - Linux applications started from the Start menu open as normal KDE windows, outside the virtual desktop.
   Bringing them into XP's frames and taskbar is what win4wine's window manager bridge does in its full session.
 - "Turn Off Computer" closes the virtual desktop.
-- XP's own list of most used programs stays empty under Wine (explorer never reads the usage data for it);
-  pins stand in for it (see above).
 - Menus and tooltips do not fade in: a Wine virtual desktop cannot blend windows over others. Restoring a window
   from its taskbar button is not animated (only the title bar buttons and the window menu are).
 - Applying another visual style or the Windows Classic theme in Display Properties is not finished.

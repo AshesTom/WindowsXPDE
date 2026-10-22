@@ -8,17 +8,15 @@
  *        startmenu.exe clear            unpin everything
  *        startmenu.exe pin PATH...      pin shortcuts or programs, in order
  *        startmenu.exe unpin PATH...    unpin them
- *        startmenu.exe recent           pin the most used programs (see below)
+ *        startmenu.exe recent           update the Start menu's recent programs
  *
- * "recent" stands in for XP's list of most used programs, which XP Explorer
+ * "recent" supplies XP's list of most used programs, which XP Explorer
  * leaves empty under Wine: like XP, it counts a program's uses from XP's own
  * UserAssist data (UEME_RUNPIDL entries for Start menu shortcuts), adds up
- * the shortcuts that run the same executable, leaves out helper programs and
- * names XP leaves out (Notepad, Setup, Readme...), the Internet and E-mail
- * programs and the user's own pins, and keeps the first ones pinned under the
- * user's pins. HKCU\Software\XP Explorer\Recent holds its settings: Count (6
- * programs), Seeds (shortcuts that fill the list until programs are used) and
- * Pins (what it pinned last, which it alone changes).
+ * shortcuts that run the same executable, excludes helper programs, the
+ * Internet and E-mail programs, and the user's pins. Recent\Items contains
+ * shortcuts for startmenu-view.exe to draw below Internet and E-mail.
+ * Recent\Pins tracks old versions' synthetic pins, removed during transition.
  *
  * XPStartMenuPin is the interface behind "Pin to Start menu"; its layout is
  * the one published in ReactOS's shlobj_undoc.h. */
@@ -334,7 +332,28 @@ static int recent(XPStartMenuPin *pins)
                  targets[MAX_LIST][MAX_PATH];
     DWORD managed_count = read_list(L"Pins", managed, MAX_LIST), seed_count = read_list(L"Seeds", seeds, MAX_LIST);
     DWORD wanted = 6, size = sizeof(wanted), chosen_count = 0;
-    BOOL same;
+
+    /* XP's setup populates the lower column with familiar programs until
+     * enough usage history exists. Use the shortcuts installed by extras.py;
+     * after that, UserAssist's most-used programs take their places. */
+    if (!seed_count)
+    {
+        static const WCHAR *defaults[] = {
+            L"MSN.lnk",
+            L"Accessories\\Tour Windows XP.lnk",
+            L"Accessories\\System Tools\\Files and Settings Transfer Wizard.lnk",
+            L"Accessories\\Entertainment\\Windows Media Player.lnk",
+            L"Accessories\\Alacritty.lnk",
+            L"Development\\Kate.lnk"
+        };
+        WCHAR folder[MAX_PATH];
+        if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_COMMON_PROGRAMS, NULL, SHGFP_TYPE_CURRENT, folder)))
+            for (unsigned i = 0; i < ARRAYSIZE(defaults) && seed_count < MAX_LIST; i++)
+            {
+                swprintf(seeds[seed_count], MAX_PATH, L"%ls\\%ls", folder, defaults[i]);
+                if (GetFileAttributesW(seeds[seed_count]) != INVALID_FILE_ATTRIBUTES) seed_count++;
+            }
+    }
 
     RegGetValueW(HKEY_CURRENT_USER, RECENT_KEY, L"Count", RRF_RT_REG_DWORD, NULL, &wanted, &size);
     if (wanted > MAX_LIST) wanted = MAX_LIST;
@@ -371,17 +390,12 @@ static int recent(XPStartMenuPin *pins)
         wcscpy(targets[chosen_count], target);
         wcscpy(chosen[chosen_count++], seeds[i]);
     }
-    /* Nothing to do when the same shortcuts are pinned last, in this order. */
-    same = chosen_count == managed_count && pinned_count >= managed_count;
-    for (DWORD i = 0; same && i < chosen_count; i++)
-        same = !_wcsicmp(chosen[i], managed[i]) &&
-               !_wcsicmp(pinned_paths[pinned_count - managed_count + i], managed[i]);
-    if (!same)
-    {
-        for (DWORD i = 0; i < managed_count; i++) modify(pins, managed[i], FALSE);
-        for (DWORD i = 0; i < chosen_count; i++) modify(pins, chosen[i], TRUE);
-        write_list(L"Pins", chosen, chosen_count);
-    }
+    /* Earlier versions inserted recent programs as native pins, making the
+     * whole Start menu taller. Remove only those recorded by this helper and
+     * keep the current list separate for the regular-weight viewer. */
+    for (DWORD i = 0; i < managed_count; i++) modify(pins, managed[i], FALSE);
+    write_list(L"Pins", managed, 0);
+    write_list(L"Items", chosen, chosen_count);
     for (DWORD i = 0; i < chosen_count; i++)
     {
         char utf8[4 * MAX_PATH];

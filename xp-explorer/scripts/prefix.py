@@ -196,24 +196,26 @@ def registry():
     for cpl in CPL:
         name = cpl.rsplit('.', 1)[0] if cpl.endswith('.dll') else cpl
         r.add(r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides', name, 'native')
-    # Our Start menu helper drives XP's own Start panel settings and pins.
-    for dll in ('shell32', 'shlwapi', 'comctl32', 'linkinfo', 'shdocvw', 'browseui'):
-        r.add(r'HKCU\Software\Wine\AppDefaults\startmenu.exe\DllOverrides', dll, 'native')
+    # Our Start menu helpers use XP's shell interfaces and icons.
+    for program in ('startmenu.exe', 'startmenu-view.exe'):
+        for dll in ('shell32', 'shlwapi', 'comctl32', 'linkinfo', 'shdocvw', 'browseui'):
+            r.add(rf'HKCU\Software\Wine\AppDefaults\{program}\DllOverrides', dll, 'native')
     r.add(advanced, 'ListviewShadow', '1', 'REG_DWORD')
     r.add(advanced, 'TaskbarSizeMove', '0', 'REG_DWORD')
     # XP's task pane on the left of folder windows ("Use common tasks in folders").
     r.add(advanced, 'WebView', '1', 'REG_DWORD')
     r.add(advanced, 'Start_ShowRun', '1', 'REG_DWORD')
-    r.add(advanced, 'Start_ShowNetPlaces', '1', 'REG_DWORD')
-    # XP's own list of most used programs stays empty under Wine; the pins of
-    # startmenu.exe recent stand in for it (scripts/pins.py), without empty rows.
-    # StartMenuInit: XP's first logon would clear the usage data and the pins.
-    r.add(advanced, 'Start_MinMFU', '0', 'REG_DWORD')
+    r.add(advanced, 'Start_ShowNetPlaces', '0', 'REG_DWORD')
+    # XP displays its most-used programs below the pinned items, in a separate
+    # block. Six entries preserve the native separator and regular text style.
+    r.add(advanced, 'Start_MinMFU', '6', 'REG_DWORD')
+    r.add(advanced, 'Start_TrackProgs', '1', 'REG_DWORD')
+    # StartMenuInit: XP's first logon would reset the usage data and pins.
     r.add(advanced, 'StartMenuInit', '2', 'REG_DWORD')
     r.add(cu + r'Policies\Explorer', 'NoSimpleStartMenu', '0', 'REG_DWORD')
     r.add(cu + 'Explorer', 'Logon User Name', USER)
     r.add(r'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon', 'LogonType', '1', 'REG_DWORD')
-    r.add(r'HKCU\Control Panel\Desktop', 'UserPreferencesMask', 'be3e0780', 'REG_BINARY')
+    r.add(r'HKCU\Control Panel\Desktop', 'UserPreferencesMask', '9e3e0780', 'REG_BINARY')
     # XP's shell32 registers this key itself (Open With's lists); XP Explorer's
     # Start menu reads it too, and its AddRemoveApps/AddRemoveNames values.
     associations = r'HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\FileAssociation'
@@ -408,7 +410,7 @@ def stage(prefix):
 
 
 # Bumped when xp_defaults() changes; xp.sh runs it again on existing prefixes.
-DEFAULTS_VERSION = '12'
+DEFAULTS_VERSION = '13'
 # Search Results and Computer Search Results (shell32's DocFind folders).
 SEARCH_FOLDERS = ('{E17D4FC0-5564-11D1-83F2-00A0C90DC849}', '{1F4DE370-D627-11D1-BA4F-00A0C91EEDBA}')
 FILE_SEARCH_BAND = '{2D91EEA1-9932-11D2-BE86-00A0C9A83DA1}'
@@ -507,6 +509,12 @@ def xp_defaults(assets, prefix, wine, folders=True):
     # In particular, XP's Start menu Run item is registered as a shell class;
     # without it, clicking Run... tries to create a shortcut instead.
     texts.append(xp_registrations(assets))
+    startmenu = Reg()
+    startmenu.add(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced',
+                  'Start_MinMFU', '6', 'REG_DWORD')
+    startmenu.add(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced',
+                  'Start_TrackProgs', '1', 'REG_DWORD')
+    texts.append(startmenu.text())
     shimgvw = assets / 'shell/shimgvw.dll'
     if shimgvw.is_file():
         native = prefix / 'drive_c/xp/native'
@@ -779,7 +787,8 @@ def create(assets, prefix, wine):
         raise SystemExit(f'Refusing existing prefix: {prefix} (./xp.sh reset to start over)')
     if not (assets / 'windows/explorer.exe').is_file():
         raise SystemExit('Incomplete XP assets: run the extraction first')
-    for helper in ('theme-settings.exe', 'startmenu.exe', 'xptray.exe', 'linux-launch.exe', 'linux-links.exe'):
+    for helper in ('theme-settings.exe', 'startmenu.exe', 'startmenu-view.exe', 'xptray.exe', 'linux-launch.exe',
+                   'linux-links.exe'):
         if not (BIN / helper).is_file():
             raise SystemExit(f'Missing {helper}: run helpers/build.sh first')
     language = media.language(assets)

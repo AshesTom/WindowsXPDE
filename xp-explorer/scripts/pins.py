@@ -6,13 +6,11 @@ Menu Internet Applications registered under Software\\Clients\\StartMenuInternet
 and Software\\Clients\\Mail (https://learn.microsoft.com/windows/win32/shell/start-menu-reg).
 They are registered here as the Linux desktop's web browser (xdg-settings) and
 mailto handler (xdg-mime), started through linux-launch.exe with their own
-icons. Below them, as on XP, come the most used programs: XP Explorer leaves
-its own list empty under Wine, so startmenu.exe recent (run by xpstart.exe at
-each logon) keeps them pinned, counted from XP's usage data. Until programs
-have been used, a few KDE essentials fill the list. To pin programs of your
-own instead, list desktop file IDs in pins.txt (one per line, at the project
-root); the most used programs then follow them. The Start menu keeps the
-height of its right column, which has XP's full set of items.
+icons. Below them, XP shows its most-used programs in a separate block, using
+its own usage data. To pin programs of your own instead, list desktop file IDs
+in pins.txt (one per line, at the project root); the most used programs then
+follow them. The Start menu keeps the height of its right column, which has
+XP's full set of items.
 Run with the session stopped.
 """
 import argparse
@@ -32,7 +30,7 @@ ICONS = r'C:\xp\linux-apps\icons'
 # Internet Explorer 6 stays in Program Files for the desktop's Internet icon.
 IEXPLORE = r'C:\xp\bin\iexplore.exe'
 DEFAULTS = (
-    # The seeds of the most used programs: file manager, terminal, text editor, settings.
+    # Linux apps that older versions added as default pins; unpin them on upgrade.
     ('org.kde.dolphin.desktop', 'org.gnome.Nautilus.desktop', 'thunar.desktop'),
     ('org.kde.konsole.desktop', 'org.gnome.Console.desktop', 'xterm.desktop'),
     ('org.kde.kate.desktop', 'org.kde.kwrite.desktop', 'org.gnome.TextEditor.desktop'),
@@ -105,13 +103,13 @@ def register_clients(prefix, wine, links):
         command = (f'"{program}" {links[mailer]["arguments"]}' if mailer in MAILERS or mailer != browser
                    else f'"{LAUNCH}" xdg-open mailto:')
         lines += client_keys(clients + '\\Mail', key, links[mailer], mailer, command)
-    # Room for two most used programs under the pins (XP: 6), and XP's full
-    # right column, so the menu is no taller than on XP.
+    # The Wine MFU list stays empty; the Start menu viewer draws the usage-ranked
+    # programs in the same lower block. Keep XP's full right column height.
     advanced = r'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
-    # No empty rows for XP's own list of most used programs, which stays empty
-    # (our pins stand in for it), and XP's full right column. StartMenuInit:
-    # XP's first logon would clear the usage data and the pins.
-    lines += [f'[{advanced}]', '"Start_MinMFU"=dword:00000000', '"Start_ShowNetPlaces"=dword:00000001',
+    # XP's first logon would reset the usage data and pins; leave its
+    # initialized state alone.
+    lines += [f'[{advanced}]', '"Start_MinMFU"=dword:00000006', '"Start_TrackProgs"=dword:00000001',
+              '"Start_ShowNetPlaces"=dword:00000000',
               '"StartMenuInit"=dword:00000002', '']
     # The user's choice wins over the machine's on XP: leave none behind.
     lines += [r'[-HKEY_CURRENT_USER\Software\Clients\StartMenuInternet]', '',
@@ -144,7 +142,8 @@ def main():
     defaults = [PROGRAMS + '\\' + links[i]['link']
                 for i in (next((c for c in choices if c in links), '') for choices in DEFAULTS) if i]
     own = [PROGRAMS + '\\' + links[i]['link'] for i in pinned(links) if i in links]
-    # Earlier versions pinned the KDE essentials; they are seeds now.
+    # Earlier versions pinned the KDE essentials as defaults. Remove those
+    # generated pins now that the viewer draws recent programs separately.
     if not (ROOT / 'pins.txt').is_file():
         old = [p for p in defaults if p.lower() in current and not managed(prefix, args.wine, p)]
         if old:
@@ -153,28 +152,13 @@ def main():
     missing = [p for p in own if p.lower() not in current]
     if missing:
         subprocess.run([args.wine, r'C:\xp\bin\startmenu.exe', 'pin', *missing], env=env)
-    write_seeds(prefix, args.wine, defaults)
-
-
 def managed(prefix, wine, path):
-    """Whether startmenu.exe recent pinned PATH (its Pins list)."""
+    """Whether startmenu.exe previously managed PATH as a recent program."""
     env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all')
     out = subprocess.run([wine, 'reg', 'query', RECENT.replace('HKEY_CURRENT_USER', 'HKCU'), '/v', 'Pins'],
                          env=env, capture_output=True, text=True).stdout
     return path.lower() in out.lower()
 
-
-def write_seeds(prefix, wine, seeds):
-    """The shortcuts that fill the most used programs until programs are used."""
-    data = ''.join(s + '\0' for s in seeds).encode('utf-16le') + b'\0\0'
-    lines = ['Windows Registry Editor Version 5.00', '', f'[{RECENT}]',
-             '"Seeds"=hex(7):' + ','.join(f'{b:02x}' for b in data), '']
-    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all')
-    with tempfile.TemporaryDirectory() as temp:
-        reg = Path(temp) / 'seeds.reg'
-        reg.write_text('\r\n'.join(lines) + '\r\n', encoding='utf-16')
-        subprocess.run([wine, r'C:\windows\syswow64\regedit.exe', '/S', 'Z:' + str(reg).replace('/', '\\')],
-                       env=env, check=True)
 
 if __name__ == '__main__':
     main()

@@ -30,9 +30,9 @@ import xp_schemes
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / '.local/bridge'
 # Bumped when apply() changes; setup.sh applies it again on existing prefixes.
-VERSION = '8'
+VERSION = '18'
 MARKER = '.xp-extras'
-HELPERS = ('xptray.exe', 'xpmix.dll', 'startmenu.exe', 'iexplore.exe', 'linux-links.exe')
+HELPERS = ('xptray.exe', 'xpmix.dll', 'startmenu.exe', 'startmenu-view.exe', 'iexplore.exe', 'linux-links.exe')
 # XP's Regional and Language Options and what it loads (assets/intl), native
 # in rundll32 and in XP Explorer, whose Control Panel lists it.
 INTL = ('intl.cpl', 'input.dll', 'syssetup.dll', 'sfcfiles.dll')
@@ -67,17 +67,20 @@ def registry(xpx):
         r.add(r'HKCU\Software\Wine\AppDefaults\rundll32.exe\DllOverrides', dll, 'native,builtin')
     for dll in INTL_NATIVE:
         r.add(r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides', dll, 'native')
-    # startmenu.exe drives XP's own Start panel settings and pins.
-    for dll in ('shell32', 'shlwapi', 'comctl32', 'linkinfo', 'shdocvw', 'browseui'):
-        r.add(r'HKCU\Software\Wine\AppDefaults\startmenu.exe\DllOverrides', dll, 'native')
+    # The Start menu helpers use XP's own shell interfaces and icons.
+    for program in ('startmenu.exe', 'startmenu-view.exe'):
+        for dll in ('shell32', 'shlwapi', 'comctl32', 'linkinfo', 'shdocvw', 'browseui'):
+            r.add(rf'HKCU\Software\Wine\AppDefaults\{program}\DllOverrides', dll, 'native')
     # XP's task pane on the left of folder windows ("Use common tasks in folders").
     r.add(advanced, 'WebView', '1', 'REG_DWORD')
     r.add(advanced, 'Start_ShowRun', '1', 'REG_DWORD')
-    r.add(advanced, 'Start_ShowNetPlaces', '1', 'REG_DWORD')
-    # XP's own list of most used programs stays empty under Wine; the pins of
-    # startmenu.exe recent stand in for it, without empty rows. StartMenuInit:
-    # XP's first logon would clear the usage data and the pins.
-    r.add(advanced, 'Start_MinMFU', '0', 'REG_DWORD')
+    # XP's default right column, without My Network Places.
+    r.add(advanced, 'Start_ShowNetPlaces', '0', 'REG_DWORD')
+    # XP's native most-used list is empty under Wine; startmenu-view.exe
+    # paints the six usage-ranked entries below the defaults.
+    r.add(advanced, 'Start_MinMFU', '6', 'REG_DWORD')
+    r.add(advanced, 'Start_TrackProgs', '1', 'REG_DWORD')
+    # XP's first logon would reset the Start menu's usage data and pins.
     r.add(advanced, 'StartMenuInit', '2', 'REG_DWORD')
     # The notification area's icons start with the shell, as XP's systray.exe did.
     r.add(cu + 'Run', 'XPTray', r'C:\xp\bin\xptray.exe')
@@ -205,6 +208,168 @@ def themes(assets, prefix, wine):
         regedit(wine, prefix, xp_schemes.registry(xp_schemes.xpreg.read_inf(hivedef), themeui))
 
 
+def security_center(assets, prefix, wine, xpx):
+    """XP's Security Center: its service (wscsvc.dll) in Wine's 32-bit
+    svchost, which starts the notification area's alerts (wscntfy.exe) in the
+    session, and the Control Panel item (wscui.cpl) that they open. The
+    service loads our HNetCfg.dll and netshell.dll from beside it (C:\\xp\\wsc):
+    the Windows Firewall, which it checks through the SharedAccess service,
+    is the Linux system's (xp-explorer/helpers/wscfirewall.c)."""
+    source = assets / 'wsc'
+    if not (source / 'wscsvc.dll').is_file():
+        return
+    system = prefix / 'drive_c/windows/syswow64'
+    folder = prefix / 'drive_c/xp/wsc'
+    folder.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source / 'wscsvc.dll', folder / 'wscsvc.dll')
+    for name in ('HNetCfg.dll', 'netshell.dll'):
+        shutil.copyfile(BRIDGE / 'wsc' / name, folder / name)
+    for name in ('wscntfy.exe', 'wscui.cpl'):
+        shutil.copyfile(source / name, system / name)
+    # Their icons and texts.
+    if (assets / 'tray/xpsp2res.dll').is_file():
+        shutil.copyfile(assets / 'tray/xpsp2res.dll', system / 'xpsp2res.dll')
+    r = xpx.Reg()
+    services = r'HKLM\System\CurrentControlSet\Services' + '\\'
+    svchost = r'C:\windows\syswow64\svchost.exe -k wscsvc'
+    for name, display, dll in (('SharedAccess', 'Windows Firewall/Internet Connection Sharing (ICS)', 'HNetCfg.dll'),
+                               ('wscsvc', 'Security Center', 'wscsvc.dll')):
+        r.add(services + name, 'Type', '32', 'REG_DWORD')
+        r.add(services + name, 'Start', '2', 'REG_DWORD')
+        r.add(services + name, 'ErrorControl', '1', 'REG_DWORD')
+        r.add(services + name, 'ObjectName', 'LocalSystem')
+        r.add(services + name, 'DisplayName', display)
+        r.add(services + name, 'ImagePath', svchost, 'REG_EXPAND_SZ')
+        r.add(services + name + r'\Parameters', 'ServiceDll', 'C:\\xp\\wsc\\' + dll, 'REG_EXPAND_SZ')
+    # As on XP, after the RPC service; Terminal Services tells it the user's
+    # session, which Wine starts only on demand.
+    r.add(services + 'wscsvc', 'DependOnService', ['RpcSs', 'SharedAccess', 'TermService'], 'REG_MULTI_SZ')
+    r.add(services + 'TermService', 'Start', '2', 'REG_DWORD')
+    r.add(r'HKLM\Software\Microsoft\Windows NT\CurrentVersion\Svchost', 'wscsvc',
+          ['SharedAccess', 'wscsvc'], 'REG_MULTI_SZ')
+    for dll in ('hnetcfg', 'netshell'):
+        r.add(r'HKCU\Software\Wine\AppDefaults\svchost.exe\DllOverrides', dll, 'native')
+    regedit(wine, prefix, r.text())
+    # Wine's 32-bit svchost reads its groups from the 64-bit view too.
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all')
+    env.pop('WINEARCH', None)
+    subprocess.run([wine, 'reg', 'add', r'HKLM\Software\Microsoft\Windows NT\CurrentVersion\Svchost', '/v', 'wscsvc',
+                    '/t', 'REG_MULTI_SZ', '/d', 'SharedAccess\\0wscsvc', '/f', '/reg:64'], env=env, check=True,
+                   stdout=subprocess.DEVNULL)
+
+
+# XP's default Start menu programs, where its setup puts them, and their
+# shortcuts as named by syssetup.inf and msnmsn.inf, available in All Programs
+# and included in XP's recent-program list when launched.
+START_MENU = r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs'
+XP_PROGRAMS = (
+    ('msnsusii.exe', r'C:\Program Files\MSN\MSNCoreFiles\Install', START_MENU + r'\MSN.lnk', 'MSN'),
+    ('tourstart.exe', r'C:\windows\system32', START_MENU + r'\Accessories\Tour Windows XP.lnk',
+     'Learn about the exciting new features in Windows XP.'),
+    ('migwiz.exe', r'C:\windows\system32\usmt', START_MENU + r'\Accessories\System Tools\Files and Settings Transfer Wizard.lnk',
+     'Transfers files and settings from one computer to another.'),
+)
+
+
+def start_menu_programs(assets, prefix, wine, xpx):
+    """XP's default Start menu: its programs' shortcuts, and Set Program
+    Access and Defaults in the right column (shell.inf's registration)."""
+    source = assets / 'programs'
+    if not (source / 'tourstart.exe').is_file():
+        return
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all')
+    env.pop('WINEARCH', None)
+    for name, folder, link, description in XP_PROGRAMS:
+        target = prefix / 'drive_c' / folder[3:].replace('\\', '/').replace('system32', 'syswow64')
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source / name, target / name)
+        xpx.save_shortcut(wine, prefix, env, link, folder + '\\' + name, directory=folder,
+                          icon=folder + '\\' + name, description=description)
+    shutil.copyfile(source / 'moricons.dll', prefix / 'drive_c/windows/syswow64/moricons.dll')
+    r = xpx.Reg()
+    clsid = r'HKCR\CLSID\{2559a1f7-21d7-11d4-bdaf-00c04f60b9f0}'
+    r.add(clsid, None, 'Set Program Access and Defaults')
+    r.add(clsid, 'InfoTip', 'Specify which programs are used by default for activities such as Web browsing, '
+          'sending e-mail and playing music.')
+    r.add(clsid + r'\DefaultIcon', None, 'moricons.dll,-114', 'REG_EXPAND_SZ')
+    r.add(clsid + r'\InProcServer32', None, r'%SystemRoot%\system32\shdocvw.dll', 'REG_EXPAND_SZ')
+    r.add(clsid + r'\InProcServer32', 'ThreadingModel', 'Apartment')
+    r.add(clsid + r'\Instance', 'CLSID', '{3f454f0e-42ae-4d7c-8ea3-328250d6e272}')
+    bag = clsid + r'\Instance\InitPropertyBag'
+    for name, value in (('CLSID', '{13709620-C279-11CE-A49E-444553540000}'), ('command', 'Set Program Access and Defaults'),
+                        ('method', 'ShellExecute'), ('Param1', 'appwiz.cpl,,3'), ('Param2', 'control.exe')):
+        r.add(bag, name, value)
+    r.add(clsid + r'\ShellFolder', 'Attributes', '0', 'REG_DWORD')
+    r.add(r'HKLM\Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved',
+          '{2559a1f7-21d7-11d4-bdaf-00c04f60b9f0}', 'Set Program Access and Defaults')
+    r.add(r'HKLM\Software\Microsoft\Windows\CurrentVersion', 'SM_ConfigureProgramsName', 'Set Program Access and Defaults')
+    regedit(wine, prefix, r.text())
+
+
+def xp_user_defaults(prefix, wine):
+    """XP's defaults that earlier versions set otherwise: the access keys'
+    underlines hidden until Alt is pressed (UserPreferencesMask's
+    KeyboardCues bit, 0x20 of its first byte), and the links' colour
+    (HotTrackingColor) of the blue and olive styles, which name none: XP keeps
+    HIVEDEF.INF's 0 0 128 (Wine patch 0160 when a style is applied)."""
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all')
+    env.pop('WINEARCH', None)
+
+    def query(key, name):
+        out = subprocess.run([wine, 'reg', 'query', key, '/v', name], env=env, capture_output=True,
+                             text=True).stdout
+        line = next((l for l in out.splitlines() if l.strip().startswith(name)), '')
+        return line.split(None, 2)[2].strip() if len(line.split(None, 2)) > 2 else ''
+
+    def add(key, name, kind, value):
+        subprocess.run([wine, 'reg', 'add', key, '/v', name, '/t', kind, '/d', value, '/f'], env=env,
+                       stdout=subprocess.DEVNULL, check=False)
+
+    desktop = r'HKCU\Control Panel\Desktop'
+    mask = query(desktop, 'UserPreferencesMask')
+    if len(mask) >= 2 and int(mask[:2], 16) & 0x20:
+        add(desktop, 'UserPreferencesMask', 'REG_BINARY', f'{int(mask[:2], 16) & ~0x20:02x}' + mask[2:])
+    if query(r'HKCU\Software\Microsoft\Windows\CurrentVersion\ThemeManager', 'ColorName').lower() != 'metallic':
+        add(r'HKCU\Control Panel\Colors', 'HotTrackingColor', 'REG_SZ', '0 0 128')
+
+
+# The categories of XP's Control Panel (its category view's "or pick a
+# Control Panel icon"): 1 Appearance and Themes, 2 Printers and Other
+# Hardware, 3 Network and Internet Connections, 4 Sounds, Speech and Audio
+# Devices, 5 Performance and Maintenance, 6 Date, Time, Language and Regional
+# Options, 7 Accessibility Options, 8 Add or Remove Programs, 9 User Accounts,
+# 10 Security Center. XP's shell32 knows its own applets' only under
+# %SystemRoot%\system32, which a 32-bit process here sees as syswow64.
+CPL_CATEGORIES = {'access.cpl': 7, 'appwiz.cpl': 8, 'desk.cpl': 1, 'hdwwiz.cpl': 2, 'inetcpl.cpl': 3,
+                  'intl.cpl': 6, 'joy.cpl': 2, 'main.cpl': 2, 'mmsys.cpl': 4, 'ncpa.cpl': 3,
+                  'nusrmgr.cpl': 9, 'powercfg.cpl': 5, 'sapi.cpl': 4, 'sysdm.cpl': 5, 'telephon.cpl': 2,
+                  'timedate.cpl': 6, 'wuaucpl.cpl': 10, 'wscui.cpl': -1}
+# Folder Options and Taskbar and Start Menu, which XP's shell32 registers in
+# the Control Panel (its REGINST).
+CONTROL_PANEL_CLASSES = ('{6DFD7C5C-2451-11d3-A299-00C04F8EF6AF}', '{0DF44EAA-FF21-4412-828E-260A8728E7F1}')
+
+
+def control_panel(assets, prefix, wine, xpx):
+    """XP's Control Panel categories and its Folder Options and Taskbar and
+    Start Menu items."""
+    import xpreg
+    category = (r'HKLM\Software\Microsoft\Windows\CurrentVersion\Control Panel\Extended Properties'
+                r'\{305CA226-D286-468e-B848-2B2E8E697B74} 2')
+    r = xpx.Reg()
+    for name, number in CPL_CATEGORIES.items():
+        for folder in ('system32', 'syswow64'):
+            r.add(category, rf'C:\windows\{folder}\{name}', str(number & 0xffffffff), 'REG_DWORD')
+    texts = [r.text()]
+    text = xpreg.reginst(assets / 'system32/shell32.dll')
+    module = {'_SYS_MOD_PATH': r'%SystemRoot%\system32\shell32.dll', '_MOD_PATH': r'%SystemRoot%\system32\shell32.dll'}
+    namespace = r'Software\Microsoft\Windows\CurrentVersion\Explorer\ControlPanel\NameSpace'
+    texts.append(xpreg.hive_entries(text, 'HKCR', tuple('CLSID\\' + c for c in CONTROL_PANEL_CLASSES), extra=module))
+    texts.append(xpreg.hive_entries(text, 'HKLM', tuple(namespace + '\\' + c for c in CONTROL_PANEL_CLASSES),
+                                    extra=module))
+    for t in texts:
+        regedit(wine, prefix, t)
+
+
 def stage(prefix, xpx=None):
     """XP's files back in syswow64 after Wine updates the prefix: XP
     Explorer's, and the Regional and Language Options over Wine's intl.cpl."""
@@ -282,7 +447,19 @@ def apply(prefix, wine):
     # XP's explorer under its own name (prefix/registry.py).
     regedit(wine, prefix, 'Windows Registry Editor Version 5.00\r\n\r\n'
             '[HKEY_CLASSES_ROOT\\CLSID\\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\\DefaultIcon]\r\n'
+            '@="C:\\\\xp\\\\xp-explorer.exe,0"\r\n\r\n'
+            # The user's own, which XP's shell32 writes too and reads first.
+            '[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CLSID\\'
+            '{20D04FE0-3AEA-1069-A2D8-08002B30309D}\\DefaultIcon]\r\n'
             '@="C:\\\\xp\\\\xp-explorer.exe,0"\r\n')
+    stop(wine, prefix)
+    print("* XP's Security Center", flush=True)
+    security_center(assets, prefix, wine, xpx)
+    print("* XP's Start menu programs", flush=True)
+    start_menu_programs(assets, prefix, wine, xpx)
+    xp_user_defaults(prefix, wine)
+    print("* XP's Control Panel categories", flush=True)
+    control_panel(assets, prefix, wine, xpx)
     stop(wine, prefix)
     stage(prefix, xpx)
     (prefix / MARKER).write_text(wanted(xpx, wine) + '\n')
