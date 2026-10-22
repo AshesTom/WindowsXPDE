@@ -1,6 +1,6 @@
 # Wine のパッチ
 
-`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 165 本のパッチがあります。
+`wine/patches/` には、未改変の Wine 11.0（`wine/upstream.env` の commit）に上から順に当てる 166 本のパッチがあります。
 当てるのは `wine/build.sh` で、実際の適用は `wine/patch-state.py` が行います（途中まで当たったソースにも、足りない分だけを当てます）。
 
 番号の付け直しや、以前の番号との対応表は [history/patch-history.md](history/patch-history.md) にあります。
@@ -243,7 +243,7 @@ Windows 7 SP1 の実機（参照用の VM）と画素で比べて合わせたも
 | 0136 | riched20: Windows 7 の検索欄（スタートメニュー、フォルダーウィンドウ。windowless の RichEdit）の文字。ホストが後から知らせる既定の書式（メイリオ 9pt）を使い（外部シェル全体）、複雑な文字（アラビア文字など）の無い段落を GDI で測って描き、フォントを DEFAULT_CHARSET で作る（英字はそのフォント、日本語はフォントのリンク。実機と同じ字形と位置）。日本語が四角や重なりになっていた | 一部あり（`WIN4WINE_SHELL=win7`） |
 | 0137 | comdlg32: Windows 7 のシェルのセッションの項目ダイアログ（IFileDialog）を Windows 7 の形に。上の段（戻る・進む、パンくずのアドレス、更新、検索）を新しい部品（navbar7.c）がテーマの部品と explorerframe.dll の画像・文字列で描く。640x478、メッセージ用のフォント、詳細・プレビュー ペインなし、サイズ グリップ、フォルダーの選択では「フォルダー:」「フォルダーの選択」。検索はフォルダー内の名前での絞り込み（Windows 7 は索引を検索する） | あり（`WIN4WINE_SHELL=win7`） |
 
-### XP と ReactOS のシェルの細部（0138〜0165）
+### XP と ReactOS のシェルの細部（0138〜0166）
 
 XP と ReactOS のシェルのための変更のうち、Windows 7 のシェルのために加えた仕組みを使うものです（0117 のテーマ付きのメニュー、0119 の TS_MIN、
 0126 の comctl32 の切り替え、0130 と 0131 のコントロールの判定、0132 のシステム アイコンの読み込み、0133 のメッセージ ボックスの配置）。
@@ -280,6 +280,7 @@ XP と ReactOS のシェルのための変更のうち、Windows 7 のシェル�
 | 0163 | user32, comctl32: ボタンとスタティックが WM_QUERYUISTATE の UISF_HIDEACCEL のとき DT_HIDEPREFIX で描き、WM_UPDATEUISTATE で描き直す。アクセス キーの下線が常に出ていた | なし |
 | 0164 | win32u, winex11: 別のプロセスのトップレベル ウィンドウの中にある窓（スタート メニューのピン留めの一覧の子の startmenu-view.exe）が描いたものを、DC を返すときに画面に送る（FLUSHOUTPUT のエスケープで gdi_display を XFlush）。この窓には自分のプロセスのサーフェスが無く、0039 からはメモリー DC も表示を送らないので、最近使ったプログラムの選択の色が 400 ms 後（TrackMouseEvent のタイマーの XQueryPointer）か次の項目を描くまで出なかった | あり |
 | 0165 | win32u: 画面のプロパティ（デザイン、効果）で変えたフォントの滑らかさ（なし・標準・ClearType）を、XP と同じくすぐに全部の窓に反映する。SPI_SETFONTSMOOTHING などの WM_SETTINGCHANGE を受けたプロセスが設定を読み直し、変えたプログラムがトップレベルの窓を描き直す。各プロセスは最初に読んだ設定のままで、ClearType にしてもデスクトップやタスクバーは次のログオンまで変わらなかった | あり |
+| 0166 | win32u: XP のシェルでフォントの滑らかさが標準のときは、FreeType の v35 のインタプリタでヒンティングする（ClearType となしのときはシステムの FreeType のまま）。v40 は標準のスムージングを縦だけヒンティングして hdmx を使わないので、Tahoma 11px の y が 5px、i と l が 3px になり、デスクトップのアイコンの名前（「My Documents」「Recycle Bin」など）の字の間隔が XP（6・2・2）とずれていた。設定を変えると次の字から切り替わる（0165） | あり（XP のセッション） |
 
 
 ## 並び順の考え方
