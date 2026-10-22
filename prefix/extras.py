@@ -30,7 +30,7 @@ import xp_schemes
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / '.local/bridge'
 # Bumped when apply() changes; setup.sh applies it again on existing prefixes.
-VERSION = '19'
+VERSION = '20'
 MARKER = '.xp-extras'
 HELPERS = ('xptray.exe', 'xpmix.dll', 'startmenu.exe', 'startmenu-view.exe', 'iexplore.exe', 'linux-links.exe')
 # XP's Regional and Language Options and what it loads (assets/intl), native
@@ -293,6 +293,13 @@ def start_menu_programs(assets, prefix, wine, xpx):
         if (assets / 'tour' / kind).is_dir():
             shutil.copytree(assets / 'tour' / kind, tours / kind, dirs_exist_ok=True)
     r = xpx.Reg()
+    # MSN's installer (msninst.exe, which msnsusii.exe installs and starts)
+    # draws its wizard with IE6's engine, as Internet Explorer itself runs
+    # it: with Wine's shlwapi, IE6's wininet called its XP-only ordinal 563
+    # and crashed. Wine's comctl32 stays (XP's is not in its winsxs).
+    for dll in xpx.NATIVE + xpx.IE_NATIVE + xpx.SEARCH_NATIVE:
+        if dll != 'comctl32':
+            r.add(r'HKCU\Software\Wine\AppDefaults\msninst.exe\DllOverrides', dll, 'native')
     # As on XP, Internet Explorer opens web pages saved on the computer (the
     # non-animated tour's scripts are IE's); Wine sends them to winebrowser.
     # Without IE6 it is our stand-in, which opens the Linux browser.
