@@ -23,15 +23,17 @@ outlines, FreeType's default LCD filter blurred stems over three pixels,
 the coverage was blended linearly, and the text was laid out with
 FreeType's LCD advances: Tahoma's menu text at 11 pixels 7 pixels wider
 than XP's over 60 characters.
-Change: when the registry selects ClearType, it applies to every font that
-does not ask for NONANTIALIASED_QUALITY or ANTIALIASED_QUALITY. A size that
-has an embedded bitmap strike follows the standard (gasp) rule. Other
-glyphs are measured and laid out with the black and white advances; their
+Change: the registry's font smoothing applies to every font that does not
+ask for NONANTIALIASED_QUALITY or ANTIALIASED_QUALITY: ClearType only when
+FontSmoothingType is 2 (or the font asks for CLEARTYPE_QUALITY), standard
+smoothing (grey, by the gasp table) otherwise, none when FontSmoothing is
+off, whatever fontconfig's rgba says (with rgba=rgb, standard smoothing
+gave subpixel text). With ClearType, a size that has an embedded bitmap
+strike follows the standard (gasp) rule. Other glyphs are measured and laid out with the black and white advances; their
 outline, hinted vertically only, is drawn black and white at six times the
 horizontal resolution, and each subpixel counts the samples of its window.
 The gamma is 2.2 at the default contrast and FontSmoothingGamma scales it
-as before. Standard smoothing and Wine without the external shell are
-unchanged.
+as before. Wine without the external shell is unchanged.
 Evidence: tests/cleartype.c on the Japanese and English XP references
 against Wine: the same rows are ClearType, the same seven levels, every
 GetTextExtentPoint32 width the same (Tahoma, Trebuchet MS, Franklin Gothic
@@ -63,14 +65,18 @@ index 37403eb..caf5918 100644
  static BOOL antialias_fakes = TRUE;
  static struct font_gamma_ramp font_gamma_ramp;
  
-@@ -4588,6 +4595,11 @@ static HFONT font_SelectFont( PHYSDEV dev, HFONT hfont, UINT *aa_flags )
+@@ -4588,6 +4595,15 @@ static HFONT font_SelectFont( PHYSDEV dev, HFONT hfont, UINT *aa_flags )
  
          if (font)
          {
-+            /* XP's ClearType setting applies to the shell's session, whatever
-+               fontconfig and the X resources choose for Linux applications. */
-+            if (external_cleartype && lf.lfQuality != NONANTIALIASED_QUALITY &&
-+                lf.lfQuality != ANTIALIASED_QUALITY && *aa_flags != GGO_BITMAP)
++            /* XP's font smoothing setting (none, standard or ClearType) applies
++               to the shell's session, whatever fontconfig and the X resources
++               choose for Linux applications; a font that asks for ClearType
++               keeps it with standard smoothing, as on XP. */
++            if (win4wine_external_shell() && lf.lfQuality != NONANTIALIASED_QUALITY &&
++                lf.lfQuality != ANTIALIASED_QUALITY && *aa_flags != GGO_BITMAP &&
++                (external_cleartype || (lf.lfQuality != CLEARTYPE_QUALITY &&
++                                        lf.lfQuality != CLEARTYPE_NATURAL_QUALITY)))
 +                *aa_flags = font_smoothing;
              if (!*aa_flags) *aa_flags = font->aa_flags;
              if (!*aa_flags)
