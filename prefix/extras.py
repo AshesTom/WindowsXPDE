@@ -30,7 +30,7 @@ import xp_schemes
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / '.local/bridge'
 # Bumped when apply() changes; setup.sh applies it again on existing prefixes.
-VERSION = '18'
+VERSION = '19'
 MARKER = '.xp-extras'
 HELPERS = ('xptray.exe', 'xpmix.dll', 'startmenu.exe', 'startmenu-view.exe', 'iexplore.exe', 'linux-links.exe')
 # XP's Regional and Language Options and what it loads (assets/intl), native
@@ -286,7 +286,18 @@ def start_menu_programs(assets, prefix, wine, xpx):
         xpx.save_shortcut(wine, prefix, env, link, folder + '\\' + name, directory=folder,
                           icon=folder + '\\' + name, description=description)
     shutil.copyfile(source / 'moricons.dll', prefix / 'drive_c/windows/syswow64/moricons.dll')
+    # The tours that tourstart.exe offers, where XP's setup puts them: the
+    # animated one (a Flash projector) and the pages of the non-animated one.
+    tours = prefix / 'drive_c/windows/help/Tours'
+    for kind in ('mmTour', 'htmlTour'):
+        if (assets / 'tour' / kind).is_dir():
+            shutil.copytree(assets / 'tour' / kind, tours / kind, dirs_exist_ok=True)
     r = xpx.Reg()
+    # As on XP, Internet Explorer opens web pages saved on the computer (the
+    # non-animated tour's scripts are IE's); Wine sends them to winebrowser.
+    # Without IE6 it is our stand-in, which opens the Linux browser.
+    r.add(r'HKCR\htmlfile\shell\open\command', None, r'"%ProgramFiles%\Internet Explorer\iexplore.exe" "%1"',
+          'REG_EXPAND_SZ')
     clsid = r'HKCR\CLSID\{2559a1f7-21d7-11d4-bdaf-00c04f60b9f0}'
     r.add(clsid, None, 'Set Program Access and Defaults')
     r.add(clsid, 'InfoTip', 'Specify which programs are used by default for activities such as Web browsing, '

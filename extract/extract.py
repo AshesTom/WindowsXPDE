@@ -105,7 +105,7 @@ LANGUAGE_FILES = {
 RENAMED = {'classic.the': 'Windows Classic.theme'}
 # Groups a later version added; setup.sh adds them to an earlier extraction (--only).
 ADDED_GROUPS = ('cpl', 'tray', 'ie', 'wmp', 'inf', 'shell', 'media', 'duser', 'intl', 'themes', 'srchasst',
-                'wallpaper', 'wsc', 'programs')
+                'wallpaper', 'wsc', 'programs', 'tour')
 
 
 def setup_sources(paths):
@@ -151,6 +151,30 @@ def media_files(paths):
         key = rename.strip('%').lower()
         renamed[name] = strings.get(key, name) if rename.startswith('%') else (rename or name)
     return renamed
+
+
+# Tour Windows XP: TXTSETUP.SIF's directories %windir%\Help\Tours\mmTour
+# (the animated tour, a Flash projector and its movies) and htmlTour (the
+# non-animated one, pages that tourstart.exe opens in the browser).
+TOUR_DIRECTORIES = {'91': 'tour/mmTour', '92': 'tour/htmlTour'}
+
+
+def tour_files(paths):
+    """{name on the medium: (group, installed name)} of the Windows XP Tour."""
+    sif = next((p for p in paths if p.name.lower() == 'txtsetup.sif'), None)
+    if not sif:
+        return {}
+    files, section = {}, None
+    for raw in sif.read_text(encoding='latin-1').splitlines():
+        line = raw.split(';', 1)[0].strip()
+        if line.startswith('['):
+            section = line.strip('[]').lower()
+        elif section and section.startswith('sourcedisksfiles') and '=' in line:
+            name, value = (part.strip() for part in line.split('=', 1))
+            fields = [f.strip() for f in value.split(',')]
+            if len(fields) > 7 and fields[7] in TOUR_DIRECTORIES:
+                files[name.lower()] = (TOUR_DIRECTORIES[fields[7]], fields[10] if len(fields) > 10 and fields[10] else name)
+    return files
 
 
 def inf_text(path, root):
@@ -226,7 +250,7 @@ def missing_groups(output):
               'media': 'media', 'duser': 'system32/duser.dll', 'intl': 'intl/input.dll',
               'themes': 'themes/Windows Classic.theme', 'srchasst': 'srchasst/srchui.dll',
               'wallpaper': 'wallpaper', 'wsc': 'wsc/wscsvc.dll',
-              'programs': 'programs/tourstart.exe'}
+              'programs': 'programs/tourstart.exe', 'tour': 'tour/mmTour/tour.exe'}
     return [group for group in ADDED_GROUPS if not has(checks[group])]
 
 
@@ -285,6 +309,8 @@ def extract(source, output, only=None):
         RENAMED.update(sounds)
         wallpapers = wallpaper_files(paths, root)
         RENAMED.update({name: target for name, (_, target) in wallpapers.items()})
+        tour = tour_files(paths)
+        RENAMED.update({name: target for name, (_, target) in tour.items()})
         if only:
             # Add groups of files to assets extracted before they existed.
             groups = set(only)
@@ -295,6 +321,8 @@ def extract(source, output, only=None):
                 group_files.update(dict.fromkeys(sounds, 'media'))
             if 'wallpaper' in groups:
                 group_files.update({name: group for name, (group, _) in wallpapers.items()})
+            if 'tour' in groups:
+                group_files.update({name: group for name, (group, _) in tour.items()})
             copy(group_files)
             listed = output / 'manifest.json'
             old = json.loads(listed.read_text()) if listed.is_file() else []
@@ -305,6 +333,7 @@ def extract(source, output, only=None):
         copy(FILES)
         copy(dict.fromkeys(sounds, 'media'))
         copy({name: group for name, (group, _) in wallpapers.items()})
+        copy({name: group for name, (group, _) in tour.items()})
         for original in paths:
             if original.name.lower() != 'shellstyle.dll':
                 continue
