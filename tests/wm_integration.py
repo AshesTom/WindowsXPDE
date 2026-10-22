@@ -138,8 +138,27 @@ try:
     d.flush()
     wait(lambda: geometry(full) == (100, 100, 400, 300), 'windowed geometry back')
     wait(lambda: not above_dock(), 'taskbar above the windowed client')
+    # A notification balloon (an unmanaged tooltip) stays above the taskbar:
+    # restacks raising the dock must not bury it, or its stem disappears under it.
+    balloon = root.create_window(g.width-340, g.height-113, 250, 69, 0, X.CopyFromParent,
+                                 X.InputOutput, X.CopyFromParent, background_pixel=0xffffe1,
+                                 override_redirect=True)
+    windows.append(balloon)
+    balloon.change_property(atom('_WIN4WINE_CLASS'), Xatom.STRING, 8, b'tooltips_class32')
+    balloon.change_property(atom('_WIN4WINE_HWND'), Xatom.CARDINAL, 32, [balloon.id])
+    balloon.map()
+    d.flush()
+    def balloon_above_dock():
+        order = [w.id for w in root.query_tree().children]
+        return order.index(balloon.id) > order.index(dock.id)
+    wait(balloon_above_dock, 'balloon above the taskbar')
+    balloon.configure(stack_mode=X.Below, sibling=dock)
+    d.flush()
+    third = make('native third', 60, 80, 300, 200)
+    windows.append(third)
+    wait(balloon_above_dock, 'balloon still above the taskbar after a restack')
     print('PASS: workarea, native snapshot, Alt+Tab, shell keys, desktop focus, minimize, restore, activation, close, '
-          'full screen')
+          'full screen, balloon above the taskbar')
 finally:
     for w in windows:
         try:

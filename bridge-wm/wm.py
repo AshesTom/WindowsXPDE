@@ -83,7 +83,9 @@ class Manager:
         # Their frames are redirected only while they move (frame_moves).
         self.redirect = redirect and self.d.has_extension('Composite')
         self.previous_classes = None
-        self.overlays = {}  # override-redirect Windows 7 shell windows kept above the taskbar and Start menu
+        self.overlays = {}  # override-redirect shell windows kept above the taskbar and Start menu:
+                            # the Start button, the user picture and notification balloons/tooltips
+                            # (unmanaged, so every restack would otherwise bury them under the taskbar)
         # Windows without a cursor of their own, such as the menus of Linux
         # applications while they hold the pointer, show the root's: an
         # arrow, as window managers set, instead of the X server's cross.
@@ -187,10 +189,33 @@ class Manager:
             return 'dock'
         return 'normal'
 
+    def overlay_window(self, w):
+        """Remember an override-redirect shell window shown above the taskbar.
+
+        Notification balloons and tooltips are unmanaged (Wine maps them
+        override-redirect), so each restack raising the taskbar Above would
+        bury them: their stem then disappears under the taskbar. Like the
+        Start button and the user picture, they are kept above instead, as
+        topmost windows are on XP. Returns whether it was remembered."""
+        if w.id in self.overlays:
+            return True
+        try:
+            cls = bytes(self.prop(w, '_WIN4WINE_CLASS')).strip(b'\0').lower()
+        except error.XError:
+            return False
+        if cls in (b'win4winestartbutton', b'desktop user picture', b'tooltips_class32'):
+            self.overlays[w.id] = w
+            return True
+        return False
+
     def manage(self, w):
         attrs = w.get_attributes()
         if attrs.override_redirect or w.id == self.support.id:
             w.map()
+            if attrs.override_redirect and attrs.map_state == X.IsViewable and self.overlay_window(w):
+                # Shown before this WM started: raise it above the taskbar now;
+                # a window mapping later is caught by MapNotify instead.
+                self.restack()
             return
         if w.id not in self.clients:
             r = w.get_geometry()
@@ -996,14 +1021,8 @@ class Manager:
         if e.type == X.MapRequest:
             self.manage(e.window)
         elif e.type == X.MapNotify:
-            if e.override and e.window.id not in self.overlays:
-                try:
-                    cls = bytes(self.prop(e.window, '_WIN4WINE_CLASS')).strip(b'\0').lower()
-                except error.XError:
-                    cls = b''
-                if cls in (b'win4winestartbutton', b'desktop user picture'):
-                    self.overlays[e.window.id] = e.window
-                    self.restack()
+            if e.override and self.overlay_window(e.window):
+                self.restack()
             c = self.clients.get(e.window.id)
             if c and (c['kind'] == 'popup' or c['kind'] == 'normal' and self.active == e.window.id):
                 # Wine defers WM_TAKE_FOCUS while waiting for the initial map acknowledgement.
@@ -1033,6 +1052,7 @@ class Manager:
             self.overlays.pop(e.window.id, None)
             self.unmanage(e.window.id)
         elif e.type == X.UnmapNotify:
+            self.overlays.pop(e.window.id, None)
             c = self.clients.get(e.window.id)
             # A minimized client that withdraws itself sends only the synthetic
             # UnmapNotify (XWithdrawWindow); Wine 11 restores a minimized window
