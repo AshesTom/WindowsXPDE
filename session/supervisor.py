@@ -333,6 +333,50 @@ class Session:
         if self.shell['marker'] == 'xp-shell.json' and helper.is_file():
             self.spawn([self.wine, r'C:\xp\bin\startmenu-view.exe'], 'startmenu-view')
 
+    def repair_sound_scheme(self):
+        """XP's Explorer navigation click, lost from the current sound scheme.
+
+        HIVEDEF.INF gives Explorer's Navigating event the Start sound, but a
+        live prefix can lose its .Current value; Explorer then navigates
+        silently (it asks with SND_NODEFAULT). The shell also runs under
+        another executable name (C:\\xp\\xp-explorer.exe), under which
+        SND_APPLICATION finds no app key, so the effective event is mirrored
+        there. Only the Windows Default scheme's emptied event is restored;
+        the other silent events are silent on a fresh XP too."""
+        base = r'HKCU\AppEvents\Schemes\Apps'
+        if self.shell['marker'] != 'xp-shell.json':
+            return
+        try:
+            scheme = subprocess.run([self.wine, 'reg', 'query', r'HKCU\AppEvents\Schemes', '/ve'],
+                                    env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    timeout=60, check=False, text=True)
+            current = subprocess.run([self.wine, 'reg', 'query', base + r'\Explorer\Navigating\.Current', '/ve'],
+                                     env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                     timeout=60, check=False, text=True)
+            default = subprocess.run([self.wine, 'reg', 'query', base + r'\Explorer\Navigating\.Default', '/ve'],
+                                     env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                     timeout=60, check=False, text=True)
+        except (OSError, subprocess.TimeoutExpired):
+            return
+
+        def data(output):
+            for line in (output.stdout or '').splitlines():
+                for kind in ('REG_EXPAND_SZ', 'REG_SZ'):
+                    if kind in line:
+                        return line.split(kind, 1)[1].strip()
+            return ''
+        sound = data(current.stdout) or data(default.stdout)
+        with (self.state / 'sounds.log').open('ab') as log:
+            if '.Default' in (scheme.stdout or '') and not data(current.stdout) and data(default.stdout):
+                subprocess.run([self.wine, 'reg', 'add', base + r'\Explorer\Navigating\.Current',
+                                '/ve', '/t', 'REG_EXPAND_SZ', '/d', data(default.stdout), '/f'],
+                               env=self.env, stdout=log, stderr=subprocess.STDOUT, timeout=60, check=False)
+                sound = data(default.stdout)
+            for leaf in (r'\xp-explorer\Navigating\.Current', r'\xp-explorer\Navigating\.Default'):
+                subprocess.run([self.wine, 'reg', 'add', base + leaf,
+                                '/ve', '/t', 'REG_EXPAND_SZ', '/d', sound, '/f'],
+                               env=self.env, stdout=log, stderr=subprocess.STDOUT, timeout=60, check=False)
+
     def status(self, state, **extra):
         record = dict(state=state, time=time.time(), **extra)
         target = self.state / 'status.json'
@@ -542,6 +586,7 @@ class Session:
         self.tell_welcome('applying')
         self.status('starting', step='settings')
         self.keyboard()
+        self.repair_sound_scheme()
         if self.linux_menu:
             self.start_linux_menu()
         else:

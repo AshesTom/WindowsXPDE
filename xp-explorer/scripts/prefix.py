@@ -509,6 +509,15 @@ def xp_defaults(assets, prefix, wine, folders=True):
     # In particular, XP's Start menu Run item is registered as a shell class;
     # without it, clicking Run... tries to create a shortcut instead.
     texts.append(xp_registrations(assets))
+    # XP's Explorer plays the navigation click through SND_APPLICATION, which
+    # looks the event up under the calling executable's name; the shell runs
+    # as C:\xp\xp-explorer.exe, so the event is mirrored there.
+    sounds = Reg()
+    click = r'%SystemRoot%\media\Windows XP Start.wav'
+    mirror = r'HKCU\AppEvents\Schemes\Apps\xp-explorer\Navigating'
+    sounds.add(mirror + r'\.Current', None, click, 'REG_EXPAND_SZ')
+    sounds.add(mirror + r'\.Default', None, click, 'REG_EXPAND_SZ')
+    texts.append(sounds.text())
     startmenu = Reg()
     startmenu.add(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced',
                   'Start_MinMFU', '6', 'REG_DWORD')
