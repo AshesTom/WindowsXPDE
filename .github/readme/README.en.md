@@ -74,6 +74,8 @@ With a Windows 7 ISO, it can also run **Windows 7's shell** (the Windows 7 Basic
 - **Notification area**: Linux tray icons (StatusNotifierItem and XEmbed) show up in XP's notification area,
   beside XP's own network, battery and volume icons and their flyouts (Volume, Power Meter, Wireless Network
   Connection Status), fed by NetworkManager and PipeWire or PulseAudio (from XP Explorer in [AshesTom's fork](https://github.com/AshesTom/win4wine)).
+  The wireless network list connects to new networks too, through XP's network key dialog. Their menus and windows
+  read their words from your ISO's XP files.
 - **From XP Explorer**: the folder task pane, Display Properties (the Windows XP and Windows Classic themes, styles and
   color schemes; the schemes are made from your ISO's HIVEDEF.INF and themeui.dll), image thumbnails and previews,
   XP's sounds (startup, logon and logoff too),
