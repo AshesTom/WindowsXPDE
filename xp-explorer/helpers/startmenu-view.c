@@ -306,16 +306,13 @@ static void refresh_overlay(void)
     show_overlay();
 }
 
-static void draw_separator(HWND hwnd, HDC dc, const RECT *client)
+static void draw_separator(HWND hwnd, HDC dc, int width, int y)
 {
     HTHEME theme = OpenThemeData(hwnd, L"StartPanel");
-    RECT line = { 0, 0, client->right, 1 };
-    SIZE size;
-    if (theme && SUCCEEDED(GetThemePartSize(theme, dc, SPP_PROGLISTSEPARATOR, 0, NULL, TS_TRUE, &size)) &&
-        size.cy > 0)
-        line.bottom = size.cy;
-    line.top = (SEPARATOR_SPACE - (line.bottom - line.top)) / 2;
-    line.bottom += line.top;
+    SIZE size = { 0, 1 };
+    if (theme) GetThemePartSize(theme, dc, SPP_PROGLISTSEPARATOR, 0, NULL, TS_TRUE, &size);
+    if (size.cy <= 0) size.cy = 1;
+    RECT line = { 0, y + (SEPARATOR_SPACE - size.cy) / 2, width, y + (SEPARATOR_SPACE - size.cy) / 2 + size.cy };
     if (theme && SUCCEEDED(DrawThemeBackground(theme, dc, SPP_PROGLISTSEPARATOR, 0, &line, NULL)))
     {
         CloseThemeData(theme);
@@ -325,7 +322,7 @@ static void draw_separator(HWND hwnd, HDC dc, const RECT *client)
     /* Windows Classic: a plain line in the 3D shadow colour. */
     HPEN pen = CreatePen(PS_SOLID, 1, GetSysColor(COLOR_3DSHADOW));
     HGDIOBJ old_pen = SelectObject(dc, pen);
-    MoveToEx(dc, 6, line.top, NULL); LineTo(dc, client->right - 6, line.top);
+    MoveToEx(dc, 6, line.top, NULL); LineTo(dc, width - 6, line.top);
     SelectObject(dc, old_pen);
     DeleteObject(pen);
 }
@@ -339,7 +336,7 @@ static RECT row_rect(const RECT *client, int index)
 static void draw_recent(HWND hwnd, HDC dc, const RECT *client)
 {
     FillRect(dc, client, GetSysColorBrush(COLOR_WINDOW));
-    if (overlay_rect.top > 0) draw_separator(hwnd, dc, client);
+    if (overlay_rect.top > 0) draw_separator(hwnd, dc, client->right, 0);
 
     HGDIOBJ old_font = SelectObject(dc, item_font);
     SetBkMode(dc, TRANSPARENT);
@@ -362,6 +359,13 @@ static void draw_recent(HWND hwnd, HDC dc, const RECT *client)
         SetTextColor(dc, GetSysColor(hot ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT));
         DrawTextW(dc, items[i].name, -1, &text,
                   DT_LEFT | DT_WORDBREAK | DT_NOPREFIX | DT_END_ELLIPSIS);
+    }
+    /* XP closes the left column with the same separator above All Programs. */
+    if (item_count > 0)
+    {
+        int bottom = SEPARATOR_SPACE + (int)item_count * ROW_PITCH;
+        if (bottom + SEPARATOR_SPACE <= client->bottom)
+            draw_separator(hwnd, dc, client->right, bottom);
     }
     SelectObject(dc, old_font);
 }
