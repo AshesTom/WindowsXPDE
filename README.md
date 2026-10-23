@@ -42,6 +42,7 @@ Linux のデスクトップの窓の中で XP を動かす **XP Explorer**（[xp
 - **通知領域**: Linux のトレイアイコン（StatusNotifierItem と XEmbed）が XP の通知領域に出ます。
   XP 自身のネットワーク・バッテリー・音量のアイコンと、そのフライアウト（音量、電源メーター、ワイヤレス ネットワーク接続の状態）、XP のボリューム コントロールも
   出ます。NetworkManager と PipeWire / PulseAudio の状態から作ります（XP Explorer から。[xp-explorer/](xp-explorer/README.md)）。
+  ワイヤレス ネットワークの一覧から、初めてのネットワークにも XP のネットワーク キーの画面で接続できます。メニューや画面の文字は ISO の XP のファイルから読みます。
 - **XP Explorer からの追加**: フォルダの左のタスク ペイン、画面のプロパティ（Windows XP とクラシックのテーマ、スタイルと配色。
   配色は ISO の HIVEDEF.INF と themeui.dll から作ります）、画像の縮小版とプレビュー、XP のサウンド（起動、ログオン、ログオフも）、
   ネットワーク接続、Internet Explorer 6、検索コンパニオン（犬の Rover）、Windows Media Player 9、スタートメニューの左の列（インターネット、電子メール、
@@ -123,7 +124,7 @@ scripts/setup.sh --shell reactos --lang ja   # 英語なら --lang en
 ```text
 LightDM ─ XP のようこそ画面 (greeter/)
    └─ XP Shell セッション (session/supervisor.py)
-        ├─ Wine 11.0 + 150 本のパッチ (wine/patches/)
+        ├─ Wine 11.0 + 151 本のパッチ (wine/patches/)
         │    └─ XP の explorer.exe, shell32.dll, …（ISO から取り出したもの。ReactOS や Windows 7 のシェルではそれらのもの）
         ├─ bridge-wm: X11 のウィンドウマネージャー + Win32 の代理ウィンドウ (bridge-wm/)
         │    （Wayland のセッションでは、ウィンドウマネージャーの代わりにパッチを当てた labwc。wayland/）

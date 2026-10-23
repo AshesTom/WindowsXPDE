@@ -66,6 +66,8 @@ and **XP Explorer** ([xp-explorer/](../../xp-explorer/README.md)), which opens X
 - **Notification area**: Linux tray icons (StatusNotifierItem and XEmbed) show up in XP's notification area,
   beside XP's own network, battery and volume icons and their flyouts (Volume, Power Meter, Wireless Network
   Connection Status) and XP's Volume Control mixer, fed by NetworkManager and PipeWire or PulseAudio (from XP Explorer, [xp-explorer/](../../xp-explorer/README.md)).
+  The wireless network list connects to new networks too, through XP's network key dialog. Their menus and windows
+  read their words from your ISO's XP files.
 - **From XP Explorer**: the folder task pane, Display Properties (the Windows XP and Windows Classic themes, styles and
   color schemes; the schemes are made from your ISO's HIVEDEF.INF and themeui.dll), image thumbnails and previews,
   XP's sounds (startup, logon and logoff too),
@@ -124,7 +126,7 @@ and **XP Explorer** ([xp-explorer/](../../xp-explorer/README.md)), which opens X
 ```text
 LightDM ─ XP Welcome greeter (greeter/)
    └─ XP Shell session (session/supervisor.py)
-        ├─ Wine 11.0 + 150 patches (wine/patches/)
+        ├─ Wine 11.0 + 151 patches (wine/patches/)
         │    └─ XP's explorer.exe, shell32.dll, … (extracted from the ISO; ReactOS's or Windows 7's in their sessions)
         ├─ bridge-wm: an X11 WM + Win32 proxy windows (bridge-wm/)
         │    (Wayland session: a patched labwc instead of the WM, wayland/)

@@ -313,7 +313,7 @@ def xp_registrations(assets):
 # The DACL that XP's shell32 gives Wine's user's Recycle Bin folder on each drive
 # (RECYCLER\S-1-5-21-0-0-0-1000), and checks byte for byte the first time it
 # opens it: user, SYSTEM and Administrators get full access, each in one ACE
-# for the folder and one inherited by its contents. Wine patch 0151 keeps it
+# for the folder and one inherited by its contents. Wine patch 0152 keeps it
 # in this extended attribute (the DACL's control flags, then the ACL).
 RECYCLER_SID = 'S-1-5-21-0-0-0-1000'
 RECYCLER_DACL_XATTR = 'user.wine.dacl'
@@ -328,7 +328,7 @@ RECYCLER_DACL = bytes.fromhex(
 
 
 def recycler_dacls(prefix):
-    """Give Recycle Bin folders made before Wine kept DACLs (patch 0151) the one
+    """Give Recycle Bin folders made before Wine kept DACLs (patch 0152) the one
     XP's shell32 expects; otherwise it calls them corrupted and offers to empty
     them."""
     for drive in (prefix / 'dosdevices').glob('?:'):
