@@ -274,6 +274,12 @@ class Session:
         self.start_startmenu_view()
         self.spawn([*menu, '--watch'], 'linux-apps')
 
+    def start_user_picture(self):
+        """The picture chosen in XP's User Accounts becomes the Linux user's
+        picture too, while the session runs (session/user_picture.py)."""
+        if self.shell['marker'] == 'xp-shell.json':
+            self.spawn([sys.executable, str(ROOT / 'session/user_picture.py'), str(self.prefix)], 'user-picture')
+
     def play_sound(self, event):
         """An event of XP's sound scheme (the XP shell only), as XP plays it."""
         player = ROOT / '.local/bridge/playsound.exe'
@@ -606,6 +612,7 @@ class Session:
         self.status('starting', step='settings')
         self.keyboard()
         self.repair_sound_scheme()
+        self.start_user_picture()
         if self.linux_menu:
             self.start_linux_menu()
         else:
