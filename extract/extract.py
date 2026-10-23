@@ -69,6 +69,10 @@ FILES = {
     # mshta.exe runs (Wine's is a stub), and the user objects it scripts
     # (shgina.dll), where the account picture is chosen (prefix/extras.py).
     **dict.fromkeys(('nusrmgr.cpl', 'shgina.dll', 'mshta.exe'), 'accounts'),
+    # XP's Network Connections folder (tray/netshell.dll) and what it loads
+    # that Wine lacks: its tracing and wired 802.1X libraries, and the
+    # wireless dialogs with their SP3 texts (prefix/extras.py).
+    **dict.fromkeys(('rtutils.dll', 'dot3api.dll', 'wzcdlg.dll', 'xpsp3res.dll'), 'netcon'),
     # The programs of XP's default Start menu (MSN, Tour Windows XP, the Files
     # and Settings Transfer Wizard) and the icons of Set Program Access and
     # Defaults (prefix/extras.py).
@@ -109,7 +113,7 @@ LANGUAGE_FILES = {
 RENAMED = {'classic.the': 'Windows Classic.theme'}
 # Groups a later version added; setup.sh adds them to an earlier extraction (--only).
 ADDED_GROUPS = ('cpl', 'tray', 'ie', 'wmp', 'inf', 'shell', 'media', 'duser', 'intl', 'themes', 'srchasst',
-                'wallpaper', 'wsc', 'programs', 'tour', 'accounts')
+                'wallpaper', 'wsc', 'programs', 'tour', 'accounts', 'netcon')
 
 
 def setup_sources(paths):
@@ -255,7 +259,7 @@ def missing_groups(output):
               'themes': 'themes/Windows Classic.theme', 'srchasst': 'srchasst/srchui.dll',
               'wallpaper': 'wallpaper', 'wsc': 'wsc/wscsvc.dll',
               'programs': 'programs/tourstart.exe', 'tour': 'tour/mmTour/tour.exe',
-              'accounts': 'accounts/nusrmgr.cpl'}
+              'accounts': 'accounts/nusrmgr.cpl', 'netcon': 'netcon/wzcdlg.dll'}
     return [group for group in ADDED_GROUPS if not has(checks[group])]
 
 

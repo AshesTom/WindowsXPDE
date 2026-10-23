@@ -1747,6 +1747,50 @@ static LRESULT CALLBACK connections_proc(HWND hwnd, UINT message, WPARAM wparam,
     return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 
+/* XP's own Network Connections folder (netshell.dll), where the session has
+ * registered it (prefix/extras.py), in the shell's process. */
+static BOOL open_network_folder(void)
+{
+    static const WCHAR folder[] = L"::{20D04FE0-3AEA-1069-A2D8-08002B30309D}\\::{21EC2020-3AEA-1069-A2DD-08002B30309D}"
+                                  L"\\::{7007ACC7-3202-11D1-AAD2-00805FC1270E}";
+    WCHAR command[256];
+    STARTUPINFOW startup = {.cb = sizeof(startup)};
+    PROCESS_INFORMATION process;
+    HKEY key;
+    if (RegOpenKeyExW(HKEY_CLASSES_ROOT, L"CLSID\\{BA126AE5-2166-11D1-B1D0-00805FC1270E}\\LocalServer32", 0,
+                      KEY_READ, &key))
+        return FALSE;
+    RegCloseKey(key);
+    if (RegOpenKeyExW(HKEY_CLASSES_ROOT, L"CLSID\\{7007ACC7-3202-11D1-AAD2-00805FC1270E}\\InProcServer32", 0,
+                      KEY_READ, &key))
+        return FALSE;
+    RegCloseKey(key);
+    swprintf(command, ARRAYSIZE(command), L"C:\\xp\\xp-explorer.exe %ls", folder);
+    if (!CreateProcessW(L"C:\\xp\\xp-explorer.exe", command, NULL, NULL, FALSE, 0, NULL, NULL, &startup, &process))
+        return FALSE;
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return TRUE;
+}
+
+/* A wireless adapter in the Linux system, whatever carries the traffic. */
+static BOOL wireless_adapter(void)
+{
+    WIN32_FIND_DATAW found;
+    HANDLE find = FindFirstFileW(L"Z:\\sys\\class\\net\\*", &found);
+    BOOL wireless = FALSE;
+    if (find == INVALID_HANDLE_VALUE) return FALSE;
+    do
+    {
+        WCHAR path[MAX_PATH];
+        if (found.cFileName[0] == '.') continue;
+        swprintf(path, MAX_PATH, L"Z:\\sys\\class\\net\\%ls\\wireless", found.cFileName);
+        wireless = exists(path);
+    } while (!wireless && FindNextFileW(find, &found));
+    FindClose(find);
+    return wireless;
+}
+
 static void show_network_connections(void)
 {
     HINSTANCE instance = GetModuleHandleW(NULL);
@@ -1759,6 +1803,7 @@ static void show_network_connections(void)
         SetForegroundWindow(connections_window);
         return;
     }
+    if (open_network_folder()) return;
     WCHAR title[64];
     if (!GetClassInfoW(instance, CONNECTIONS_CLASS, &cls) && !RegisterClassW(&cls)) return;
     xp_text(L"netshell.dll", 1060, L"Network Connections", title, ARRAYSIZE(title));
@@ -2431,6 +2476,22 @@ static LRESULT CALLBACK wireless_proc(HWND hwnd, UINT message, WPARAM wparam, LP
     return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 
+/* XP's own "Choose a wireless network" (wzcdlg.dll), where the session has
+ * installed it with NetworkManager behind it (prefix/extras.py). */
+static BOOL open_wireless_dialog(void)
+{
+    WCHAR command[] = L"rundll32.exe C:\\windows\\system32\\wzcsapi.dll,ViewAvailableNetworks";
+    STARTUPINFOW startup = {.cb = sizeof(startup)};
+    PROCESS_INFORMATION process;
+    if (!exists(L"C:\\windows\\system32\\wzcdlg.dll") || !exists(L"C:\\windows\\system32\\netshell.dll"))
+        return FALSE;
+    if (!CreateProcessW(L"C:\\windows\\rundll32.exe", command, NULL, NULL, FALSE, 0, NULL, NULL, &startup, &process))
+        return FALSE;
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return TRUE;
+}
+
 static void show_wireless_networks(void)
 {
     HINSTANCE instance = GetModuleHandleW(NULL);
@@ -2443,6 +2504,7 @@ static void show_wireless_networks(void)
         SetForegroundWindow(wireless_window);
         return;
     }
+    if (open_wireless_dialog()) return;
     WCHAR title[128];
     if (!GetClassInfoW(instance, WIRELESS_CLASS, &cls) && !RegisterClassW(&cls)) return;
     xp_dialog_text(L"xpsp2res.dll", 6999, -1, L"Wireless Network Connection", title, ARRAYSIZE(title));
@@ -2502,7 +2564,7 @@ static void context_menu(UINT id)
         xp_menu_text(L"netshell.dll", 15103, 3, L"&Status", text, ARRAYSIZE(text));
         AppendMenuW(menu, MF_STRING, CMD_STATUS, text);
         xp_menu_text(L"netshell.dll", 15103, 6, L"&View Available Wireless Networks", text, ARRAYSIZE(text));
-        AppendMenuW(menu, MF_STRING, CMD_NETWORK, text);
+        if (wireless_adapter()) AppendMenuW(menu, MF_STRING, CMD_NETWORK, text);
         AppendMenuW(menu, MF_SEPARATOR, 0, NULL);
         xp_menu_text(L"netshell.dll", 15103, 1, L"&Open Network Connections", text, ARRAYSIZE(text));
         AppendMenuW(menu, MF_STRING, CMD_CONNECTIONS, text);
@@ -2579,7 +2641,7 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPAR
         {
         case WM_LBUTTONUP:
             if (wparam == ID_VOLUME) show_popup();
-            else if (wparam == ID_NETWORK) show_wireless_networks();
+            else if (wparam == ID_NETWORK) show_network_connections();
             else show_power_meter();
             break;
         case WM_LBUTTONDBLCLK:

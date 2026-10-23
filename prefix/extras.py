@@ -30,9 +30,10 @@ import xp_schemes
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / '.local/bridge'
 # Bumped when apply() changes; setup.sh applies it again on existing prefixes.
-VERSION = '23'
+VERSION = '24'
 MARKER = '.xp-extras'
-HELPERS = ('xptray.exe', 'xpmix.dll', 'startmenu.exe', 'startmenu-view.exe', 'iexplore.exe', 'linux-links.exe')
+HELPERS = ('xptray.exe', 'xpmix.dll', 'startmenu.exe', 'startmenu-view.exe', 'iexplore.exe', 'linux-links.exe',
+           'xpnetcon.exe')
 # XP's Regional and Language Options and what it loads (assets/intl), native
 # in rundll32 and in XP Explorer, whose Control Panel lists it.
 INTL = ('intl.cpl', 'input.dll', 'syssetup.dll', 'sfcfiles.dll')
@@ -42,7 +43,20 @@ LAYOUTS_KEY = r'System\CurrentControlSet\Control\Keyboard Layouts'
 # nusrmgr.cpl starts %SystemRoot%\system32\mshta.exe on its HTML
 # application, whose pages script shgina.dll's user objects.
 ACCOUNTS = ('nusrmgr.cpl', 'shgina.dll', 'mshta.exe')
-
+# XP's Network Connections folder in syswow64: netshell.dll (assets/tray) and
+# the XP libraries it loads (assets/netcon), with ours for the dialogs it
+# loads that Wine has as stubs or not at all (.local/bridge/netcon), native in
+# the shell's processes. xpnetcon.exe stands in for XP's Network Connections
+# service (netman), with the Linux adapters (xp-explorer/helpers/xpnetcon.c).
+NETCON = ('netshell.dll', 'rtutils.dll', 'dot3api.dll', 'wzcdlg.dll', 'xpsp3res.dll')
+# XP's wireless dialogs (wzcdlg.dll) get the networks from NetworkManager
+# through our wzcsapi.dll (xp-explorer/helpers/netshell-wzcsapi.c).
+NETCON_BRIDGE = ('rasdlg.dll', 'dot3dlg.dll', 'wzcsapi.dll')
+NETCON_NATIVE = ('rtutils', 'rasdlg')
+# netman's connection manager (and its INetConnectionManager2) and its LAN
+# connection objects.
+NETCON_CLASSES = ('{BA126AD1-2166-11D1-B1D0-00805FC1270E}', '{BA126AE5-2166-11D1-B1D0-00805FC1270E}',
+                  '{BA126ADB-2166-11D1-B1D0-00805FC1270E}')
 
 
 def xp_explorer():
@@ -87,6 +101,13 @@ def registry(xpx):
     component = r'HKCR\MIME\Database\Content Type\text/x-component'
     r.add(component, 'CLSID', '{3050f4f8-98b5-11cf-bb82-00aa00bdce0b}')
     r.add(component, 'Extension', '.htc')
+    # Network Connections: XP's rtutils and our rasdlg in the shell's
+    # processes (and in regsvr32, which registers netshell), Wine's elsewhere.
+    for program in ('xp-explorer.exe', 'rundll32.exe', 'regsvr32.exe'):
+        for dll in NETCON_NATIVE:
+            r.add(rf'HKCU\Software\Wine\AppDefaults\{program}\DllOverrides', dll, 'native,builtin')
+    for clsid in NETCON_CLASSES:
+        r.add('HKCR\\CLSID\\' + clsid + '\\LocalServer32', None, r'C:\xp\bin\xpnetcon.exe')
     # The Start menu helpers use XP's own shell interfaces and icons.
     for program in ('startmenu.exe', 'startmenu-view.exe'):
         for dll in ('shell32', 'shlwapi', 'comctl32', 'linkinfo', 'shdocvw', 'browseui'):
@@ -199,6 +220,9 @@ def copy_files(assets, prefix):
     if (assets / 'accounts/nusrmgr.cpl').is_file():
         for name in ACCOUNTS:
             shutil.copyfile(assets / 'accounts' / name, native / name)
+    if (assets / 'netcon/wzcdlg.dll').is_file() and (assets / 'tray/netshell.dll').is_file():
+        for name in NETCON:
+            shutil.copyfile(assets / ('tray' if name == 'netshell.dll' else 'netcon') / name, native / name)
     # Ours, so that XP Explorer's stage() keeps the common controls 6 assembly
     # in winsxs and puts XP's comctl32 beside rundll32 (Wine patch 0149).
     (prefix / '.patched-wine').write_text('1\n')
@@ -294,6 +318,18 @@ def user_accounts(prefix, wine):
     for name in ('shgina.dll', 'nusrmgr.cpl'):
         subprocess.run([wine, r'C:\windows\syswow64\regsvr32.exe', '/s', 'C:\\windows\\system32\\' + name],
                        env=env, check=False)
+
+
+def network_connections(prefix, wine):
+    """XP's Network Connections folder (netshell.dll) registers itself in My
+    Computer's Control Panel, with the proxies of its connection objects,
+    which xpnetcon.exe serves. stage() has put it in syswow64."""
+    if not (prefix / 'drive_c/windows/syswow64/netshell.dll').is_file():
+        return
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all')
+    env.pop('WINEARCH', None)
+    subprocess.run([wine, r'C:\windows\syswow64\regsvr32.exe', '/s', r'C:\windows\system32\netshell.dll'],
+                   env=env, check=False)
 
 
 # XP's default Start menu programs, where its setup puts them, and their
@@ -429,7 +465,8 @@ def control_panel(assets, prefix, wine, xpx):
 def stage(prefix, xpx=None):
     """XP's files back in syswow64 after Wine updates the prefix: XP
     Explorer's, the Regional and Language Options over Wine's intl.cpl,
-    and User Accounts with XP's mshta.exe over Wine's stub."""
+    User Accounts with XP's mshta.exe over Wine's stub, and the Network
+    Connections folder."""
     (xpx or xp_explorer()).stage(prefix)
     # The helpers as bridge-wm/build.sh last built them.
     for helper in HELPERS:
@@ -440,7 +477,9 @@ def stage(prefix, xpx=None):
             shutil.copyfile(source, temporary)
             temporary.replace(target)
     system = prefix / 'drive_c/windows/syswow64'
-    sources = [prefix / 'drive_c/xp/native' / name for name in INTL + ACCOUNTS]
+    netcon = (prefix / 'drive_c/xp/native/wzcdlg.dll').is_file()
+    sources = [prefix / 'drive_c/xp/native' / name for name in INTL + ACCOUNTS + (NETCON if netcon else ())]
+    sources += [BRIDGE / 'netcon' / name for name in NETCON_BRIDGE] if netcon else []
     for source in sources:
         name, target = source.name, system / source.name
         if source.is_file() and (not target.is_file() or target.read_bytes() != source.read_bytes()):
@@ -519,6 +558,8 @@ def apply(prefix, wine):
     stage(prefix, xpx)
     print("* XP's User Accounts", flush=True)
     user_accounts(prefix, wine)
+    print("* XP's Network Connections", flush=True)
+    network_connections(prefix, wine)
     print("* XP's Start menu programs", flush=True)
     start_menu_programs(assets, prefix, wine, xpx)
     xp_user_defaults(prefix, wine)

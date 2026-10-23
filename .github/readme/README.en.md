@@ -72,8 +72,10 @@ and **XP Explorer** ([xp-explorer/](../../xp-explorer/README.md)), which opens X
   color schemes; the schemes are made from your ISO's HIVEDEF.INF and themeui.dll), image thumbnails and previews,
   XP's sounds (startup, logon and logoff too),
   Network Connections, Internet Explorer 6, the Search Companion with Rover, Windows Media Player 9, and the Start menu's left column (Internet,
-  E-mail and the most used programs), and User Accounts ("Change my picture" offers XP's 23 pictures and changes the
-  Start menu's and the Linux user's), all from your own ISO's files (`prefix/extras.py`).
+  E-mail and the most used programs), User Accounts ("Change my picture" offers XP's 23 pictures and changes the
+  Start menu's and the Linux user's), and XP's Network Connections folder (the Linux wired and wireless adapters and
+  their state, opened from the notification area's network icon) with XP's "Choose a wireless network" (NetworkManager's
+  Wi-Fi networks, joined from it), all from your own ISO's files (`prefix/extras.py`).
 - **Keyboard layout**: the Linux system's (`localectl`) at first. Add input languages or change the default in
   Control Panel, Regional and Language Options, Languages, Details (XP's own), and the session's layout (labwc on
   Wayland, setxkbmap on X11) follows at once; with two or more, Left Alt+Shift switches them as on XP
