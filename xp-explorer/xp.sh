@@ -102,6 +102,10 @@ run)
             wineserver -k; wineserver -w
         fi
     fi
+    # A live prefix can empty Explorer's .Current again (silent navigation
+    # with SND_NODEFAULT); re-mirror the effective click on every start.
+    # Best effort: never blocks the desktop when Wine is busy.
+    timeout 60 python3 -I "$root/scripts/prefix.py" --repair-sounds "$WINEPREFIX" --wine "$wine" 2>/dev/null || true
     # A desktop not named "Default": Wine's desktop then does not claim the
     # shell window, so XP Explorer starts as the shell (taskbar, Start menu).
     if [[ -n ${patched:-} ]]; then

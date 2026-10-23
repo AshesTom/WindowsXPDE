@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 import shutil
 import subprocess
 import sys
@@ -154,9 +155,12 @@ def ie_registry(r):
     # Its icon on the desktop, which XP's Start menu setting hides by default.
     r.add(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel',
           '{871C5380-42A0-1069-A2EA-08002B30309D}', '0', 'REG_DWORD')
-    # IE opens its windows in its own process, where its engine is native
-    # (XP's default hands them to the shell's process).
-    r.add(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\BrowseNewProcess', 'BrowseNewProcess', 'yes')
+    # Folder windows stay in the shell's process: each navigation reuses the
+    # same ListView instead of starting a new xp-explorer.exe process, which
+    # showed a white window for about a second on Wine. Internet Explorer
+    # already runs in its own iexplore.exe process through its desktop icon
+    # and its own AppDefaults, so it keeps its native engine there.
+    r.add(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\BrowseNewProcess', 'BrowseNewProcess', 'no')
     # The Search Companion: IE6's engine in XP Explorer too, from syswow64
     # (stage()), where every other program keeps Wine's (mshtml stays disabled).
     for dll in IE_NATIVE + SEARCH_NATIVE:
@@ -410,7 +414,7 @@ def stage(prefix):
 
 
 # Bumped when xp_defaults() changes; xp.sh runs it again on existing prefixes.
-DEFAULTS_VERSION = '13'
+DEFAULTS_VERSION = '14'
 # Search Results and Computer Search Results (shell32's DocFind folders).
 SEARCH_FOLDERS = ('{E17D4FC0-5564-11D1-83F2-00A0C90DC849}', '{1F4DE370-D627-11D1-BA4F-00A0C91EEDBA}')
 FILE_SEARCH_BAND = '{2D91EEA1-9932-11D2-BE86-00A0C9A83DA1}'
@@ -454,6 +458,140 @@ def set_dos_attributes(path, attributes):
         os.setxattr(path, 'user.DOSATTRIB', f'0x{attributes:x}'.encode())
     except OSError:
         pass
+
+
+def navigating_default(assets):
+    """HIVEDEF.INF's navigation click, in the user's XP language.
+
+    The previous code hardcoded the English "%SystemRoot%\\media\\Windows XP
+    Start.wav", silent on XP in another language. The INF already names the
+    right file; fall back to the English name when it is not there.
+    """
+    fallback = r'%SystemRoot%\media\Windows XP Start.wav'
+    try:
+        import xpreg
+        text = xpreg.read_inf(assets / 'inf/hivedef.inf')
+    except OSError:
+        return fallback
+    strings, section = {}, None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith('['):
+            section = line.strip('[]').lower()
+        elif section == 'strings' and '=' in line and not line.startswith(';'):
+            key, value = line.split('=', 1)
+            strings[key.strip().lower()] = value.strip().strip('"')
+
+    def expand(value):
+        return re.sub(r'%([^%]+)%',
+                      lambda m: strings.get(m.group(1).lower(), m.group(0)),
+                      value).replace('%%', '%')
+
+    # Join continuation lines as xpreg.hive_entries does.
+    logical, current = [], ''
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if line.endswith('\\'):
+            current += line[:-1]
+            continue
+        logical.append(current + line)
+        current = ''
+    for line in logical:
+        if not line.upper().startswith('HKCU,'):
+            continue
+        try:
+            fields = xpreg.fields(line)
+        except Exception:
+            continue
+        if len(fields) < 4:
+            continue
+        key = fields[1].replace('\\\\', '\\')
+        if key.lower() != r'appevents\schemes\apps\explorer\navigating\.default':
+            continue
+        # HKCU,key,name,flags,data (name empty for the default value); some
+        # lines omit the empty name, so take the last non-flag field.
+        for value in reversed(fields[2:]):
+            value = value.strip().strip('"')
+            if not value or value.lower().startswith('0x'):
+                continue
+            # Skip the value name when it is not empty (a named value, not
+            # the default); the data is the .wav path / %SystemRoot% one.
+            if value.startswith(('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')) and ' ' not in value \
+                    and '%' not in value and '.wav' not in value.lower():
+                continue
+            return expand(value)
+    return fallback
+
+
+def repair_navigating_sound(prefix, wine):
+    """Re-mirror the effective navigation click under xp-explorer.
+
+    XP's Explorer plays Navigating through SND_APPLICATION, looked up under
+    the calling executable's name; the shell runs as C:\\xp\\xp-explorer.exe.
+    A live prefix can lose Explorer's .Current (then it navigates silently
+    with SND_NODEFAULT), and an older prefix has the hardcoded English file
+    or a stale mirror. Best effort: never wipes the mirror on query failure.
+    """
+    import subprocess
+    base = r'HKCU\AppEvents\Schemes\Apps'
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all')
+    env.pop('WINEARCH', None)
+
+    # Keep folder navigation in the shell process even if the sound scheme is
+    # missing or temporarily unreadable. This is the migration for prefixes
+    # created with BrowseNewProcess=yes, which caused the white flash.
+    try:
+        subprocess.run([wine, 'reg', 'add',
+                        r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\BrowseNewProcess',
+                        '/v', 'BrowseNewProcess', '/d', 'no', '/f'],
+                       env=env, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                       timeout=60, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    def query(key):
+        try:
+            out = subprocess.run([wine, 'reg', 'query', key, '/ve'],
+                                 env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 timeout=60, text=True)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if out.returncode != 0:
+            return None
+        for line in (out.stdout or '').splitlines():
+            for kind in ('REG_EXPAND_SZ', 'REG_SZ'):
+                if kind in line:
+                    return line.split(kind, 1)[1].strip()
+        return ''
+
+    scheme = query(r'HKCU\AppEvents\Schemes')
+    current = query(base + r'\Explorer\Navigating\.Current')
+    default = query(base + r'\Explorer\Navigating\.Default')
+    if current is None and default is None:
+        return
+    current = current or ''
+    default = default or ''
+    # Restore an emptied Windows Default event from its .Default.
+    if scheme is not None and '.Default' in scheme and not current and default:
+        try:
+            subprocess.run([wine, 'reg', 'add', base + r'\Explorer\Navigating\.Current',
+                            '/ve', '/t', 'REG_EXPAND_SZ', '/d', default, '/f'],
+                           env=env, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                           timeout=60, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        current = current or default
+    sound = current or default
+    if not sound:
+        return
+    for leaf in (r'\xp-explorer\Navigating\.Current', r'\xp-explorer\Navigating\.Default'):
+        try:
+            subprocess.run([wine, 'reg', 'add', base + leaf,
+                            '/ve', '/t', 'REG_EXPAND_SZ', '/d', sound, '/f'],
+                           env=env, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                           timeout=60, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
 
 def xp_defaults(assets, prefix, wine, folders=True):
@@ -511,12 +649,17 @@ def xp_defaults(assets, prefix, wine, folders=True):
     texts.append(xp_registrations(assets))
     # XP's Explorer plays the navigation click through SND_APPLICATION, which
     # looks the event up under the calling executable's name; the shell runs
-    # as C:\xp\xp-explorer.exe, so the event is mirrored there.
+    # as C:\xp\xp-explorer.exe, so the effective Explorer event is mirrored
+    # there (in the user's language, from HIVEDEF.INF, not a hardcoded name).
     sounds = Reg()
-    click = r'%SystemRoot%\media\Windows XP Start.wav'
+    click = navigating_default(assets)
     mirror = r'HKCU\AppEvents\Schemes\Apps\xp-explorer\Navigating'
     sounds.add(mirror + r'\.Current', None, click, 'REG_EXPAND_SZ')
     sounds.add(mirror + r'\.Default', None, click, 'REG_EXPAND_SZ')
+    # Prefixes made while folders opened in their own process keep that
+    # setting (white flash on each navigation); bring them back in-process.
+    sounds.add(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\BrowseNewProcess',
+               'BrowseNewProcess', 'no')
     texts.append(sounds.text())
     startmenu = Reg()
     startmenu.add(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced',
@@ -605,6 +748,12 @@ def xp_defaults(assets, prefix, wine, folders=True):
                   r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Accessories\Communications\Wireless Network Connection.lnk',
                   r'C:\xp\bin\xptray.exe', 'wireless', r'C:\xp\bin', r'C:\xp\tray\netshell.dll',
                   'Choose an available wireless network')
+    # A live prefix can empty Explorer's .Current again after the import
+    # above; re-mirror the effective click now (best effort, never wipes).
+    try:
+        repair_navigating_sound(prefix, wine)
+    except Exception:
+        pass
     (prefix / '.xp-defaults').write_text(DEFAULTS_VERSION + '\n')
 
 
@@ -946,6 +1095,14 @@ if __name__ == '__main__':
         info = json.loads((prefix / 'xp-shell.json').read_text())
         wine = sys.argv[4] if sys.argv[3:4] == ['--wine'] else info['wine']
         install_ie(Path(info['assets']), prefix, wine)
+        raise SystemExit
+    if sys.argv[1:2] == ['--repair-sounds']:
+        # --repair-sounds PREFIX [--wine WINE]: re-mirror the navigation click
+        # on every start (a live prefix can empty Explorer's .Current again).
+        prefix = Path(sys.argv[2]).resolve(strict=True)
+        info = json.loads((prefix / 'xp-shell.json').read_text())
+        wine = sys.argv[4] if sys.argv[3:4] == ['--wine'] else info['wine']
+        repair_navigating_sound(prefix, wine)
         raise SystemExit
     if sys.argv[1:2] == ['--stage']:
         # --stage PREFIX [WxH]: before each start of the desktop

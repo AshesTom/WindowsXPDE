@@ -342,10 +342,23 @@ class Session:
         another executable name (C:\\xp\\xp-explorer.exe), under which
         SND_APPLICATION finds no app key, so the effective event is mirrored
         there. Only the Windows Default scheme's emptied event is restored;
-        the other silent events are silent on a fresh XP too."""
+        the other silent events are silent on a fresh XP too. Never wipes
+        the mirror when a query fails or the effective event is silent."""
         base = r'HKCU\AppEvents\Schemes\Apps'
         if self.shell['marker'] != 'xp-shell.json':
             return
+        # This migration does not depend on the sound scheme: older prefixes
+        # launched folder windows in a separate process, which produced a
+        # visible white flash while navigating.
+        try:
+            with (self.state / 'sounds.log').open('ab') as log:
+                subprocess.run([self.wine, 'reg', 'add',
+                                r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\BrowseNewProcess',
+                                '/v', 'BrowseNewProcess', '/d', 'no', '/f'],
+                               env=self.env, stdout=log, stderr=subprocess.STDOUT,
+                               timeout=60, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
         try:
             scheme = subprocess.run([self.wine, 'reg', 'query', r'HKCU\AppEvents\Schemes', '/ve'],
                                     env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -358,20 +371,26 @@ class Session:
                                      timeout=60, check=False, text=True)
         except (OSError, subprocess.TimeoutExpired):
             return
+        if current.returncode != 0 and default.returncode != 0 and scheme.returncode != 0:
+            return
 
         def data(output):
+            if output.returncode != 0:
+                return ''
             for line in (output.stdout or '').splitlines():
                 for kind in ('REG_EXPAND_SZ', 'REG_SZ'):
                     if kind in line:
                         return line.split(kind, 1)[1].strip()
             return ''
-        sound = data(current.stdout) or data(default.stdout)
+        sound = data(current) or data(default)
         with (self.state / 'sounds.log').open('ab') as log:
-            if '.Default' in (scheme.stdout or '') and not data(current.stdout) and data(default.stdout):
+            if '.Default' in (scheme.stdout or '') and not data(current) and data(default):
                 subprocess.run([self.wine, 'reg', 'add', base + r'\Explorer\Navigating\.Current',
-                                '/ve', '/t', 'REG_EXPAND_SZ', '/d', data(default.stdout), '/f'],
+                                '/ve', '/t', 'REG_EXPAND_SZ', '/d', data(default), '/f'],
                                env=self.env, stdout=log, stderr=subprocess.STDOUT, timeout=60, check=False)
-                sound = data(default.stdout)
+                sound = data(default)
+            if not sound:
+                return
             for leaf in (r'\xp-explorer\Navigating\.Current', r'\xp-explorer\Navigating\.Default'):
                 subprocess.run([self.wine, 'reg', 'add', base + leaf,
                                 '/ve', '/t', 'REG_EXPAND_SZ', '/d', sound, '/f'],
