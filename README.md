@@ -46,7 +46,8 @@ Linux のデスクトップの窓の中で XP を動かす **XP Explorer**（[xp
 - **XP Explorer からの追加**: フォルダの左のタスク ペイン、画面のプロパティ（Windows XP とクラシックのテーマ、スタイルと配色。
   配色は ISO の HIVEDEF.INF と themeui.dll から作ります）、画像の縮小版とプレビュー、XP のサウンド（起動、ログオン、ログオフも）、
   ネットワーク接続、Internet Explorer 6、検索コンパニオン（犬の Rover）、Windows Media Player 9、スタートメニューの左の列（インターネット、電子メール、
-  よく使うプログラム）。どれもお手元の ISO のファイルで動きます（`prefix/extras.py`）。
+  よく使うプログラム）、ユーザー アカウント（「画像の変更」で XP の 23 枚の画像から選ぶと、スタートメニューの画像も変わります）。
+  どれもお手元の ISO のファイルで動きます（`prefix/extras.py`）。
 - **キーボードの配列**: 最初は Linux のシステムの配列（`localectl`）です。コントロール パネルの「地域と言語のオプション」→
   「言語」→「詳細」（XP 自身のもの）で入力言語を足したり既定を変えたりすると、セッションの配列（Wayland では labwc、
   X11 では setxkbmap）がすぐに従います。2 つ以上なら XP と同じ左 Alt+Shift で切り替わります（`session/keyboard.py`）。

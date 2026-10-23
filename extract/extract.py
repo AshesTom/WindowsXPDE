@@ -65,6 +65,10 @@ FILES = {
     # XP's Security Center: its service, the notification area's alerts and
     # the Control Panel item (prefix/extras.py).
     **dict.fromkeys(('wscsvc.dll', 'wscntfy.exe', 'wscui.cpl'), 'wsc'),
+    # XP's User Accounts (nusrmgr.cpl): its HTML application, which XP's
+    # mshta.exe runs (Wine's is a stub), and the user objects it scripts
+    # (shgina.dll), where the account picture is chosen (prefix/extras.py).
+    **dict.fromkeys(('nusrmgr.cpl', 'shgina.dll', 'mshta.exe'), 'accounts'),
     # The programs of XP's default Start menu (MSN, Tour Windows XP, the Files
     # and Settings Transfer Wizard) and the icons of Set Program Access and
     # Defaults (prefix/extras.py).
@@ -105,7 +109,7 @@ LANGUAGE_FILES = {
 RENAMED = {'classic.the': 'Windows Classic.theme'}
 # Groups a later version added; setup.sh adds them to an earlier extraction (--only).
 ADDED_GROUPS = ('cpl', 'tray', 'ie', 'wmp', 'inf', 'shell', 'media', 'duser', 'intl', 'themes', 'srchasst',
-                'wallpaper', 'wsc', 'programs', 'tour')
+                'wallpaper', 'wsc', 'programs', 'tour', 'accounts')
 
 
 def setup_sources(paths):
@@ -250,7 +254,8 @@ def missing_groups(output):
               'media': 'media', 'duser': 'system32/duser.dll', 'intl': 'intl/input.dll',
               'themes': 'themes/Windows Classic.theme', 'srchasst': 'srchasst/srchui.dll',
               'wallpaper': 'wallpaper', 'wsc': 'wsc/wscsvc.dll',
-              'programs': 'programs/tourstart.exe', 'tour': 'tour/mmTour/tour.exe'}
+              'programs': 'programs/tourstart.exe', 'tour': 'tour/mmTour/tour.exe',
+              'accounts': 'accounts/nusrmgr.cpl'}
     return [group for group in ADDED_GROUPS if not has(checks[group])]
 
 

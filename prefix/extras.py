@@ -30,7 +30,7 @@ import xp_schemes
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / '.local/bridge'
 # Bumped when apply() changes; setup.sh applies it again on existing prefixes.
-VERSION = '21'
+VERSION = '23'
 MARKER = '.xp-extras'
 HELPERS = ('xptray.exe', 'xpmix.dll', 'startmenu.exe', 'startmenu-view.exe', 'iexplore.exe', 'linux-links.exe')
 # XP's Regional and Language Options and what it loads (assets/intl), native
@@ -38,6 +38,11 @@ HELPERS = ('xptray.exe', 'xpmix.dll', 'startmenu.exe', 'startmenu-view.exe', 'ie
 INTL = ('intl.cpl', 'input.dll', 'syssetup.dll', 'sfcfiles.dll')
 INTL_NATIVE = ('intl.cpl', 'input', 'syssetup', 'sfcfiles')
 LAYOUTS_KEY = r'System\CurrentControlSet\Control\Keyboard Layouts'
+# XP's User Accounts (assets/accounts) in syswow64, as XP installs them:
+# nusrmgr.cpl starts %SystemRoot%\system32\mshta.exe on its HTML
+# application, whose pages script shgina.dll's user objects.
+ACCOUNTS = ('nusrmgr.cpl', 'shgina.dll', 'mshta.exe')
+
 
 
 def xp_explorer():
@@ -67,6 +72,21 @@ def registry(xpx):
         r.add(r'HKCU\Software\Wine\AppDefaults\rundll32.exe\DllOverrides', dll, 'native,builtin')
     for dll in INTL_NATIVE:
         r.add(r'HKCU\Software\Wine\AppDefaults\xp-explorer.exe\DllOverrides', dll, 'native')
+    # User Accounts: XP's mshta.exe instead of Wine's stub, with IE6's engine,
+    # XP's shell32 (the account picture) and themeui (Theme.Manager, which
+    # picks the Luna style sheet of its pages) native in it.
+    r.add(r'HKCU\Software\Wine\DllOverrides', 'mshta.exe', 'native')
+    for dll in xpx.NATIVE + cpl + xpx.IE_NATIVE + xpx.SEARCH_NATIVE:
+        r.add(r'HKCU\Software\Wine\AppDefaults\mshta.exe\DllOverrides', dll, 'native,builtin')
+    # The content types that IE6's setup registers (mshtml's FileAssoc.Inst
+    # and MIME.Inst), which its DllRegisterServer leaves out: without them
+    # IE6 neither applies the pages' behaviors (.htc) nor draws their .ico
+    # images.
+    for extension, kind in (('.css', 'text/css'), ('.htc', 'text/x-component'), ('.ico', 'image/x-icon')):
+        r.add('HKCR\\' + extension, 'Content Type', kind)
+    component = r'HKCR\MIME\Database\Content Type\text/x-component'
+    r.add(component, 'CLSID', '{3050f4f8-98b5-11cf-bb82-00aa00bdce0b}')
+    r.add(component, 'Extension', '.htc')
     # The Start menu helpers use XP's own shell interfaces and icons.
     for program in ('startmenu.exe', 'startmenu-view.exe'):
         for dll in ('shell32', 'shlwapi', 'comctl32', 'linkinfo', 'shdocvw', 'browseui'):
@@ -176,6 +196,9 @@ def copy_files(assets, prefix):
             shutil.copyfile(assets / 'intl' / name, native / name)
         (windows / 'inf').mkdir(exist_ok=True)
         shutil.copyfile(assets / 'intl/intl.inf', windows / 'inf/intl.inf')
+    if (assets / 'accounts/nusrmgr.cpl').is_file():
+        for name in ACCOUNTS:
+            shutil.copyfile(assets / 'accounts' / name, native / name)
     # Ours, so that XP Explorer's stage() keeps the common controls 6 assembly
     # in winsxs and puts XP's comctl32 beside rundll32 (Wine patch 0149).
     (prefix / '.patched-wine').write_text('1\n')
@@ -256,6 +279,21 @@ def security_center(assets, prefix, wine, xpx):
     subprocess.run([wine, 'reg', 'add', r'HKLM\Software\Microsoft\Windows NT\CurrentVersion\Svchost', '/v', 'wscsvc',
                     '/t', 'REG_MULTI_SZ', '/d', 'SharedAccess\\0wscsvc', '/f', '/reg:64'], env=env, check=True,
                    stdout=subprocess.DEVNULL)
+
+
+def user_accounts(prefix, wine):
+    """XP's User Accounts, where the account picture of the Start menu and
+    the Welcome screen is chosen: shgina.dll's user objects and nusrmgr.cpl's
+    own (its toolbar) register themselves and their type libraries, as XP's
+    setup does. stage() has put them in syswow64."""
+    system = prefix / 'drive_c/windows/syswow64'
+    if not (system / 'nusrmgr.cpl').is_file():
+        return
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG='-all')
+    env.pop('WINEARCH', None)
+    for name in ('shgina.dll', 'nusrmgr.cpl'):
+        subprocess.run([wine, r'C:\windows\syswow64\regsvr32.exe', '/s', 'C:\\windows\\system32\\' + name],
+                       env=env, check=False)
 
 
 # XP's default Start menu programs, where its setup puts them, and their
@@ -390,7 +428,8 @@ def control_panel(assets, prefix, wine, xpx):
 
 def stage(prefix, xpx=None):
     """XP's files back in syswow64 after Wine updates the prefix: XP
-    Explorer's, and the Regional and Language Options over Wine's intl.cpl."""
+    Explorer's, the Regional and Language Options over Wine's intl.cpl,
+    and User Accounts with XP's mshta.exe over Wine's stub."""
     (xpx or xp_explorer()).stage(prefix)
     # The helpers as bridge-wm/build.sh last built them.
     for helper in HELPERS:
@@ -401,8 +440,9 @@ def stage(prefix, xpx=None):
             shutil.copyfile(source, temporary)
             temporary.replace(target)
     system = prefix / 'drive_c/windows/syswow64'
-    for name in INTL:
-        source, target = prefix / 'drive_c/xp/native' / name, system / name
+    sources = [prefix / 'drive_c/xp/native' / name for name in INTL + ACCOUNTS]
+    for source in sources:
+        name, target = source.name, system / source.name
         if source.is_file() and (not target.is_file() or target.read_bytes() != source.read_bytes()):
             temporary = target.with_name(f'.{name}.xp')
             shutil.copyfile(source, temporary)
@@ -473,6 +513,12 @@ def apply(prefix, wine):
     stop(wine, prefix)
     print("* XP's Security Center", flush=True)
     security_center(assets, prefix, wine, xpx)
+    # IE6's wineboot may have put Wine's files back: XP's go in place again
+    # (with the wineserver stopped) before they register.
+    stop(wine, prefix)
+    stage(prefix, xpx)
+    print("* XP's User Accounts", flush=True)
+    user_accounts(prefix, wine)
     print("* XP's Start menu programs", flush=True)
     start_menu_programs(assets, prefix, wine, xpx)
     xp_user_defaults(prefix, wine)

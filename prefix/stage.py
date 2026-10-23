@@ -114,7 +114,7 @@ def stage(prefix, wine=None):
             path.unlink(missing_ok=True)
 
 def stage_media(prefix, wine=None):
-    """Copy XP's default wallpaper and user picture from the local extraction.
+    """Copy XP's default wallpaper and user pictures from the local extraction.
 
     The files are copied unchanged to the places XP uses; existing files,
     including a user's own picture, are never replaced.
@@ -125,8 +125,11 @@ def stage_media(prefix, wine=None):
         return
     user = pwd.getpwuid(os.getuid()).pw_name
     pictures = prefix / 'drive_c/ProgramData/Microsoft/User Account Pictures'
-    for source, target in ((assets / 'pictures/beach.bmp', pictures / 'Default Pictures/beach.bmp'),
-                           (assets / 'pictures/beach.bmp', pictures / f'{user}.bmp')):
+    # XP's 23 default pictures, which User Accounts offers ("Change my
+    # picture"); the one it saves as <user>.bmp is the Start menu's.
+    defaults = [(source, pictures / 'Default Pictures' / source.name)
+                for source in sorted((assets / 'pictures').glob('*.bmp'))]
+    for source, target in defaults + [(assets / 'pictures/beach.bmp', pictures / f'{user}.bmp')]:
         if source.is_file() and not target.exists():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
